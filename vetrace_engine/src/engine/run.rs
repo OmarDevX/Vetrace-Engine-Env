@@ -349,7 +349,11 @@ impl Engine {
                 fov: cam.fov,
                 num_objects: gpu_objects.len() as i32,
                 current_time: (now - start_time).as_secs_f32(),
-                skycolor: self.sky_color,
+                skycolor: [
+                    self.sky_color[0] / 255.0,
+                    self.sky_color[1] / 255.0,
+                    self.sky_color[2] / 255.0,
+                ],
                 is_fisheye: if self.is_fisheye { 1 } else { 0 },
                 selected_index: 0, // No selection (moved to editor plugin)
                 max_bounces,
@@ -382,7 +386,11 @@ impl Engine {
                 gi_quality,
                 gi_debug_mode,
                 dir_light_dir: dir_light.direction,
-                dir_light_color: dir_light.color,
+                dir_light_color: [
+                    dir_light.color[0] / 255.0,
+                    dir_light.color[1] / 255.0,
+                    dir_light.color[2] / 255.0,
+                ],
                 dir_light_intensity: dir_light.intensity,
                 sky_occlusion: 0.0,
                 gi_mode,

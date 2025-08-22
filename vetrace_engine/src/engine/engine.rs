@@ -456,7 +456,11 @@ impl Engine {
             fov: cam.fov,
             num_objects: gpu_objects.len() as i32,
             current_time: 0.0, // Simplified - no time tracking for app framework
-            skycolor: self.sky_color,
+            skycolor: [
+                self.sky_color[0] / 255.0,
+                self.sky_color[1] / 255.0,
+                self.sky_color[2] / 255.0,
+            ],
             is_fisheye: if self.is_fisheye { 1 } else { 0 },
             selected_index: 0, // No selection in app framework
             max_bounces,
@@ -486,7 +490,11 @@ impl Engine {
             gi_debug_mode: 0,
             gi_mode: 0,
             dir_light_dir,
-            dir_light_color,
+            dir_light_color: [
+                dir_light_color[0] / 255.0,
+                dir_light_color[1] / 255.0,
+                dir_light_color[2] / 255.0,
+            ],
             dir_light_intensity,
             sky_occlusion: 0.1,
             dof_aperture: 0.0,

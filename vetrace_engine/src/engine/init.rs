@@ -87,7 +87,7 @@ impl Engine {
             input,
             window,
             running: true,
-            sky_color: [30.0, 255.0, 255.0],
+            sky_color: [135.0, 206.0, 235.0],
             is_fisheye: false,
             // sandbox_window moved to vetrace_editor crate
             egui_ctx,

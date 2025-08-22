@@ -16,7 +16,7 @@ impl SandboxWindow {
         Self {
             new_object: Object::default(),
             is_fisheye: false,
-            skycolor: [30.0, 255.0, 255.0],
+            skycolor: [135.0, 206.0, 235.0],
             new_object_position_str: ["0.0".to_owned(), "0.0".to_owned(), "0.0".to_owned()],
             new_object_size_str: ["1.0".to_owned(), "1.0".to_owned(), "1.0".to_owned()],
         }
