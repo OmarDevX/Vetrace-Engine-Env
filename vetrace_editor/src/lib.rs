@@ -26,24 +26,6 @@ pub struct EditorPlugin {
     gizmo: GizmoPlugin,
     selection: SelectionPlugin,
     initialized: bool,
-    // UI state
-    pub selected_object: Option<usize>,
-    pub show_scene_hierarchy: bool,
-    pub show_inspector: bool,
-    pub show_gizmos: bool,
-    pub show_materials: bool,
-    pub show_performance: bool,
-    pub gizmo_mode: GizmoMode,
-    pub show_gizmo_settings: bool,
-    pub local_space: bool,
-    pub snap_to_grid: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum GizmoMode {
-    Translate,
-    Rotate,
-    Scale,
 }
 
 impl EditorPlugin {
@@ -56,17 +38,6 @@ impl EditorPlugin {
             gizmo: GizmoPlugin::new(),
             selection: SelectionPlugin::new(),
             initialized: false,
-            // Initialize UI state
-            selected_object: None,
-            show_scene_hierarchy: true,
-            show_inspector: true,
-            show_gizmos: true,
-            show_materials: false,
-            show_performance: false,
-            gizmo_mode: GizmoMode::Translate,
-            show_gizmo_settings: true,
-            local_space: false,
-            snap_to_grid: true,
         }
     }
     
@@ -115,211 +86,18 @@ impl EditorPlugin {
         Ok(())
     }
 
-    /// Render the complete editor UI with all components and proper state management
+    /// Render the editor interface and update gizmos.
     fn render_full_editor_ui(&mut self, ctx: &egui::Context, engine: &mut Engine) -> Result<(), Box<dyn std::error::Error>> {
-        // Scene Hierarchy Window
-        if self.show_scene_hierarchy {
-            egui::Window::new("🌳 Scene Hierarchy")
-                .default_open(true)
-                .resizable(true)
-                .default_size([300.0, 400.0])
-                .show(ctx, |ui| {
-                    ui.label("📋 Scene Objects");
-                    ui.separator();
-
-                    // List all entities in the scene
-                    let entity_count = engine.world.entities().len();
-                    ui.label(format!("Total entities: {}", entity_count));
-
-                    ui.separator();
-
-                    // Show objects from the scene
-                    for (i, obj) in engine.scene.objects.iter().enumerate() {
-                        let object_name = format!("Object {} ({})", i, if obj.is_cube { "Cube" } else { "Sphere" });
-
-                        let is_selected = self.selected_object == Some(i);
-                        if ui.selectable_label(is_selected, &object_name).clicked() {
-                            self.selected_object = if is_selected { None } else { Some(i) };
-                            println!("🎯 Selected object: {}", if is_selected { "None" } else { &object_name });
-                        }
-
-                        // Show object details if selected
-                        if is_selected {
-                            ui.indent(format!("obj_{}", i), |ui| {
-                                ui.label(format!("Position: [{:.2}, {:.2}, {:.2}]", obj.position[0], obj.position[1], obj.position[2]));
-                                ui.label(format!("Radius: {:.2}", obj.radius));
-                                ui.label(format!("Material: {}", obj.material_index));
-                            });
-                        }
-                    }
-                });
-        }
-
-        // Inspector Window
-        if self.show_inspector {
-            egui::Window::new("🔍 Inspector")
-                .default_open(true)
-                .resizable(true)
-                .default_size([300.0, 500.0])
-                .show(ctx, |ui| {
-                    ui.label("🎛️ Object Properties");
-                    ui.separator();
-
-                    if let Some(selected_idx) = self.selected_object {
-                        if let Some(obj) = engine.scene.objects.get(selected_idx) {
-                            ui.label(format!("Selected: Object {}", selected_idx));
-                            ui.separator();
-
-                            // Object properties (read-only for now, but could be made editable)
-                            ui.label(format!("Position: [{:.2}, {:.2}, {:.2}]", obj.position[0], obj.position[1], obj.position[2]));
-                            ui.label(format!("Radius: {:.2}", obj.radius));
-                            ui.label(format!("Color: [{:.0}, {:.0}, {:.0}]", obj.color[0], obj.color[1], obj.color[2]));
-                            ui.label(format!("Roughness: {:.2}", obj.roughness));
-                            ui.label(format!("Emission: {:.2}", obj.emission));
-                            ui.label(format!("Is Cube: {}", obj.is_cube));
-                            ui.label(format!("Material Index: {}", obj.material_index));
-                        }
-                    } else {
-                        ui.label("Select an object to inspect its properties");
-                    }
-
-                    ui.separator();
-
-                    // Camera properties
-                    ui.collapsing("📷 Camera", |ui| {
-                        let cam_info = engine.active_camera_info();
-                        ui.label(format!("Position: [{:.2}, {:.2}, {:.2}]",
-                            cam_info.position.x, cam_info.position.y, cam_info.position.z));
-                        ui.label(format!("Orientation: [{:.2}, {:.2}, {:.2}, {:.2}]",
-                            cam_info.orientation.x, cam_info.orientation.y, cam_info.orientation.z, cam_info.orientation.w));
-                        ui.label(format!("FOV: {:.1}°", cam_info.fov.to_degrees()));
-                    });
-
-                    // Scene properties
-                    ui.collapsing("🌍 Scene", |ui| {
-                        ui.label(format!("Objects: {}", engine.scene.objects.len()));
-                        ui.label(format!("Materials: {}", engine.scene.materials.len()));
-                        ui.label(format!("BVH Nodes: {}", engine.scene.bvh_nodes.len()));
-                    });
-
-                    // Rendering properties
-                    ui.collapsing("🎨 Rendering", |ui| {
-                        ui.label("Renderer: WGPU");
-                        ui.label("Shading: PBR");
-                        ui.label("Post-processing: Enabled");
-                    });
-                });
-        }
-
-        // Transform Gizmos Window
-        if self.show_gizmos {
-            egui::Window::new("🎯 Transform Gizmos")
-                .default_open(true)
-                .resizable(true)
-                .default_size([250.0, 200.0])
-                .show(ctx, |ui| {
-                    ui.label("🔧 Transform Tools");
-                    ui.separator();
-
-                    ui.horizontal(|ui| {
-                        if ui.selectable_label(self.gizmo_mode == GizmoMode::Translate, "📍 Translate").clicked() {
-                            self.gizmo_mode = GizmoMode::Translate;
-                            println!("🎯 Translate mode activated");
-                        }
-                        if ui.selectable_label(self.gizmo_mode == GizmoMode::Rotate, "🔄 Rotate").clicked() {
-                            self.gizmo_mode = GizmoMode::Rotate;
-                            println!("🎯 Rotate mode activated");
-                        }
-                        if ui.selectable_label(self.gizmo_mode == GizmoMode::Scale, "📏 Scale").clicked() {
-                            self.gizmo_mode = GizmoMode::Scale;
-                            println!("🎯 Scale mode activated");
-                        }
-                    });
-
-                    ui.separator();
-                    ui.label("Gizmo Settings:");
-                    ui.checkbox(&mut self.show_gizmo_settings, "Show gizmos");
-                    ui.checkbox(&mut self.local_space, "Local space");
-                    ui.checkbox(&mut self.snap_to_grid, "Snap to grid");
-
-                    if let Some(selected_idx) = self.selected_object {
-                        ui.separator();
-                        ui.label(format!("Selected Object: {}", selected_idx));
-                        ui.label("Use gizmos to transform the selected object");
-                    }
-                });
-        }
-
-        // Materials Window
-        if self.show_materials {
-            egui::Window::new("🎨 Materials")
-                .default_open(false)
-                .resizable(true)
-                .default_size([300.0, 400.0])
-                .show(ctx, |ui| {
-                    ui.label("🎭 Material Editor");
-                    ui.separator();
-
-                    for (i, material) in engine.scene.materials.iter().enumerate() {
-                        ui.collapsing(format!("Material {}", i), |ui| {
-                            ui.label(format!("Base Color: [{:.2}, {:.2}, {:.2}, {:.2}]",
-                                material.base_color[0], material.base_color[1],
-                                material.base_color[2], material.base_color[3]));
-                            ui.label(format!("Roughness: {:.2}", material.roughness));
-                            ui.label(format!("Metallic: {:.2}", material.metallic));
-                        });
-                    }
-                });
-        }
-
-        // Performance Monitor
-        if self.show_performance {
-            egui::Window::new("📊 Performance")
-                .default_open(false)
-                .resizable(true)
-                .default_size([250.0, 150.0])
-                .show(ctx, |ui| {
-                    ui.label("⚡ Performance Metrics");
-                    ui.separator();
-
-                    ui.label("FPS: ~60");
-                    ui.label("Frame Time: ~16ms");
-                    ui.label("Draw Calls: 5");
-                    ui.label("Triangles: 2,880");
-                });
-        }
-
-        // Window visibility controls (menu bar or separate window)
-        egui::Window::new("🎛️ Editor Controls")
-            .default_open(true)
-            .resizable(true)
-            .default_size([200.0, 200.0])
-            .show(ctx, |ui| {
-                ui.label("🪟 Window Visibility");
-                ui.separator();
-
-                ui.checkbox(&mut self.show_scene_hierarchy, "🌳 Scene Hierarchy");
-                ui.checkbox(&mut self.show_inspector, "🔍 Inspector");
-                ui.checkbox(&mut self.show_gizmos, "🎯 Transform Gizmos");
-                ui.checkbox(&mut self.show_materials, "🎨 Materials");
-                ui.checkbox(&mut self.show_performance, "📊 Performance");
-
-                ui.separator();
-                ui.label("🎮 Editor Status");
-                ui.label(format!("Selected: {}",
-                    if let Some(idx) = self.selected_object {
-                        format!("Object {}", idx)
-                    } else {
-                        "None".to_string()
-                    }
-                ));
-                ui.label(format!("Gizmo Mode: {:?}", self.gizmo_mode));
-            });
-
+        self.main_window.ui(ctx, &mut self.sandbox_window, engine);
+        self.main_window.gizmo_hovered = self.gizmo.update_gizmo(
+            engine,
+            &self.main_window.selected_entities,
+            self.main_window.gizmo_mode,
+            self.main_window.gizmo_orientation,
+        );
         Ok(())
     }
 }
-
 impl Default for EditorPlugin {
     fn default() -> Self {
         Self::new()

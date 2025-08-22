@@ -33,8 +33,9 @@ impl FreeFlightState {
     for (entity, transform, controls) in query.iter_mut() {
         let has_lookat = lookat_entities.contains(entity);
         
+        // Build orientation from yaw (around Y axis) and pitch (around right axis)
         let mut q = Quat::from_rotation_y(-controls.yaw.to_radians())
-            * Quat::from_rotation_x(-controls.pitch.to_radians()); // Fixed: pitch around X-axis, negated for correct direction
+            * Quat::from_rotation_z(-controls.pitch.to_radians());
             
         if has_lookat {
             // When LookAt is present...

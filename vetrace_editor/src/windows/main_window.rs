@@ -1,20 +1,13 @@
-//! Main Editor Window Implementation
-//! 
-//! This is the primary editor interface, moved from the main engine
-//! to keep editor functionality separate.
-
 use vetrace_engine::{ecs::Entity, engine::engine::Engine, scene::object::Object};
-use egui::{
-    ComboBox, Context, Margin, ScrollArea, Slider, TextEdit, TopBottomPanel, Ui, Window,
-};
+use vetrace_engine::systems::gizmo::EditorGizmoMode;
+use egui::{ComboBox, Context, Key, Margin, ScrollArea, Slider, TextEdit, TopBottomPanel, Ui, Window};
 use rfd::FileDialog;
+use sdl2::keyboard::Keycode;
 use std::collections::HashMap;
 use transform_gizmo_egui::GizmoOrientation;
 
-use super::{NewField, EditorGizmoMode, SandboxWindow};
-use crate::EditorWindow;
+use super::{SandboxWindow, NewField};
 
-/// Main editor window containing all the primary editor panels
 pub struct MainWindow {
     pub show_sandbox_window: bool,
     pub selected_component: String,
@@ -34,7 +27,6 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    /// Create a new main window
     pub fn new() -> Self {
         Self {
             show_sandbox_window: false,
@@ -54,8 +46,7 @@ impl MainWindow {
             gizmo_orientation: GizmoOrientation::Local,
         }
     }
-    
-    /// Main UI rendering function
+
     pub fn ui(&mut self, ctx: &Context, sandbox: &mut SandboxWindow, engine: &mut Engine) {
         self.top_panel_ui(ctx, engine);
         self.left_panel_ui(ctx, engine);
@@ -71,27 +62,17 @@ impl MainWindow {
                 });
         }
     }
-    
-    /// Get blur rectangles for background effects
+
     pub fn blur_rects(&self) -> Vec<egui::Rect> {
         let mut r = Vec::new();
-        if let Some(rect) = self.left_rect {
-            r.push(rect);
-        }
-        if let Some(rect) = self.right_rect {
-            r.push(rect);
-        }
-        if let Some(rect) = self.bottom_rect {
-            r.push(rect);
-        }
-        if let Some(rect) = self.top_rect {
-            r.push(rect);
-        }
+        if let Some(rect) = self.left_rect { r.push(rect); }
+        if let Some(rect) = self.right_rect { r.push(rect); }
+        if let Some(rect) = self.bottom_rect { r.push(rect); }
+        if let Some(rect) = self.top_rect { r.push(rect); }
         r
     }
-    
-    /// Top panel with main controls
-    fn top_panel_ui(&mut self, ctx: &Context, engine: &mut Engine) {
+
+    fn top_panel_ui(&mut self, ctx: &Context, _engine: &mut Engine) {
         let resp = TopBottomPanel::top("top_panel")
             .frame(
                 egui::Frame::none()
@@ -108,7 +89,6 @@ impl MainWindow {
             .resizable(false)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    // Gizmo mode selector
                     ComboBox::from_id_source("gizmo_mode_combo")
                         .selected_text(match self.gizmo_mode {
                             EditorGizmoMode::Translate => "Move",
@@ -118,85 +98,27 @@ impl MainWindow {
                             EditorGizmoMode::Arcball => "Arcball",
                         })
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.gizmo_mode,
-                                EditorGizmoMode::Translate,
-                                "Move",
-                            );
-                            ui.selectable_value(
-                                &mut self.gizmo_mode,
-                                EditorGizmoMode::Rotate,
-                                "Rotate",
-                            );
-                            ui.selectable_value(
-                                &mut self.gizmo_mode,
-                                EditorGizmoMode::Scale,
-                                "Scale",
-                            );
-                            ui.selectable_value(
-                                &mut self.gizmo_mode,
-                                EditorGizmoMode::Omni,
-                                "Omni",
-                            );
-                            ui.selectable_value(
-                                &mut self.gizmo_mode,
-                                EditorGizmoMode::Arcball,
-                                "Arcball",
-                            );
+                            ui.selectable_value(&mut self.gizmo_mode, EditorGizmoMode::Translate, "Move");
+                            ui.selectable_value(&mut self.gizmo_mode, EditorGizmoMode::Rotate, "Rotate");
+                            ui.selectable_value(&mut self.gizmo_mode, EditorGizmoMode::Scale, "Scale");
+                            ui.selectable_value(&mut self.gizmo_mode, EditorGizmoMode::Omni, "Omni");
+                            ui.selectable_value(&mut self.gizmo_mode, EditorGizmoMode::Arcball, "Arcball");
                         });
-
                     ui.separator();
-
-                    // Gizmo orientation selector
                     ComboBox::from_id_source("gizmo_orientation_combo")
                         .selected_text(match self.gizmo_orientation {
-                            GizmoOrientation::Global => "Global",
                             GizmoOrientation::Local => "Local",
+                            GizmoOrientation::Global => "Global",
                         })
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.gizmo_orientation,
-                                GizmoOrientation::Global,
-                                "Global",
-                            );
-                            ui.selectable_value(
-                                &mut self.gizmo_orientation,
-                                GizmoOrientation::Local,
-                                "Local",
-                            );
+                            ui.selectable_value(&mut self.gizmo_orientation, GizmoOrientation::Local, "Local");
+                            ui.selectable_value(&mut self.gizmo_orientation, GizmoOrientation::Global, "Global");
                         });
-
-                    ui.separator();
-
-                    // File operations
-                    if ui.button("Save Scene").clicked() {
-                        if let Some(path) = FileDialog::new()
-                            .add_filter("JSON", &["json"])
-                            .save_file()
-                        {
-                            let path_str = path.to_string_lossy();
-                            let _ = engine.save_scene_to_file(&path_str);
-                        }
-                    }
-
-                    if ui.button("Load Scene").clicked() {
-                        if let Some(path) = FileDialog::new()
-                            .add_filter("JSON", &["json"])
-                            .pick_file()
-                        {
-                            let path_str = path.to_string_lossy();
-                            if let Ok(scene) = vetrace_engine::scene::loader::load_scene(&path_str) {
-                                engine.clear_scene();
-                                let _ = engine.load_scene(scene);
-                            }
-                        }
-                    }
                 });
             });
         self.top_rect = Some(resp.response.rect);
     }
-    
-    /// Left panel with scene hierarchy and controls
+
     fn left_panel_ui(&mut self, ctx: &Context, engine: &mut Engine) {
         let resp = egui::SidePanel::left("left_panel")
             .frame(
@@ -204,12 +126,7 @@ impl MainWindow {
                     .fill(egui::Color32::from_rgba_unmultiplied(40, 0, 60, 210))
                     .rounding(8.0)
                     .inner_margin(Margin::same(6.0))
-                    .outer_margin(Margin {
-                        left: 10.0,
-                        right: 0.0,
-                        top: 10.0,
-                        bottom: 10.0,
-                    }),
+                    .outer_margin(Margin { left: 10.0, right: 0.0, top: 10.0, bottom: 10.0 }),
             )
             .resizable(true)
             .max_width(350.0)
@@ -218,64 +135,102 @@ impl MainWindow {
             .show(ctx, |ui| {
                 ScrollArea::vertical().show(ui, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.heading("✢ Vetrace Engine");
+                        ui.heading("✢ Vetracer Engine");
                     });
-                    
-                    // Engine controls
                     ui.horizontal(|ui| {
                         if engine.paused {
-                            if ui.button("Start").clicked() {
-                                engine.resume();
-                            }
+                            if ui.button("Start").clicked() { engine.resume(); }
                         } else {
-                            if ui.button("Stop").clicked() {
-                                engine.pause();
-                            }
+                            if ui.button("Stop").clicked() { engine.pause(); }
                         }
-                        if ui.button("Restart").clicked() {
-                            engine.restart();
-                        }
+                        if ui.button("Restart").clicked() { engine.restart(); }
                     });
                     ui.separator();
 
-                    // Window toggles
                     if ui.button("Toggle Sandbox Window").clicked() {
                         self.show_sandbox_window = !self.show_sandbox_window;
                     }
 
                     ui.separator();
-
-                    // Scene hierarchy
-                    ui.heading("Scene Hierarchy");
-                    self.draw_scene_hierarchy(ui, engine);
+                    if ui.button("Load Scene").clicked() {
+                        if let Some(path) = FileDialog::new().add_filter("scene", &["json"]).pick_file() {
+                            if let Some(p) = path.to_str() {
+                                if let Err(e) = engine.load_scene_from_file(p) {
+                                    eprintln!("Failed to load scene: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    if ui.button("Save Scene").clicked() {
+                        if let Some(path) = FileDialog::new().add_filter("scene", &["json"]).save_file() {
+                            if let Some(p) = path.to_str() {
+                                if let Err(e) = engine.save_scene_to_file(p) {
+                                    eprintln!("Failed to save scene: {}", e);
+                                }
+                            }
+                        }
+                    }
 
                     ui.separator();
-                    
-                    // Links
+                    if ui.button("Deselect").clicked() {
+                        self.selected_entities.clear();
+                    }
+
+                    ui.separator();
+                    ui.collapsing("Entities", |ui| {
+                        let entities: Vec<_> = engine.world.entities().to_vec();
+                        for ent in entities {
+                            let selected = self.selected_entities.contains(&ent);
+                            let name = engine.get_entity_name(ent).unwrap_or("Unnamed").to_string();
+                            let response = ui.selectable_label(selected, name);
+                            if response.clicked() {
+                                if engine.input.is_key_down(Keycode::LCtrl) || engine.input.is_key_down(Keycode::RCtrl) {
+                                    if let Some(i) = self.selected_entities.iter().position(|e| *e == ent) {
+                                        self.selected_entities.remove(i);
+                                    } else {
+                                        self.selected_entities.push(ent);
+                                    }
+                                } else {
+                                    self.selected_entities.clear();
+                                    self.selected_entities.push(ent);
+                                }
+                            }
+                            response.context_menu(|ui| {
+                                if ui.button("Duplicate").clicked() {
+                                    engine.duplicate_entity(ent);
+                                    ui.close_menu();
+                                }
+                                if ui.button("Remove").clicked() {
+                                    engine.delete_entity(ent);
+                                    if let Some(i) = self.selected_entities.iter().position(|e| *e == ent) {
+                                        self.selected_entities.remove(i);
+                                    }
+                                    ui.close_menu();
+                                }
+                                ui.separator();
+                                let entry = self.rename_buffers.entry(ent).or_insert_with(|| {
+                                    engine.get_entity_name(ent).unwrap_or("").to_string()
+                                });
+                                ui.label("Rename:");
+                                let rename = ui.text_edit_singleline(entry);
+                                if rename.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                                    engine.rename_entity(ent, entry);
+                                    self.rename_buffers.remove(&ent);
+                                    ui.close_menu();
+                                }
+                            });
+                        }
+                    });
+
+                    ui.separator();
                     use egui::special_emojis::GITHUB;
-                    ui.hyperlink_to(
-                        format!("{GITHUB} Source Code"),
-                        "https://github.com/OmarDevX",
-                    );
+                    ui.hyperlink_to(format!("{GITHUB} Resource Code"), "https://github.com/OmarDevX");
+                    ui.separator();
                 });
             });
         self.left_rect = Some(resp.response.rect);
     }
-    
-    /// Draw the scene hierarchy
-    fn draw_scene_hierarchy(&mut self, ui: &mut Ui, engine: &mut Engine) {
-        // This will be implemented to show the entity hierarchy
-        ui.label("Entities:");
 
-        // For now, just show selected entities count
-        ui.label(format!("Selected: {}", self.selected_entities.len()));
-
-        if ui.button("Clear Selection").clicked() {
-            self.selected_entities.clear();
-        }
-    }
-
-    /// Right panel with component inspector
     fn right_panel_ui(&mut self, ctx: &Context, engine: &mut Engine) {
         let resp = egui::SidePanel::right("right_panel")
             .frame(
@@ -283,12 +238,7 @@ impl MainWindow {
                     .fill(egui::Color32::from_rgba_unmultiplied(40, 0, 60, 210))
                     .rounding(8.0)
                     .inner_margin(Margin::same(6.0))
-                    .outer_margin(Margin {
-                        left: 0.0,
-                        right: 10.0,
-                        top: 10.0,
-                        bottom: 10.0,
-                    }),
+                    .outer_margin(Margin { left: 0.0, right: 10.0, top: 10.0, bottom: 10.0 }),
             )
             .resizable(true)
             .max_width(550.0)
@@ -304,8 +254,6 @@ impl MainWindow {
                     if self.selected_entities.len() == 1 {
                         let entity = self.selected_entities[0];
                         ui.label(format!("Editing Entity {}", entity.0));
-
-                        // Component editors
                         let component_names = engine.list_components_entity(entity);
                         let mut editors = vec![];
                         for name in component_names {
@@ -323,42 +271,98 @@ impl MainWindow {
                         ui.separator();
                         ui.label("Add Component:");
 
-                        // Component adder
                         let mut names: Vec<_> = engine.component_adders.keys().cloned().collect();
                         for g in &engine.generated_components {
                             if !names.contains(g) {
                                 names.push(g.clone());
                             }
                         }
+                        names.sort();
+                        if self.selected_component.is_empty() && !names.is_empty() {
+                            self.selected_component = names[0].clone();
+                        }
 
-                        ComboBox::from_id_source("component_selector")
-                            .selected_text(&self.selected_component)
-                            .show_ui(ui, |ui| {
-                                for name in &names {
-                                    ui.selectable_value(&mut self.selected_component, name.clone(), name);
+                        ui.horizontal(|ui| {
+                            ComboBox::from_id_source("component_select")
+                                .selected_text(&self.selected_component)
+                                .show_ui(ui, |ui| {
+                                    for name in &names {
+                                        ui.selectable_value(&mut self.selected_component, name.clone(), name);
+                                    }
+                                });
+
+                            if ui.button("Add").clicked() {
+                                if let Some(f) = engine.component_adders.get(&self.selected_component).cloned() {
+                                    f(engine, entity);
                                 }
-                            });
+                            }
+                            if ui.button("Remove").clicked() {
+                                if let Some(f) = engine.component_removers.get(&self.selected_component).cloned() {
+                                    f(engine, entity);
+                                }
+                            }
+                        });
 
-                        if ui.button("Add Component").clicked() && !self.selected_component.is_empty() {
-                            if let Some(adder) = engine.component_adders.get(&self.selected_component).cloned() {
-                                adder(engine, entity);
-                            } else if engine.generated_components.contains(&self.selected_component) {
-                                engine.add_generated_component(entity, &self.selected_component);
+                    } else if self.selected_entities.is_empty() {
+                        ui.label("No entity selected");
+                    } else {
+                        ui.label(format!("{} entities selected", self.selected_entities.len()));
+                    }
+
+                    ui.separator();
+                    ui.label("Create Custom Behaviour:");
+                    ui.horizontal(|ui| {
+                        ui.add(TextEdit::singleline(&mut self.new_component_name).desired_width(120.0));
+                        if ui.button("Create").clicked() {
+                            if !self.new_component_name.is_empty() {
+                                engine.create_custom_component(&self.new_component_name);
                             }
                         }
-                    } else if self.selected_entities.len() > 1 {
-                        ui.label(format!("Multiple entities selected ({})", self.selected_entities.len()));
-                        ui.label("Multi-edit not yet supported");
-                    } else {
-                        ui.label("No entity selected");
-                        ui.label("Click on an object in the scene to select it");
+                        if ui.button("Reload Scripts").clicked() {
+                            engine.reload_scripts();
+                        }
+                        if ui.button("Reload Behaviours").clicked() {
+                            engine.reload_component_behaviours();
+                        }
+                    });
+
+                    ui.separator();
+                    ui.label("Create Custom Component:");
+                    ui.horizontal(|ui| {
+                        ui.add(TextEdit::singleline(&mut self.custom_component_name).desired_width(120.0));
+                        if ui.button("Add Field").clicked() {
+                            self.custom_fields.push(NewField { name: String::new(), ty_index: 0, default: String::new() });
+                        }
+                        if ui.button("Generate").clicked() {
+                            if !self.custom_component_name.is_empty() {
+                                let fields: Vec<(String, String, String)> = self.custom_fields.iter().map(|f| {
+                                    let ty = ["f32", "i32", "bool"][f.ty_index].to_string();
+                                    (f.name.clone(), ty, f.default.clone())
+                                }).collect();
+                                engine.generate_component_file(&self.custom_component_name, &fields);
+                                engine.reload_component_behaviours();
+                                engine.update_generated_components();
+                            }
+                        }
+                    });
+                    for field in &mut self.custom_fields {
+                        ui.horizontal(|ui| {
+                            ui.add(TextEdit::singleline(&mut field.name).hint_text("name").desired_width(80.0));
+                            ComboBox::from_id_source(format!("type_{}", field.name))
+                                .selected_text(["f32", "i32", "bool"][field.ty_index])
+                                .show_ui(ui, |ui| {
+                                    for (i, t) in ["f32", "i32", "bool"].iter().enumerate() {
+                                        ui.selectable_value(&mut field.ty_index, i, *t);
+                                    }
+                                });
+                            ui.add(TextEdit::singleline(&mut field.default).hint_text("default").desired_width(60.0));
+                        });
                     }
                 });
             });
         self.right_rect = Some(resp.response.rect);
     }
 
-    /// Bottom panel with file explorer
     fn file_explorer_ui(&mut self, ctx: &Context, engine: &mut Engine) {
         use std::fs;
         let resp = TopBottomPanel::bottom("file_explorer")
@@ -380,35 +384,34 @@ impl MainWindow {
                     }
                     ui.label(&self.file_explorer_path);
                 });
-
-                ScrollArea::vertical().show(ui, |ui| {
-                    if let Ok(entries) = fs::read_dir(&self.file_explorer_path) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            let is_dir = path.is_dir();
-                            let name = path.file_name().unwrap_or_default().to_string_lossy();
-                            let label = if is_dir { format!("📁 {}", name) } else { format!("📄 {}", name) };
-
-                            let response = ui.selectable_label(false, label);
-                            if response.double_clicked() {
-                                if is_dir {
-                                    self.file_explorer_path = path.to_string_lossy().to_string();
-                                } else if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                                    if ext == "json" {
-                                        let path_str = path.to_string_lossy();
-                                        if let Ok(scene) = vetrace_engine::scene::loader::load_scene(&path_str) {
-                                            engine.clear_scene();
-                                            let _ = engine.load_scene(scene);
-                                        } else if let Ok(prefab) = vetrace_engine::Prefab::load(&path_str) {
-                                            engine.clear_scene();
-                                            let _ = engine.instantiate_prefab(prefab);
-                                        }
+                ui.separator();
+                if let Ok(entries) = fs::read_dir(&self.file_explorer_path) {
+                    let mut entries: Vec<_> = entries.filter_map(Result::ok).collect();
+                    entries.sort_by_key(|e| e.file_name());
+                    for entry in entries {
+                        let path = entry.path();
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let is_dir = path.is_dir();
+                        let label = if is_dir { format!("[{name}]") } else { name.clone() };
+                        let response = ui.selectable_label(false, label);
+                        if response.double_clicked() {
+                            if is_dir {
+                                self.file_explorer_path = path.to_string_lossy().to_string();
+                            } else if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                if ext == "json" {
+                                    let path_str = path.to_string_lossy();
+                                    if let Ok(scene) = vetrace_engine::scene::loader::load_scene(&path_str) {
+                                        engine.clear_scene();
+                                        let _ = engine.load_scene(scene);
+                                    } else if let Ok(prefab) = vetrace_engine::Prefab::load(&path_str) {
+                                        engine.clear_scene();
+                                        let _ = engine.load_scene(prefab.scene);
                                     }
                                 }
                             }
                         }
                     }
-                });
+                }
             });
         self.bottom_rect = Some(resp.response.rect);
     }
@@ -420,24 +423,4 @@ impl Default for MainWindow {
     }
 }
 
-impl EditorWindow for MainWindow {
-    fn initialize(&mut self, _engine: &mut Engine) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Initializing Main Window...");
-        Ok(())
-    }
-    
-    fn update(&mut self, _engine: &mut Engine, _delta_time: f32) -> Result<(), Box<dyn std::error::Error>> {
-        // Update logic for the main window
-        Ok(())
-    }
-    
-    fn render(&mut self, ctx: &egui::Context, engine: &mut Engine) -> Result<(), Box<dyn std::error::Error>> {
-        // This is handled by the ui() method
-        Ok(())
-    }
-    
-    fn cleanup(&mut self, _engine: &mut Engine) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Cleaning up Main Window...");
-        Ok(())
-    }
-}
+impl crate::EditorWindow for MainWindow {}
