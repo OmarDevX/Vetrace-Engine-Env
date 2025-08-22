@@ -10,7 +10,7 @@ build = "build.rs"
 
 
 [dependencies]
-vetrace_engine_macros= = { path = "../vetrace_engine_macros" }
+vetrace_engine_macros= { path = "../vetrace_engine_macros" }
 ahash = "~0.8"
 gl = "~0.14"
 egui = "~0.28"
