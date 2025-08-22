@@ -253,9 +253,9 @@ impl Engine {
                         f0 = [f * f; 3];
                     }
                     let base_color_factor = [
-                        obj.color[0] / 255.0,
-                        obj.color[1] / 255.0,
-                        obj.color[2] / 255.0,
+                        obj.color[0],
+                        obj.color[1],
+                        obj.color[2],
                         1.0,
                     ];
                     let emissive_strength = obj.emission;

@@ -385,9 +385,9 @@ impl Engine {
             {
                 dir_light_dir = light.direction;
                 dir_light_color = [
-                    light.color[0] / 255.0,
-                    light.color[1] / 255.0,
-                    light.color[2] / 255.0,
+                    light.color[0],
+                    light.color[1],
+                    light.color[2],
                 ];
                 dir_light_intensity = light.intensity;
                 break; // Use first directional light found
@@ -827,9 +827,9 @@ impl Engine {
                     let idx = gpu_materials.len() as u32;
                     gpu_materials.push(GpuMaterial {
                         base_color_factor: [
-                            obj.color[0] / 255.0,
-                            obj.color[1] / 255.0,
-                            obj.color[2] / 255.0,
+                            obj.color[0],
+                            obj.color[1],
+                            obj.color[2],
                             1.0,
                         ],
                         emissive_factor: [0.0; 3],
@@ -1188,9 +1188,9 @@ impl Engine {
                     f0 = [f * f; 3];
                 }
                 let base_color_factor = [
-                    obj.color[0] / 255.0,
-                    obj.color[1] / 255.0,
-                    obj.color[2] / 255.0,
+                    obj.color[0],
+                    obj.color[1],
+                    obj.color[2],
                     1.0,
                 ];
                 let emissive_strength = obj.emission;

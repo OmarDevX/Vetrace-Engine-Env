@@ -2676,9 +2676,9 @@ impl WgpuRenderer {
             is_fisheye: params.is_fisheye,
             _pad0: 0,
             skycolor: [
-                params.skycolor[0] / 255.0,
-                params.skycolor[1] / 255.0,
-                params.skycolor[2] / 255.0,
+                params.skycolor[0],
+                params.skycolor[1],
+                params.skycolor[2],
                 0.0,
             ],
             taa_jitter: [jitter_x, jitter_y],
@@ -2697,9 +2697,9 @@ impl WgpuRenderer {
                 params.dir_light_intensity,
             ],
             dir_light_color: [
-                params.dir_light_color[0] / 255.0,
-                params.dir_light_color[1] / 255.0,
-                params.dir_light_color[2] / 255.0,
+                params.dir_light_color[0],
+                params.dir_light_color[1],
+                params.dir_light_color[2],
                 0.0,
             ],
             sky_occlusion: params.sky_occlusion,
@@ -3146,10 +3146,10 @@ impl WgpuRenderer {
                                                               ops: Operations {
                                                                   load: if self.is_2d {
                                                                       LoadOp::Clear(Color {
-                                                                          r: (params.skycolor[0] / 255.0) as f64,
-                                                                                    g: (params.skycolor[1] / 255.0) as f64,
-                                                                                    b: (params.skycolor[2] / 255.0) as f64,
-                                                                                    a: 1.0,
+                                                                          r: params.skycolor[0] as f64,
+                                                                          g: params.skycolor[1] as f64,
+                                                                          b: params.skycolor[2] as f64,
+                                                                          a: 1.0,
                                                                       })
                                                                   } else {
                                                                       LoadOp::Load
@@ -3189,9 +3189,9 @@ impl WgpuRenderer {
                 dir: [-params.dir_light_dir[0], -params.dir_light_dir[1]],
                 _pad: [0.0; 2],
                 color: [
-                    params.dir_light_color[0] / 255.0,
-                    params.dir_light_color[1] / 255.0,
-                    params.dir_light_color[2] / 255.0,
+                    params.dir_light_color[0],
+                    params.dir_light_color[1],
+                    params.dir_light_color[2],
                 ],
                 intensity: params.dir_light_intensity,
             };

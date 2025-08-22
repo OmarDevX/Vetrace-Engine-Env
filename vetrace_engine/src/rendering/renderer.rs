@@ -374,7 +374,16 @@ impl Renderer {
             gl::Uniform3fv(self.uniforms.camera_velocity, 1, params.velocity.as_ptr());
             gl::Uniform1f(self.uniforms.fov, params.fov);
             gl::Uniform1i(self.uniforms.is_fisheye, params.is_fisheye);
-            gl::Uniform3fv(self.uniforms.skycolor, 1, [params.skycolor[0]/255.0,params.skycolor[1]/255.0,params.skycolor[2]/255.0].as_ptr());
+            gl::Uniform3fv(
+                self.uniforms.skycolor,
+                1,
+                [
+                    params.skycolor[0],
+                    params.skycolor[1],
+                    params.skycolor[2],
+                ]
+                .as_ptr(),
+            );
             let halton = |mut idx: i32, base: i32| -> f32 {
                 let mut f = 1.0f32;
                 let mut r = 0.0f32;

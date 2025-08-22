@@ -721,7 +721,7 @@ vec4 calculateLightContribution(vec3 rayOrigin, vec3 rayDir, inout uint rngState
             }
             vec3 hit_point = rayOrigin + rayDir * closestIntersection;
             vec3 normal = hitNormal;
-            vec3 albedo = objects[closestObjectIndex].color/255.0;
+            vec3 albedo = objects[closestObjectIndex].color;
             float emission = objects[closestObjectIndex].emission;
 
             float roughness = objects[closestObjectIndex].roughness;
