@@ -3,14 +3,14 @@
 //! This example demonstrates the new application framework with the editor plugin.
 //! It shows how to create a simple application that includes the full editor interface.
 
-use vetrace_engine::app::{app, App, InputEvent, plugin::Plugin};
+use vetrace_engine::app::{app, plugin::Plugin, App, InputEvent};
 use vetrace_engine::engine::engine::Engine;
 
 // Import the editor plugin
 extern crate vetrace_editor;
-use vetrace_editor::EditorPlugin;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
+use vetrace_editor::EditorPlugin;
 
 /// Simple demo plugin to show how the plugin system works
 struct DemoPlugin {
@@ -39,7 +39,11 @@ impl Plugin for DemoPlugin {
         Ok(())
     }
 
-    fn update(&mut self, _engine: &mut Engine, _delta_time: f32) -> Result<(), Box<dyn std::error::Error>> {
+    fn update(
+        &mut self,
+        _engine: &mut Engine,
+        _delta_time: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if !self.initialized {
             return Ok(());
         }
@@ -48,7 +52,10 @@ impl Plugin for DemoPlugin {
 
         // Print a message every 300 frames (about every 5 seconds at 60fps)
         if self.frame_count % 300 == 0 {
-            println!("🔌 Demo Plugin: Frame {} - Plugin is running!", self.frame_count);
+            println!(
+                "🔌 Demo Plugin: Frame {} - Plugin is running!",
+                self.frame_count
+            );
         }
 
         Ok(())
@@ -94,7 +101,7 @@ impl App for DemoApp {
     fn setup(&mut self, engine: &mut Engine) {
         println!("🚀 Demo App Setup");
         println!("Engine initialized with app framework!");
-        
+
         // Create a simple scene using the engine's scene API
         // Add a sphere at the origin
         let mut sphere = vetrace_engine::scene::object::Object::default();
@@ -124,16 +131,23 @@ impl App for DemoApp {
         engine.spawn_object(sphere2); // Spawn so the editor can track it
 
         // Set up a camera
-        use vetrace_engine::components::components::{Transform, CameraAttachment, DirectionalLight, FreeFlightControls};
+        use vetrace_engine::components::components::{
+            CameraAttachment, DirectionalLight, FreeFlightControls, PostProcessing, Transform,
+        };
 
         // Create a camera entity
         let camera_entity = engine.world.spawn();
-        engine.world.insert(camera_entity, Transform {
-            position: [0.0, 0.0, 0.0], // Camera at origin looking down positive X
-            orientation: [0.0, 0.0, 0.0, 1.0], // No rotation (identity quaternion)
-            size: [1.0, 1.0, 1.0],
-        });
-        engine.world.insert(camera_entity, CameraAttachment::default());
+        engine.world.insert(
+            camera_entity,
+            Transform {
+                position: [0.0, 0.0, 0.0], // Camera at origin looking down positive X
+                orientation: [0.0, 0.0, 0.0, 1.0], // No rotation (identity quaternion)
+                size: [1.0, 1.0, 1.0],
+            },
+        );
+        engine
+            .world
+            .insert(camera_entity, CameraAttachment::default());
         engine.world.insert(
             camera_entity,
             FreeFlightControls {
@@ -141,13 +155,19 @@ impl App for DemoApp {
                 ..Default::default()
             },
         );
+        engine
+            .world
+            .insert(camera_entity, PostProcessing::default());
 
         // Add directional light for proper lighting
-        engine.world.insert(camera_entity, DirectionalLight {
-            direction: [-1.0, -1.0, -1.0], // Light coming from upper-left
-            color: [255.0, 255.0, 255.0],  // White light
-            intensity: 1.0,                 // Full intensity
-        });
+        engine.world.insert(
+            camera_entity,
+            DirectionalLight {
+                direction: [-1.0, -1.0, -1.0], // Light coming from upper-left
+                color: [255.0, 255.0, 255.0],  // White light
+                intensity: 1.0,                // Full intensity
+            },
+        );
 
         // Add a few more objects to make the scene more interesting for editing
         let mut sphere3 = vetrace_engine::scene::object::Object::default();
@@ -170,7 +190,10 @@ impl App for DemoApp {
         // PBR meshes can be added by creating entities with MeshHandle and PbrMaterial components.
         // This demo focuses on primitive objects which work perfectly with the editor.
 
-        println!("✅ Demo scene created with {} primitive objects and camera", engine.scene.objects.len());
+        println!(
+            "✅ Demo scene created with {} primitive objects and camera",
+            engine.scene.objects.len()
+        );
         println!("🎮 Camera controls: WASD to move, mouse to look, E/Q for up/down");
         println!("🎨 Editor ready: Click objects to select, use gizmos to transform!");
     }
@@ -180,7 +203,11 @@ impl App for DemoApp {
 
         // Print frame info occasionally
         if self.frame_count % 60 == 0 {
-            println!("Frame: {}, Delta: {:.3}ms", self.frame_count, delta_time * 1000.0);
+            println!(
+                "Frame: {}, Delta: {:.3}ms",
+                self.frame_count,
+                delta_time * 1000.0
+            );
         }
     }
 
@@ -201,26 +228,24 @@ impl App for DemoApp {
 
     fn on_input(&mut self, engine: &mut Engine, event: &InputEvent) {
         match event {
-            InputEvent::KeyPressed { key, .. } => {
-                match key.as_str() {
-                    "Space" => {
-                        println!("⏸️  Space pressed - Pause/Resume not implemented in app framework");
-                    }
-                    "r" | "R" => {
-                        println!("🔄 R pressed - Restart not implemented in app framework");
-                    }
-                    "c" | "C" => {
-                        println!("🧹 C pressed - Clear scene");
-                        engine.scene.objects.clear();
-                        engine.scene.bvh_dirty = true;
-                    }
-                    "Escape" => {
-                        println!("👋 ESC pressed - Exiting...");
-                        std::process::exit(0);
-                    }
-                    _ => {}
+            InputEvent::KeyPressed { key, .. } => match key.as_str() {
+                "Space" => {
+                    println!("⏸️  Space pressed - Pause/Resume not implemented in app framework");
                 }
-            }
+                "r" | "R" => {
+                    println!("🔄 R pressed - Restart not implemented in app framework");
+                }
+                "c" | "C" => {
+                    println!("🧹 C pressed - Clear scene");
+                    engine.scene.objects.clear();
+                    engine.scene.bvh_dirty = true;
+                }
+                "Escape" => {
+                    println!("👋 ESC pressed - Exiting...");
+                    std::process::exit(0);
+                }
+                _ => {}
+            },
             InputEvent::MouseMoved { x, y } => {
                 self.last_mouse_pos = (*x, *y);
             }

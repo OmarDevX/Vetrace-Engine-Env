@@ -24,17 +24,15 @@ use crate::engine::core::EngineCore;
 use crate::events::{Event as CustomEvent, LuaEvent, SceneEvents};
 use crate::input::{window::WindowManager, Input};
 use crate::inspector::Inspectable;
-use crate::math::{vec3_to_array, look_at, perspective};
-use crate::rendering::RenderParams;
+use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
 use crate::rendering::EguiRenderer;
+use crate::rendering::RenderParams;
 use crate::rendering::Renderer;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
 use crate::scene::{
-    loader::{
-        save_scene, ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile,
-    },
+    loader::{save_scene, ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile},
     scene::Scene,
 };
 use crate::systems::collision::CollisionEvent;
@@ -64,10 +62,10 @@ impl Default for CameraInfo {
         }
     }
 }
-use crate::systems::audio::AudioSystem;
-use crate::systems::selection::SelectionSystem;
-use crate::systems::gizmo::GizmoSystem;
 use crate::systems::animation::AnimationSystem;
+use crate::systems::audio::AudioSystem;
+use crate::systems::gizmo::GizmoSystem;
+use crate::systems::selection::SelectionSystem;
 // Note: MainWindow and SandboxWindow have been moved to vetrace_editor crate
 use crate::Behaviour;
 
@@ -114,6 +112,8 @@ pub struct Engine {
     pub input: Input,
     pub window: WindowManager,
     pub running: bool,
+    pub sky_color: [f32; 3],
+    pub is_fisheye: bool,
     // Note: sandbox_window moved to vetrace_editor crate
     pub sdl_context: sdl2::Sdl,
     pub egui_ctx: EguiContext,
@@ -147,7 +147,9 @@ pub struct Engine {
     pub started_scripts: std::collections::HashSet<Entity>,
     pub paused: bool,
     pub saved_scene: Option<SceneFile>,
-    pub editor_ui_callback: Option<Box<dyn FnMut(&egui::Context, &mut Engine) -> Result<(), Box<dyn std::error::Error>>>>,
+    pub editor_ui_callback: Option<
+        Box<dyn FnMut(&egui::Context, &mut Engine) -> Result<(), Box<dyn std::error::Error>>>,
+    >,
 }
 
 impl Engine {
@@ -331,7 +333,8 @@ impl Engine {
         // Complete scene update pipeline (from run.rs line 135-141)
         self.update_obj_meshes();
         self.scene.rebuild_from_world(&mut self.world);
-        self.scene.sync_objects_to_world(&mut self.world, &self.core.object_entity_map);
+        self.scene
+            .sync_objects_to_world(&mut self.world, &self.core.object_entity_map);
         self.scene.ensure_bvh();
 
         // Update free flight controls (from run.rs line 86)
@@ -349,9 +352,16 @@ impl Engine {
         static mut DEBUG_COUNTER: u32 = 0;
         unsafe {
             DEBUG_COUNTER += 1;
-            if DEBUG_COUNTER % 300 == 0 { // Print every 5 seconds at 60fps
-                println!("🎥 Camera: pos={:?}, front={:?}, up={:?}, right={:?}, objects={}",
-                    cam.position, cam_front, cam_up, cam_right, self.scene.objects.len());
+            if DEBUG_COUNTER % 300 == 0 {
+                // Print every 5 seconds at 60fps
+                println!(
+                    "🎥 Camera: pos={:?}, front={:?}, up={:?}, right={:?}, objects={}",
+                    cam.position,
+                    cam_front,
+                    cam_up,
+                    cam_right,
+                    self.scene.objects.len()
+                );
                 println!("   Camera orientation quat: {:?}", cam.orientation);
 
                 // Debug object material indices
@@ -369,12 +379,15 @@ impl Engine {
 
         // Find directional light in the world
         for entity in self.world.entities() {
-            if let Some(light) = self.world.get::<crate::components::components::DirectionalLight>(*entity) {
+            if let Some(light) = self
+                .world
+                .get::<crate::components::components::DirectionalLight>(*entity)
+            {
                 dir_light_dir = light.direction;
                 dir_light_color = [
                     light.color[0] / 255.0,
                     light.color[1] / 255.0,
-                    light.color[2] / 255.0
+                    light.color[2] / 255.0,
                 ];
                 dir_light_intensity = light.intensity;
                 break; // Use first directional light found
@@ -398,15 +411,27 @@ impl Engine {
             if DEBUG_COUNTER % 300 == 0 {
                 println!("   Materials: {} total", gpu_materials.len());
                 for (i, mat) in gpu_materials.iter().enumerate() {
-                    println!("   Material {}: base_color={:?}, roughness={}",
-                        i, mat.base_color_factor, mat.roughness_factor);
+                    println!(
+                        "   Material {}: base_color={:?}, roughness={}",
+                        i, mat.base_color_factor, mat.roughness_factor
+                    );
                 }
 
                 // Debug BVH
-                println!("   BVH: {} nodes, dirty={}", self.scene.bvh_nodes.len(), self.scene.bvh_dirty);
-                for (i, node) in self.scene.bvh_nodes.iter().enumerate().take(5) { // Show first 5 nodes
-                    println!("   BVH Node {}: center={:?}, radius={}, children={:?}",
-                        i, &node.center_radius[0..3], node.center_radius[3], node.children);
+                println!(
+                    "   BVH: {} nodes, dirty={}",
+                    self.scene.bvh_nodes.len(),
+                    self.scene.bvh_dirty
+                );
+                for (i, node) in self.scene.bvh_nodes.iter().enumerate().take(5) {
+                    // Show first 5 nodes
+                    println!(
+                        "   BVH Node {}: center={:?}, radius={}, children={:?}",
+                        i,
+                        &node.center_radius[0..3],
+                        node.center_radius[3],
+                        node.children
+                    );
                 }
             }
         }
@@ -431,8 +456,8 @@ impl Engine {
             fov: cam.fov,
             num_objects: gpu_objects.len() as i32,
             current_time: 0.0, // Simplified - no time tracking for app framework
-            skycolor: [30.0, 255.0, 255.0], // Default sky color from run.rs
-            is_fisheye: 0, // Default fisheye disabled
+            skycolor: self.sky_color,
+            is_fisheye: if self.is_fisheye { 1 } else { 0 },
             selected_index: 0, // No selection in app framework
             max_bounces,
             light_samples,
@@ -444,12 +469,15 @@ impl Engine {
                 #[cfg(feature = "wgpu")]
                 {
                     use crate::rendering::wgpu_renderer::OPENGL_TO_WGPU_MATRIX;
-                    let vp = OPENGL_TO_WGPU_MATRIX * perspective(cam.fov, aspect, 0.1, 1000.0) * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
+                    let vp = OPENGL_TO_WGPU_MATRIX
+                        * perspective(cam.fov, aspect, 0.1, 1000.0)
+                        * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
                     vp.inverse().to_cols_array_2d()
                 }
                 #[cfg(not(feature = "wgpu"))]
                 {
-                    let vp = perspective(cam.fov, aspect, 0.1, 1000.0) * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
+                    let vp = perspective(cam.fov, aspect, 0.1, 1000.0)
+                        * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
                     vp.inverse().to_cols_array_2d()
                 }
             },
@@ -481,7 +509,8 @@ impl Engine {
             );
         }
         #[cfg(not(feature = "wgpu"))]
-        self.renderer.update_scene_data(&gpu_objects, &gpu_triangles, &bvh_nodes, &tri_bvh_nodes);
+        self.renderer
+            .update_scene_data(&gpu_objects, &gpu_triangles, &bvh_nodes, &tri_bvh_nodes);
 
         // Render the frame (from run.rs line 407-502)
         #[cfg(feature = "wgpu")]
@@ -567,7 +596,8 @@ impl Engine {
 
                 self.egui_ctx.set_pixels_per_point(pixels_per_point);
                 let mut egui_input = egui::RawInput::default();
-                egui_input.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen_size));
+                egui_input.screen_rect =
+                    Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen_size));
                 egui_input.events = std::mem::take(&mut self.egui_events);
                 egui_input.predicted_dt = 1.0 / 60.0;
                 egui_input.focused = true;
@@ -589,20 +619,23 @@ impl Engine {
 
                 let shapes = full_output.shapes;
                 let textures_delta = full_output.textures_delta;
-                let paint_jobs = self.egui_ctx.tessellate(shapes, self.egui_ctx.pixels_per_point());
+                let paint_jobs = self
+                    .egui_ctx
+                    .tessellate(shapes, self.egui_ctx.pixels_per_point());
 
                 // Render with wgpu including EGUI
                 self.renderer.render(
                     &render_params,
                     &sprite_batches,
                     &pbr_meshes,
-                    Some((&mut self.egui_renderer, &paint_jobs, &textures_delta))
+                    Some((&mut self.egui_renderer, &paint_jobs, &textures_delta)),
                 );
             }
             #[cfg(not(feature = "use_epi"))]
             {
                 // Render with wgpu without EGUI
-                self.renderer.render(&render_params, &sprite_batches, &pbr_meshes, None);
+                self.renderer
+                    .render(&render_params, &sprite_batches, &pbr_meshes, None);
             }
         }
         #[cfg(not(feature = "wgpu"))]
@@ -614,8 +647,11 @@ impl Engine {
         // Handle EGUI rendering for OpenGL (from run.rs line 519-531)
         #[cfg(all(not(feature = "wgpu"), feature = "use_epi"))]
         {
-            let paint_jobs = self.egui_ctx.tessellate(shapes, self.egui_ctx.pixels_per_point());
-            self.egui_renderer.paint_jobs(None, textures_delta, paint_jobs);
+            let paint_jobs = self
+                .egui_ctx
+                .tessellate(shapes, self.egui_ctx.pixels_per_point());
+            self.egui_renderer
+                .paint_jobs(None, textures_delta, paint_jobs);
         }
 
         // Post-render operations (from run.rs line 503-538)
@@ -705,8 +741,11 @@ impl Engine {
             // Render EGUI
             #[cfg(not(feature = "wgpu"))]
             {
-                let paint_jobs = self.egui_ctx.tessellate(shapes, self.egui_ctx.pixels_per_point());
-                self.egui_renderer.paint_jobs(None, textures_delta, paint_jobs);
+                let paint_jobs = self
+                    .egui_ctx
+                    .tessellate(shapes, self.egui_ctx.pixels_per_point());
+                self.egui_renderer
+                    .paint_jobs(None, textures_delta, paint_jobs);
             }
         }
     }
@@ -761,9 +800,7 @@ impl Engine {
                 .core
                 .object_entity_map
                 .get(&(i as u32))
-                .and_then(|&entity| {
-                    self.world.get::<crate::materials::PbrMaterial>(entity)
-                });
+                .and_then(|&entity| self.world.get::<crate::materials::PbrMaterial>(entity));
 
             let idx = if let Some(mat) = entity_mat {
                 // Use material from ECS component
@@ -789,7 +826,12 @@ impl Engine {
                 *mat_map.entry(mat_name.clone()).or_insert_with(|| {
                     let idx = gpu_materials.len() as u32;
                     gpu_materials.push(GpuMaterial {
-                        base_color_factor: [obj.color[0] / 255.0, obj.color[1] / 255.0, obj.color[2] / 255.0, 1.0],
+                        base_color_factor: [
+                            obj.color[0] / 255.0,
+                            obj.color[1] / 255.0,
+                            obj.color[2] / 255.0,
+                            1.0,
+                        ],
                         emissive_factor: [0.0; 3],
                         emissive_strength: 0.0,
                         metallic_factor: 0.0,
@@ -808,8 +850,6 @@ impl Engine {
         // Rebuild GPU objects with updated material indices
         self.scene.gpu_objects = self.scene.objects.iter().map(|o| o.to_gpu()).collect();
     }
-
-
 
     /// Register a named script event for an entity if it doesn't exist.
     pub fn define_signal(&mut self, entity: Entity, name: &str) {
@@ -1025,11 +1065,16 @@ impl Engine {
     /// Build GPU materials and texture handles like the legacy engine does
     /// This is extracted from run.rs lines 142-340
     #[cfg(feature = "wgpu")]
-    fn build_gpu_materials_and_textures(&mut self) -> (Vec<crate::scene::object::GpuMaterial>, Vec<crate::gpu::TextureHandle>) {
-        use std::collections::HashMap;
-        use crate::scene::object::GpuMaterial;
-        use crate::materials::PbrMaterial;
+    fn build_gpu_materials_and_textures(
+        &mut self,
+    ) -> (
+        Vec<crate::scene::object::GpuMaterial>,
+        Vec<crate::gpu::TextureHandle>,
+    ) {
         use crate::gpu::TextureHandle;
+        use crate::materials::PbrMaterial;
+        use crate::scene::object::GpuMaterial;
+        use std::collections::HashMap;
 
         // Assemble GPU materials for every scene object, generating
         // defaults for primitives that lack an explicit `PbrMaterial`

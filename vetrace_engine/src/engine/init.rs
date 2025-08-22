@@ -4,24 +4,24 @@ use crate::ecs::World;
 use crate::engine::core::EngineCore;
 use crate::engine::physics::PhysicsState;
 use crate::events::{Event as CustomEvent, LuaEvent, SceneEvents};
-use crate::input::{Input, window::WindowManager};
+use crate::input::{window::WindowManager, Input};
 use crate::math::vec3_to_array;
-#[cfg(feature = "use_epi")]
-use crate::rendering::EguiRenderer;
-use crate::rendering::Renderer;
 #[cfg(feature = "wgpu")]
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PostFxUniforms;
+#[cfg(feature = "use_epi")]
+use crate::rendering::EguiRenderer;
+use crate::rendering::Renderer;
 use crate::scene::scene::Scene;
 use crate::systems::free_flight::FreeFlightState;
 #[cfg(not(feature = "wgpu"))]
 use crate::systems::sprite_render::SpriteRenderSystem;
 // Note: MainWindow and SandboxWindow have been moved to vetrace_editor crate
+#[cfg(not(feature = "wgpu"))]
+use crate::shared::ShaderVersion;
 use ahash::HashMap;
 use ahash::HashMapExt;
 use egui::Context as EguiContext;
-#[cfg(not(feature = "wgpu"))]
-use crate::shared::ShaderVersion;
 use std::collections::HashSet;
 
 impl Engine {
@@ -45,8 +45,7 @@ impl Engine {
             // even when disabled. Falling back to SDL's X11 backend avoids the
             // "surface already exists" panic that results from attempting to
             // configure a Wayland surface in this state.
-            if std::env::var("WAYLAND_DISPLAY").is_ok()
-                && std::env::var("SDL_VIDEODRIVER").is_err()
+            if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("SDL_VIDEODRIVER").is_err()
             {
                 std::env::set_var("SDL_VIDEODRIVER", "x11");
             }
@@ -88,6 +87,8 @@ impl Engine {
             input,
             window,
             running: true,
+            sky_color: [30.0, 255.0, 255.0],
+            is_fisheye: false,
             // sandbox_window moved to vetrace_editor crate
             egui_ctx,
             #[cfg(feature = "use_epi")]

@@ -1,17 +1,17 @@
+use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
-use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
-use crate::Behaviour;
 use crate::components::components::ObjectRef;
 use crate::components::components::Sprite3D;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
-use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::{PbrRenderData, SpriteRenderData};
+use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
 #[cfg(not(feature = "wgpu"))]
 use crate::systems::sprite_render::SpriteRenderSystem;
+use crate::Behaviour;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -349,8 +349,8 @@ impl Engine {
                 fov: cam.fov,
                 num_objects: gpu_objects.len() as i32,
                 current_time: (now - start_time).as_secs_f32(),
-                skycolor: [30.0, 255.0, 255.0], // Default sky color (moved from sandbox_window)
-                is_fisheye: 0, // Default fisheye disabled (moved from sandbox_window)
+                skycolor: self.sky_color,
+                is_fisheye: if self.is_fisheye { 1 } else { 0 },
                 selected_index: 0, // No selection (moved to editor plugin)
                 max_bounces,
                 light_samples,

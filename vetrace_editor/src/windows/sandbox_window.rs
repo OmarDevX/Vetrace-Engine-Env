@@ -1,5 +1,5 @@
-use vetrace_engine::{engine::engine::Engine, scene::object::Object};
 use egui::{Context, Slider, TextEdit, Ui};
+use vetrace_engine::{engine::engine::Engine, scene::object::Object};
 
 /// Simple sandbox window for spawning objects and tweaking basic settings.
 #[derive(Clone)]
@@ -39,7 +39,10 @@ impl SandboxWindow {
             for i in 0..3 {
                 ui.horizontal(|ui| {
                     ui.label(["Position X", "Position Y", "Position Z"][i]);
-                    ui.add(TextEdit::singleline(&mut self.new_object_position_str[i]).desired_width(60.0));
+                    ui.add(
+                        TextEdit::singleline(&mut self.new_object_position_str[i])
+                            .desired_width(60.0),
+                    );
                 });
             }
 
@@ -47,7 +50,10 @@ impl SandboxWindow {
                 for i in 0..3 {
                     ui.horizontal(|ui| {
                         ui.label(["Size X", "Size Y", "Size Z"][i]);
-                        ui.add(TextEdit::singleline(&mut self.new_object_size_str[i]).desired_width(60.0));
+                        ui.add(
+                            TextEdit::singleline(&mut self.new_object_size_str[i])
+                                .desired_width(60.0),
+                        );
                     });
                 }
             }
@@ -58,7 +64,9 @@ impl SandboxWindow {
             if ui.button("Add Object").clicked() {
                 let mut new_object = self.new_object.clone();
                 for i in 0..3 {
-                    new_object.position[i] = self.new_object_position_str[i].parse::<f32>().unwrap_or(0.0);
+                    new_object.position[i] = self.new_object_position_str[i]
+                        .parse::<f32>()
+                        .unwrap_or(0.0);
                     if new_object.is_cube {
                         new_object.size[i] = self.new_object_size_str[i]
                             .parse::<f32>()
@@ -78,4 +86,14 @@ impl Default for SandboxWindow {
     }
 }
 
-impl crate::EditorWindow for SandboxWindow {}
+impl crate::EditorWindow for SandboxWindow {
+    fn update(
+        &mut self,
+        engine: &mut Engine,
+        _delta_time: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        engine.sky_color = self.skycolor;
+        engine.is_fisheye = self.is_fisheye;
+        Ok(())
+    }
+}

@@ -3,6 +3,7 @@
 //! This module provides a clean application framework similar to Bevy's App system,
 //! allowing users to create applications without dealing with engine internals.
 
+use crate::ecs::behaviour::Behaviour;
 use crate::ecs::World;
 use crate::engine::engine::Engine;
 use std::any::{Any, TypeId};
@@ -159,6 +160,15 @@ impl AppBuilder {
         // Call app setup
         app.setup(&mut engine);
 
+        // Start engine behaviours and component behaviours so systems like
+        // post-processing run when using the app framework
+        let mut behaviours = std::mem::take(&mut engine.behaviours);
+        for b in behaviours.iter_mut() {
+            b.start(&mut engine);
+        }
+        engine.behaviours = behaviours;
+        engine.start_component_behaviours();
+
         // Main application loop
         let mut last_time = std::time::Instant::now();
 
@@ -262,6 +272,15 @@ impl AppBuilder {
 
             // Update plugins
             plugin_manager.update_plugins(&mut engine, delta_time)?;
+
+            // Update engine behaviours and component behaviours so component
+            // changes (like PostProcessing) take effect
+            engine.update_component_behaviours(delta_time);
+            let mut behaviours = std::mem::take(&mut engine.behaviours);
+            for b in behaviours.iter_mut() {
+                b.update(&mut engine, delta_time);
+            }
+            engine.behaviours = behaviours;
 
             // Update application
             app.update(&mut engine, delta_time);
