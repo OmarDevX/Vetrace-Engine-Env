@@ -62,7 +62,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let world_pos = SDF_MIN + rel * SDF_SIZE;
     var rad = vec3<f32>(0.0);
     if (params.dir_light_dir.w > 0.0 && visible_to_light(world_pos)) {
-        // dir_light_color now holds raw 0-255 values; apply intensity directly
         rad = params.dir_light_color.xyz * params.dir_light_dir.w;
     }
     textureStore(radiance_tex, vec3<i32>(id), vec4<f32>(rad, 0.0));

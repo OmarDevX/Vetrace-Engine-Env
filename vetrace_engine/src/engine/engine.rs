@@ -827,9 +827,9 @@ impl Engine {
                     let idx = gpu_materials.len() as u32;
                     gpu_materials.push(GpuMaterial {
                         base_color_factor: [
-                            obj.color[0],
-                            obj.color[1],
-                            obj.color[2],
+                            obj.color[0] / 255.0,
+                            obj.color[1] / 255.0,
+                            obj.color[2] / 255.0,
                             1.0,
                         ],
                         emissive_factor: [0.0; 3],
@@ -1188,9 +1188,9 @@ impl Engine {
                     f0 = [f * f; 3];
                 }
                 let base_color_factor = [
-                    obj.color[0],
-                    obj.color[1],
-                    obj.color[2],
+                    obj.color[0] / 255.0,
+                    obj.color[1] / 255.0,
+                    obj.color[2] / 255.0,
                     1.0,
                 ];
                 let emissive_strength = obj.emission;
