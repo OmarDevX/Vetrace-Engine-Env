@@ -2296,7 +2296,9 @@ impl Inspectable for PostProcessing {
 
     fn draw_ui(&mut self, ui: &mut egui::Ui) {
         ui.label("Exposure");
-        ui.add(egui::Slider::new(&mut self.exposure, 0.0..=5.0));
+        // Allow a wider exposure range so scenes can be brightened
+        // sufficiently when default lighting feels too dim.
+        ui.add(egui::Slider::new(&mut self.exposure, 0.0..=20.0));
         ui.checkbox(&mut self.auto_exposure, "Auto Exposure");
         ui.checkbox(&mut self.atmosphere, "Atmosphere");
 

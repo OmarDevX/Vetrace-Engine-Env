@@ -101,6 +101,8 @@ impl App for DemoApp {
     fn setup(&mut self, engine: &mut Engine) {
         println!("🚀 Demo App Setup");
         println!("Engine initialized with app framework!");
+        // Use a bright sky by default so colors appear vivid like other examples
+        engine.sky_color = [255.0, 255.0, 255.0];
 
         // Create a simple scene using the engine's scene API
         // Add a sphere at the origin
@@ -155,9 +157,14 @@ impl App for DemoApp {
                 ..Default::default()
             },
         );
-        engine
-            .world
-            .insert(camera_entity, PostProcessing::default());
+        // Enable post-processing with automatic exposure so lighting isn't overly dim
+        engine.world.insert(
+            camera_entity,
+            PostProcessing {
+                auto_exposure: true,
+                ..Default::default()
+            },
+        );
 
         // Add directional light for proper lighting
         engine.world.insert(
