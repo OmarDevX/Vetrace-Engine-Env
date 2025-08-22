@@ -14,7 +14,7 @@ use transform_gizmo_egui::config::TransformPivotPoint;
 use transform_gizmo_egui::GizmoExt;
 use mint::{Vector3, Quaternion};
 
-use crate::windows::EditorGizmoMode;
+use vetrace_engine::systems::gizmo::EditorGizmoMode;
 
 /// Gizmo plugin for transform manipulation
 pub struct GizmoPlugin {
