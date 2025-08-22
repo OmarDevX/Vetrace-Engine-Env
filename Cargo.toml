@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "vetrace_engine",
-    "vetrace_engine/vetrace_editor",
+    "vetrace_editor",
 ]
 resolver = "2"
 

@@ -3877,7 +3877,6 @@ dependencies = [
 [[package]]
 name = "vetrace_engine_macros"
 version = "0.1.0"
-source = "git+https://github.com/OmarDevX/Vetracer-Engine-Macros?branch=master#c36289d8f3216eaa20aa1a1c9a003149fac149bd"
 dependencies = [
  "proc-macro2",
  "quote",
