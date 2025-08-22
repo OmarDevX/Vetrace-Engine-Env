@@ -441,10 +441,44 @@ impl Engine {
         let bvh_nodes = self.scene.get_bvh_nodes();
         let tri_bvh_nodes = self.scene.get_tri_bvh_nodes();
 
-        // Get rendering settings (from run.rs line 171-341)
-        let max_bounces = 8; // Default value
-        let light_samples = 1; // Default value
-        let dir_light_samples = 1; // Default value
+        // Gather atmosphere data so the renderer can apply scattering
+        let atmos = self.scene.get_gpu_atmospheres().to_vec();
+        let have_atmos = !atmos.is_empty();
+
+        // Get rendering settings from the active camera's PostProcessing component
+        let mut gi_quality = 0u32;
+        let mut gi_debug_mode = 0u32;
+        let mut gi_mode = 0u32;
+        let mut light_samples = 1i32;
+        let mut dir_light_samples = 1i32;
+        let mut max_bounces = 3i32;
+        let mut dof_aperture = 0.0f32;
+        let mut dof_focus_dist = 0.0f32;
+        let mut dof_enable = 0u32;
+        let mut atmosphere = true;
+        for (ent, _cam_att) in self
+            .world
+            .query::<crate::components::components::CameraAttachment>()
+        {
+            if let Some(pp) = self
+                .world
+                .get::<crate::components::components::PostProcessing>(ent)
+            {
+                gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
+                gi_debug_mode = pp.gi_debug_mode;
+                gi_mode = if pp.path_traced_gi { 1 } else { 0 };
+                light_samples = pp.light_samples as i32;
+                dir_light_samples = pp.dir_light_samples as i32;
+                max_bounces = pp.max_bounces as i32;
+                atmosphere = pp.atmosphere;
+                if let Some(d) = &pp.dof {
+                    dof_enable = 1;
+                    dof_aperture = d.aperture();
+                    dof_focus_dist = d.focal_depth;
+                }
+            }
+            break;
+        }
 
         // Create render parameters (from run.rs line 343-394)
         let render_params = RenderParams {
@@ -474,9 +508,9 @@ impl Engine {
                 vp.inverse().to_cols_array_2d()
             },
             prev_view_proj: [[0.0; 4]; 4], // Simplified for app framework
-            gi_quality: 1,
-            gi_debug_mode: 0,
-            gi_mode: 0,
+            gi_quality,
+            gi_debug_mode,
+            gi_mode,
             dir_light_dir,
             dir_light_color: [
                 dir_light_color[0] / 255.0,
@@ -484,12 +518,12 @@ impl Engine {
                 dir_light_color[2] / 255.0,
             ],
             dir_light_intensity,
-            sky_occlusion: 0.1,
-            dof_aperture: 0.0,
-            dof_focus_dist: 10.0,
-            dof_enable: 0,
-            atmos: Vec::new(),
-            atmosphere: 0,
+            sky_occlusion: 0.0,
+            dof_aperture,
+            dof_focus_dist,
+            dof_enable,
+            atmos,
+            atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
         };
 
         // Update renderer with scene data (from run.rs line 395-406)
