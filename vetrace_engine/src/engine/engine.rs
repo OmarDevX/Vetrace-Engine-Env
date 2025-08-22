@@ -469,21 +469,9 @@ impl Engine {
             inv_view_proj: {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
-                // Apply WGPU coordinate system conversion like the renderer does
-                #[cfg(feature = "wgpu")]
-                {
-                    use crate::rendering::wgpu_renderer::OPENGL_TO_WGPU_MATRIX;
-                    let vp = OPENGL_TO_WGPU_MATRIX
-                        * perspective(cam.fov, aspect, 0.1, 1000.0)
-                        * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
-                    vp.inverse().to_cols_array_2d()
-                }
-                #[cfg(not(feature = "wgpu"))]
-                {
-                    let vp = perspective(cam.fov, aspect, 0.1, 1000.0)
-                        * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
-                    vp.inverse().to_cols_array_2d()
-                }
+                let vp = perspective(cam.fov, aspect, 0.1, 1000.0)
+                    * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
+                vp.inverse().to_cols_array_2d()
             },
             prev_view_proj: [[0.0; 4]; 4], // Simplified for app framework
             gi_quality: 1,
