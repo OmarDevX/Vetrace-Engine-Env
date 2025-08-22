@@ -37,7 +37,7 @@ impl GizmoPlugin {
             return false;
         }
         
-        // Get camera matrices (this would need to be implemented in the engine)
+        // Get camera matrices from the active engine camera
         let view = self.get_view_matrix(engine);
         let proj = self.get_projection_matrix(engine);
         let viewport = self.get_viewport(engine);
@@ -69,24 +69,34 @@ impl GizmoPlugin {
         
         for &entity in selected_entities {
             if let Some(transform) = engine.world.get::<Transform>(entity) {
+                // Prefer global transform if available so gizmos match world space
+                let (position, orientation, scale) = if let Some(global) = engine
+                    .world
+                    .get::<vetrace_engine::components::components::GlobalTransform>(entity)
+                {
+                    (global.position, global.orientation, global.size)
+                } else {
+                    (transform.position, transform.orientation, transform.size)
+                };
+
                 let gizmo_transform = GizmoTransform {
                     translation: Vector3 {
-                        x: transform.position[0] as f64,
-                        y: transform.position[1] as f64,
-                        z: transform.position[2] as f64
+                        x: position[0] as f64,
+                        y: position[1] as f64,
+                        z: position[2] as f64,
                     },
                     rotation: Quaternion {
-                        s: transform.orientation[3] as f64, // w component
+                        s: orientation[3] as f64, // w component
                         v: Vector3 {
-                            x: transform.orientation[0] as f64,
-                            y: transform.orientation[1] as f64,
-                            z: transform.orientation[2] as f64
-                        }
+                            x: orientation[0] as f64,
+                            y: orientation[1] as f64,
+                            z: orientation[2] as f64,
+                        },
                     },
                     scale: Vector3 {
-                        x: transform.size[0] as f64,
-                        y: transform.size[1] as f64,
-                        z: transform.size[2] as f64
+                        x: scale[0] as f64,
+                        y: scale[1] as f64,
+                        z: scale[2] as f64,
                     },
                 };
                 targets.push(gizmo_transform);
@@ -154,28 +164,20 @@ impl GizmoPlugin {
         gizmo_hovered
     }
     
-    /// Get the view matrix from the engine
+    /// Get the view matrix from the engine's active camera
     fn get_view_matrix(&self, engine: &Engine) -> Mat4 {
-        // This would need to be implemented to get the actual camera view matrix
-        // For now, return a default view matrix
-        look_at(
-            &Vec3::new(0.0, 0.0, 5.0),  // eye
-            &Vec3::new(0.0, 0.0, 0.0),  // target
-            &Vec3::new(0.0, 1.0, 0.0),  // up
-        )
+        let cam = engine.active_camera_info();
+        let eye = cam.position;
+        let front = cam.orientation * Vec3::X;
+        let up = cam.orientation * Vec3::Y;
+        look_at(&eye, &(eye + front), &up)
     }
-    
-    /// Get the projection matrix from the engine
+
+    /// Get the projection matrix from the engine's active camera
     fn get_projection_matrix(&self, engine: &Engine) -> Mat4 {
-        // This would need to be implemented to get the actual camera projection matrix
-        // For now, return a default perspective matrix
+        let cam = engine.active_camera_info();
         let (width, height) = engine.window.window.size();
-        perspective(
-            45.0_f32.to_radians(),
-            width as f32 / height as f32,
-            0.1,
-            1000.0,
-        )
+        perspective(cam.fov, width as f32 / height as f32, 0.1, 1000.0)
     }
     
     /// Get the viewport from the engine
