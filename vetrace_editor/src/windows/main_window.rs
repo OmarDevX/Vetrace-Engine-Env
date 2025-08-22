@@ -405,7 +405,7 @@ impl MainWindow {
                                         let _ = engine.load_scene(scene);
                                     } else if let Ok(prefab) = vetrace_engine::Prefab::load(&path_str) {
                                         engine.clear_scene();
-                                        let _ = engine.load_scene(prefab.scene);
+                                        let _ = engine.load_scene(prefab.into_scene());
                                     }
                                 }
                             }
