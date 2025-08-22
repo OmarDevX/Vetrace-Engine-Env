@@ -156,26 +156,18 @@ impl GizmoPlugin {
     
     /// Get the view matrix from the engine
     fn get_view_matrix(&self, engine: &Engine) -> Mat4 {
-        // This would need to be implemented to get the actual camera view matrix
-        // For now, return a default view matrix
-        look_at(
-            &Vec3::new(0.0, 0.0, 5.0),  // eye
-            &Vec3::new(0.0, 0.0, 0.0),  // target
-            &Vec3::new(0.0, 1.0, 0.0),  // up
-        )
+        let cam = engine.active_camera_info();
+        let eye = cam.position;
+        let front = cam.orientation * Vec3::Z;
+        let up = cam.orientation * Vec3::Y;
+        look_at(&eye, &(eye + front), &up)
     }
-    
+
     /// Get the projection matrix from the engine
     fn get_projection_matrix(&self, engine: &Engine) -> Mat4 {
-        // This would need to be implemented to get the actual camera projection matrix
-        // For now, return a default perspective matrix
+        let cam = engine.active_camera_info();
         let (width, height) = engine.window.window.size();
-        perspective(
-            45.0_f32.to_radians(),
-            width as f32 / height as f32,
-            0.1,
-            1000.0,
-        )
+        perspective(cam.fov, width as f32 / height as f32, 0.1, 1000.0)
     }
     
     /// Get the viewport from the engine

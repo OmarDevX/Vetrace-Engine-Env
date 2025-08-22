@@ -33,11 +33,13 @@ impl FreeFlightState {
     for (entity, transform, controls) in query.iter_mut() {
         let has_lookat = lookat_entities.contains(entity);
         
-        let mut q = Quat::from_rotation_y(-controls.yaw.to_radians())
-            * Quat::from_rotation_x(-controls.pitch.to_radians()); // Fixed: pitch around X-axis, negated for correct direction
-            
+        // Build orientation from yaw (around Y) and pitch (around X)
+        let mut q =
+            Quat::from_rotation_y(controls.yaw.to_radians()) *
+            Quat::from_rotation_x(controls.pitch.to_radians());
+
         if has_lookat {
-            // When LookAt is present...
+            // When LookAt is present, preserve the existing transform orientation
             q = Quat::from_xyzw(
                 transform.orientation[0],
                 transform.orientation[1],
@@ -45,9 +47,11 @@ impl FreeFlightState {
                 transform.orientation[3],
             );
         }
-            let front = q * Vec3::X;
+
+            // Derive basis vectors from orientation (Z-forward, Y-up, X-right)
+            let front = q * Vec3::Z;
             let up = q * Vec3::Y;
-            let right = q * Vec3::Z;
+            let right = q * Vec3::X;
             let mut moving = false;
             if input.is_mouse_button_down(MouseButton::Right) {
                 if input.is_key_down(Keycode::W) {
@@ -99,7 +103,8 @@ impl FreeFlightState {
                     self.first_mouse = false;
                 }
                 let xoffset = (mouse_x - self.last_mouse_x) as f32;
-                let yoffset = (mouse_y - self.last_mouse_y) as f32; // Fixed: inverted Y axis
+                // Invert Y so moving mouse up results in positive pitch
+                let yoffset = (self.last_mouse_y - mouse_y) as f32;
                 self.last_mouse_x = mouse_x;
                 self.last_mouse_y = mouse_y;
                 controls.yaw_velocity += xoffset * controls.sensitivity;

@@ -76,10 +76,12 @@ impl WindowManager {
         let (w, h) = self.window.drawable_size();
         (w as i32, h as i32)
     }
-    /// Resize the window and update the OpenGL viewport.
+    /// Resize the window and update the viewport. Handles both WGPU and OpenGL backends.
     pub fn resize(&mut self, width: i32, height: i32) {
         self.width = width.max(1) as u32;
         self.height = height.max(1) as u32;
+        // Update actual window size; ignore errors since SDL may reject identical sizes
+        let _ = self.window.set_size(self.width, self.height);
         #[cfg(not(feature = "wgpu"))]
         unsafe {
             gl::Viewport(0, 0, self.width as i32, self.height as i32);
