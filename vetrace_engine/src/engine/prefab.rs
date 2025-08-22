@@ -23,4 +23,9 @@ impl Prefab {
         };
         Ok(Self { scene })
     }
+
+    /// Consume the prefab and return the underlying [`SceneFile`].
+    pub fn into_scene(self) -> SceneFile {
+        self.scene
+    }
 }

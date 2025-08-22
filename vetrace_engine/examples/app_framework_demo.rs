@@ -103,7 +103,7 @@ impl App for DemoApp {
         sphere.color = [255.0, 128.0, 51.0]; // Orange (0-255 range)
         sphere.roughness = 0.3;
         sphere.is_cube = false; // Ensure it's a sphere
-        engine.scene.add_object(sphere); // Use proper API that marks BVH as dirty
+        engine.spawn_object(sphere); // Spawn so the editor can track it
 
         // Add a cube to the right
         let mut cube = vetrace_engine::scene::object::Object::default();
@@ -112,7 +112,7 @@ impl App for DemoApp {
         cube.is_cube = true;
         cube.color = [51.0, 204.0, 76.0]; // Green (0-255 range)
         cube.roughness = 0.1;
-        engine.scene.add_object(cube); // Use proper API that marks BVH as dirty
+        engine.spawn_object(cube); // Spawn so the editor can track it
 
         // Add a third object for variety
         let mut sphere2 = vetrace_engine::scene::object::Object::default();
@@ -121,7 +121,7 @@ impl App for DemoApp {
         sphere2.color = [204.0, 51.0, 204.0]; // Purple (0-255 range)
         sphere2.roughness = 0.5;
         sphere2.is_cube = false;
-        engine.scene.add_object(sphere2); // Use proper API that marks BVH as dirty
+        engine.spawn_object(sphere2); // Spawn so the editor can track it
 
         // Set up a camera
         use vetrace_engine::components::components::{Transform, CameraAttachment, DirectionalLight, FreeFlightControls};
@@ -134,7 +134,13 @@ impl App for DemoApp {
             size: [1.0, 1.0, 1.0],
         });
         engine.world.insert(camera_entity, CameraAttachment::default());
-        engine.world.insert(camera_entity, FreeFlightControls::default());
+        engine.world.insert(
+            camera_entity,
+            FreeFlightControls {
+                yaw: 0.0, // Face down +X to match scene orientation
+                ..Default::default()
+            },
+        );
 
         // Add directional light for proper lighting
         engine.world.insert(camera_entity, DirectionalLight {
@@ -150,7 +156,7 @@ impl App for DemoApp {
         sphere3.color = [255.0, 255.0, 51.0]; // Yellow
         sphere3.roughness = 0.2;
         sphere3.is_cube = false;
-        engine.scene.add_object(sphere3);
+        engine.spawn_object(sphere3);
 
         let mut cube2 = vetrace_engine::scene::object::Object::default();
         cube2.position = [0.0, -1.0, 2.0]; // Below and forward
@@ -158,7 +164,7 @@ impl App for DemoApp {
         cube2.is_cube = true;
         cube2.color = [51.0, 255.0, 255.0]; // Cyan
         cube2.roughness = 0.7;
-        engine.scene.add_object(cube2);
+        engine.spawn_object(cube2);
 
         // Note: The app framework supports both primitive objects AND PBR meshes!
         // PBR meshes can be added by creating entities with MeshHandle and PbrMaterial components.

@@ -1,4 +1,4 @@
-use crate::components::components::{FreeFlightControls, Transform, LookAt};
+use crate::components::components::{FreeFlightControls, LookAt, Transform};
 use crate::ecs::World;
 use crate::input::Input;
 use glam::{Quat, Vec3};
@@ -21,31 +21,31 @@ impl FreeFlightState {
     }
 
     pub fn update(&mut self, world: &mut World, input: &Input, delta_time: f32) {
-    // First collect all entities with LookAt
-    let lookat_entities: std::collections::HashSet<_> = world
-        .query::<LookAt>()
-        .iter()
-        .map(|(entity, _)| *entity)
-        .collect();
+        // First collect all entities with LookAt
+        let lookat_entities: std::collections::HashSet<_> = world
+            .query::<LookAt>()
+            .iter()
+            .map(|(entity, _)| *entity)
+            .collect();
 
-    // Then do mutable query
-    let mut query = world.query2_mut::<Transform, FreeFlightControls>();
-    for (entity, transform, controls) in query.iter_mut() {
-        let has_lookat = lookat_entities.contains(entity);
-        
-        // Build orientation from yaw (around Y axis) and pitch (around right axis)
-        let mut q = Quat::from_rotation_y(-controls.yaw.to_radians())
-            * Quat::from_rotation_z(-controls.pitch.to_radians());
-            
-        if has_lookat {
-            // When LookAt is present...
-            q = Quat::from_xyzw(
-                transform.orientation[0],
-                transform.orientation[1],
-                transform.orientation[2],
-                transform.orientation[3],
-            );
-        }
+        // Then do mutable query
+        let mut query = world.query2_mut::<Transform, FreeFlightControls>();
+        for (entity, transform, controls) in query.iter_mut() {
+            let has_lookat = lookat_entities.contains(entity);
+
+            // Build orientation from yaw (around Y axis) and pitch (around right axis)
+            let mut q = Quat::from_rotation_y(-controls.yaw.to_radians())
+                * Quat::from_rotation_z(-controls.pitch.to_radians());
+
+            if has_lookat {
+                // When LookAt is present...
+                q = Quat::from_xyzw(
+                    transform.orientation[0],
+                    transform.orientation[1],
+                    transform.orientation[2],
+                    transform.orientation[3],
+                );
+            }
             let front = q * Vec3::X;
             let up = q * Vec3::Y;
             let right = q * Vec3::Z;
@@ -100,7 +100,7 @@ impl FreeFlightState {
                     self.first_mouse = false;
                 }
                 let xoffset = (mouse_x - self.last_mouse_x) as f32;
-                let yoffset = (mouse_y - self.last_mouse_y) as f32; // Fixed: inverted Y axis
+                let yoffset = (self.last_mouse_y - mouse_y) as f32; // Positive when moving up
                 self.last_mouse_x = mouse_x;
                 self.last_mouse_y = mouse_y;
                 controls.yaw_velocity += xoffset * controls.sensitivity;
@@ -165,7 +165,7 @@ impl FreeFlightState {
             transform.position[2] += controls.velocity[2] * delta_time;
 
             if !has_lookat {
-                        transform.orientation = [q.x, q.y, q.z, q.w];
+                transform.orientation = [q.x, q.y, q.z, q.w];
             }
         }
     }
