@@ -4,7 +4,7 @@
 
 use vetrace_engine::app::plugin::Plugin;
 use vetrace_engine::engine::engine::Engine;
-use vetrace_engine::components::components::{ObjectRef, Transform};
+use vetrace_engine::components::components::Transform;
 use vetrace_engine::math::{look_at, perspective};
 use glam::{Mat4, Vec3, Quat};
 use transform_gizmo_egui::math::Transform as GizmoTransform;
@@ -120,9 +120,6 @@ impl GizmoPlugin {
                     for (i, new_transform) in new_transforms.iter().enumerate() {
                         if i < selected_entities.len() {
                             let entity = selected_entities[i];
-                            
-                            // Get object reference id before mutable borrow
-                            let obj_ref_id = engine.world.get::<ObjectRef>(entity).map(|obj_ref| obj_ref.id);
 
                             if let Some(mut transform) = engine.world.get_mut::<Transform>(entity) {
                                 transform.position = [
@@ -145,14 +142,8 @@ impl GizmoPlugin {
                                     new_transform.scale.z as f32,
                                 ];
 
-                                // Update object position if it has an ObjectRef
-                                if let Some(obj_id) = obj_ref_id {
-                                    if let Some(obj) = engine.scene.objects.get_mut(obj_id as usize) {
-                                        obj.position = transform.position;
-                                        obj.orientation = transform.orientation;
-                                        obj.scale = transform.size;
-                                    }
-                                }
+                                // Mark BVH dirty so raytracing bounds rebuild after gizmo edits
+                                engine.scene.bvh_dirty = true;
                             }
                         }
                     }
