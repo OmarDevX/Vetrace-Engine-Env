@@ -188,12 +188,12 @@ impl GizmoPlugin {
     
     /// Convert Mat4 to row-major matrix for gizmo
     fn mat4_to_row(m: Mat4) -> mint::RowMatrix4<f64> {
-        let arr = m.to_cols_array_2d();
+        let arr = m.to_cols_array();
         mint::RowMatrix4 {
-            x: mint::Vector4 { x: arr[0][0] as f64, y: arr[0][1] as f64, z: arr[0][2] as f64, w: arr[0][3] as f64 },
-            y: mint::Vector4 { x: arr[1][0] as f64, y: arr[1][1] as f64, z: arr[1][2] as f64, w: arr[1][3] as f64 },
-            z: mint::Vector4 { x: arr[2][0] as f64, y: arr[2][1] as f64, z: arr[2][2] as f64, w: arr[2][3] as f64 },
-            w: mint::Vector4 { x: arr[3][0] as f64, y: arr[3][1] as f64, z: arr[3][2] as f64, w: arr[3][3] as f64 },
+            x: mint::Vector4 { x: arr[0] as f64, y: arr[4] as f64, z: arr[8] as f64, w: arr[12] as f64 },
+            y: mint::Vector4 { x: arr[1] as f64, y: arr[5] as f64, z: arr[9] as f64, w: arr[13] as f64 },
+            z: mint::Vector4 { x: arr[2] as f64, y: arr[6] as f64, z: arr[10] as f64, w: arr[14] as f64 },
+            w: mint::Vector4 { x: arr[3] as f64, y: arr[7] as f64, z: arr[11] as f64, w: arr[15] as f64 },
         }
     }
 }
