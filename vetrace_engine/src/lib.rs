@@ -34,6 +34,10 @@ pub use input::Input;
 pub mod math;
 pub mod materials;
 pub mod gpu;
+pub mod lod;
+pub use lod::{
+    AutoLod, AutoLodProcessor, LodLevel, LodSettings, LodStats, MeshData, SimplifiedMesh,
+};
 
 // Legacy modules (for migration)
 pub mod scene {
