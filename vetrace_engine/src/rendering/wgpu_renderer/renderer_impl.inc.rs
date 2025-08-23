@@ -1898,6 +1898,13 @@ impl WgpuRenderer {
             prev_cam_up: [0.0; 3],
             prev_cam_right: [0.0; 3],
             prev_num_objects: 0,
+            prev_shader_params: None,
+            prev_gi_params: None,
+            prev_blit_params: None,
+            prev_post_fx_uniforms: None,
+            prev_sprite_view_proj: None,
+            prev_light_data: None,
+            sprite_vertices_cache: Vec::new(),
         }
     }
 
@@ -2720,21 +2727,33 @@ impl WgpuRenderer {
                 arr
             },
         };
-        self.queue
-        .write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&shader_params));
+        if self.prev_shader_params.map_or(true, |p| p != shader_params) {
+            self.queue
+                .write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&shader_params));
+            self.prev_shader_params = Some(shader_params);
+        }
         let gi_params = GiParams {
             quality: params.gi_quality,
             debug_mode: params.gi_debug_mode,
             mode: params.gi_mode,
             _pad: 0,
         };
-        self.queue
-        .write_buffer(&self.gi_params_buffer, 0, bytemuck::bytes_of(&gi_params));
-        self.queue.write_buffer(
-            &self.postfx_buffer,
-            0,
-            bytemuck::bytes_of(&self.post_fx_uniforms),
-        );
+        if self.prev_gi_params.map_or(true, |p| p != gi_params) {
+            self.queue
+                .write_buffer(&self.gi_params_buffer, 0, bytemuck::bytes_of(&gi_params));
+            self.prev_gi_params = Some(gi_params);
+        }
+        if self
+            .prev_post_fx_uniforms
+            .map_or(true, |p| p != self.post_fx_uniforms)
+        {
+            self.queue.write_buffer(
+                &self.postfx_buffer,
+                0,
+                bytemuck::bytes_of(&self.post_fx_uniforms),
+            );
+            self.prev_post_fx_uniforms = Some(self.post_fx_uniforms);
+        }
         let blit_params = BlitParams {
             camera_pos: [
                 params.camera_pos[0],
@@ -2747,11 +2766,14 @@ impl WgpuRenderer {
             taa_jitter: [jitter_x, jitter_y],
             prev_taa_jitter: prev_jitter,
         };
-        self.queue.write_buffer(
-            &self.blit_params_buffer,
-            0,
-            bytemuck::bytes_of(&blit_params),
-        );
+        if self.prev_blit_params.map_or(true, |p| p != blit_params) {
+            self.queue.write_buffer(
+                &self.blit_params_buffer,
+                0,
+                bytemuck::bytes_of(&blit_params),
+            );
+            self.prev_blit_params = Some(blit_params);
+        }
 
         // Update sprite uniform buffers
         let cam_pos = Vec3::from(params.camera_pos);
@@ -2785,11 +2807,18 @@ impl WgpuRenderer {
             * perspective(params.fov, aspect, 0.1, 1000.0)
             * look_at(&cam_pos, &(cam_pos + cam_front), &cam_up)
         };
-        self.queue.write_buffer(
-            &self.sprite_view_proj_buffer,
-            0,
-            bytemuck::cast_slice(&view_proj.to_cols_array()),
-        );
+        let view_proj_arr = view_proj.to_cols_array();
+        if self
+            .prev_sprite_view_proj
+            .map_or(true, |p| p != view_proj_arr)
+        {
+            self.queue.write_buffer(
+                &self.sprite_view_proj_buffer,
+                0,
+                bytemuck::cast_slice(&view_proj_arr),
+            );
+            self.prev_sprite_view_proj = Some(view_proj_arr);
+        }
 
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
@@ -3195,8 +3224,11 @@ impl WgpuRenderer {
                 ],
                 intensity: params.dir_light_intensity,
             };
-            self.queue
-            .write_buffer(&self.light_buffer, 0, bytemuck::bytes_of(&light_data));
+            if self.prev_light_data.map_or(true, |p| p != light_data) {
+                self.queue
+                    .write_buffer(&self.light_buffer, 0, bytemuck::bytes_of(&light_data));
+                self.prev_light_data = Some(light_data);
+            }
             let sprite_stride = (6 * std::mem::size_of::<[f32; 5]>()) as u64;
             let mut vertex_data: Vec<[f32; 5]> = Vec::with_capacity(sprites.len() * 6);
             let mut bind_groups = Vec::with_capacity(sprites.len());
@@ -3226,17 +3258,21 @@ impl WgpuRenderer {
             if self.sprite_vertex_buffer.size() < needed {
                 self.sprite_vertex_buffer = self.device.create_buffer(&BufferDescriptor {
                     label: Some("sprite_vbo"),
-                                                                      size: needed,
-                                                                      usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-                                                                      mapped_at_creation: false,
+                    size: needed,
+                    usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
                 });
             }
-            if !vertex_data.is_empty() {
+            let vertex_changed = vertex_data != self.sprite_vertices_cache;
+            if vertex_changed && !vertex_data.is_empty() {
                 self.queue.write_buffer(
                     &self.sprite_vertex_buffer,
                     0,
                     bytemuck::cast_slice(&vertex_data),
                 );
+            }
+            self.sprite_vertices_cache = vertex_data.clone();
+            if !vertex_data.is_empty() {
                 {
                     let mut op = encoder.begin_render_pass(&RenderPassDescriptor {
                         label: Some("occluder"),
@@ -3427,12 +3463,8 @@ impl WgpuRenderer {
             {
                 self.reset_frame();
             }
-            self.post_fx_uniforms = fx;
-        self.queue.write_buffer(
-            &self.postfx_buffer,
-            0,
-            bytemuck::bytes_of(&self.post_fx_uniforms),
-        );
+        self.post_fx_uniforms = fx;
+        self.prev_post_fx_uniforms = None;
     }
 
     pub fn device(&self) -> &Device {

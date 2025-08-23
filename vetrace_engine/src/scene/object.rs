@@ -108,7 +108,7 @@ impl Default for GpuMaterial {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
+#[derive(Copy, Clone, Pod, Zeroable, PartialEq)]
 pub struct GpuAtmosphere {
     pub center_radius: [f32; 4],
     pub atmo_g_height: [f32; 4],

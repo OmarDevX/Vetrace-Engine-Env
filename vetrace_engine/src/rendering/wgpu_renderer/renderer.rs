@@ -131,6 +131,13 @@ pub struct WgpuRenderer {
     prev_cam_up: [f32; 3],
     prev_cam_right: [f32; 3],
     prev_num_objects: i32,
+    prev_shader_params: Option<ShaderParams>,
+    prev_gi_params: Option<GiParams>,
+    prev_blit_params: Option<BlitParams>,
+    prev_post_fx_uniforms: Option<PostFxUniforms>,
+    prev_sprite_view_proj: Option<[f32; 16]>,
+    prev_light_data: Option<LightUniform>,
+    sprite_vertices_cache: Vec<[f32; 5]>,
 }
 
 include!("renderer_impl.inc.rs");
