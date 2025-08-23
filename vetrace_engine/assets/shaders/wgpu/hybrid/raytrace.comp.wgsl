@@ -1,0 +1,1409 @@
+// WGSL path tracer + thin-lens DOF (optimized atmosphere)
+
+// -----------------------------
+// Scene/Material structs
+// -----------------------------
+struct Object {
+    orientation: vec4<f32>,
+    position: vec3<f32>, _pad1: f32,
+    size: vec3<f32>, _pad2: f32,
+    scale: vec3<f32>, _pad2b: f32,
+    material_index: u32,
+    radius: f32,
+    is_cube: u32,
+    is_glass: u32,
+    is_mesh: u32,
+    triangle_start_idx: u32,
+    triangle_count: u32,
+    tri_bvh_start: u32,
+    tri_bvh_count: u32,
+    _pad4: u32,
+    _pad5: u32,
+    _pad6: u32,
+};
+
+struct Triangle {
+    v0: vec3<f32>, _pad0: f32,
+    e1: vec3<f32>, _pad1: f32,
+    e2: vec3<f32>, _pad2: f32,
+    n0: vec3<f32>, _pad3: f32,
+    n1: vec3<f32>, _pad4: f32,
+    n2: vec3<f32>, _pad5: f32,
+    uv0: vec2<f32>, duv1: vec2<f32>,
+    duv2: vec2<f32>, material_index: u32, _pad6: u32,
+};
+
+struct BvhNode {
+    center_radius: vec4<f32>,
+    child_object: vec4<i32>,
+};
+
+struct TriBvhNode {
+    bmin: vec4<f32>,
+    bmax: vec4<f32>,
+    child_tri: vec4<i32>,
+};
+
+struct MaterialParams {
+    baseColorFactor: vec4<f32>,
+    emissiveFactor: vec3<f32>, emissiveStrength: f32,
+    metallicFactor: f32,
+    roughnessFactor: f32,
+    ior: f32,
+    baseColorTex: u32,
+    f0: vec3<f32>, _pad1: u32,
+};
+
+struct Atmosphere {
+    center_radius: vec4<f32>,
+    atmo_g_height: vec4<f32>,
+    ray_beta: vec4<f32>,
+    mie_beta: vec4<f32>,
+    ambient_beta: vec4<f32>,
+    absorption_beta: vec4<f32>,
+    absorb_params: vec4<f32>,
+};
+
+struct Scattering {
+    color: vec3<f32>,
+    transmittance: vec3<f32>,
+};
+
+const MAX_ATMOSPHERES: u32 = 8u;
+
+// --- runtime safety caps ---
+const MAX_TLAS_ITERS          : u32 = 8u;
+const MAX_SCATTER_STEPS       : i32 = 24;
+const MAX_LIGHT_STEPS         : i32 = 6;
+const MAX_ATMO_LIGHTS         : u32 = 2u;
+const MAX_LIGHT_SAMPLES       : u32 = 8u;
+const MAX_DIR_SHADOW_SAMPLES  : u32 = 8u;
+const T_EARLY_OUT             : f32 = 1e-3;
+
+struct Params {
+    camera_pos: vec4<f32>,
+    camera_front: vec4<f32>,
+    camera_up: vec4<f32>,
+    camera_right: vec4<f32>,
+    fov: f32,
+    num_objects: i32,
+    is_fisheye: i32,
+    _pad0: i32,
+    skycolor: vec4<f32>,
+    taa_jitter: vec2<f32>,
+    current_time: f32,
+    frame_number: i32,
+    selected_index: i32,
+    max_bounces: i32,
+    light_samples: i32,
+    dir_shadow_samples: i32,
+    inv_view_proj: mat4x4<f32>,
+    prev_view_proj: mat4x4<f32>,
+    dir_light_dir: vec4<f32>,
+    dir_light_color: vec4<f32>,
+    sky_occlusion: f32,
+    total_triangles: u32,
+    total_bvh_nodes: u32,
+    total_tri_bvh_nodes: u32,
+
+    // ---- DOF (Thin Lens) ----
+    dof_aperture: f32,      // lens diameter in world units (0 = off)
+    dof_focus_dist: f32,    // distance along +camera_front to focus plane
+    dof_enable: u32,        // 0 off / 1 on
+    _pad_dof: u32,
+    atmosphere: u32,
+    atmo_count: u32,
+    _pad_atmos: vec2<u32>,
+    atmos: array<Atmosphere, MAX_ATMOSPHERES>,
+};
+
+// -----------------------------
+// Bindings
+// -----------------------------
+@group(0) @binding(0)  var<storage, read> objects: array<Object>;
+@group(0) @binding(1)  var<storage, read> triangles: array<Triangle>;
+@group(0) @binding(2)  var<storage, read> bvh_nodes: array<BvhNode>;
+@group(0) @binding(3)  var<storage, read> tri_bvh_nodes: array<TriBvhNode>;
+@group(0) @binding(4)  var<uniform> params: Params;
+@group(0) @binding(5)  var color_tex:  texture_storage_2d<rgba16float, write>;
+@group(0) @binding(6)  var depth_tex:  texture_storage_2d<r32float, read_write>;
+@group(0) @binding(7)  var normal_tex: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(8)  var gbuf_albedo:   texture_2d<f32>;
+@group(0) @binding(9)  var gbuf_normal:   texture_2d<f32>;
+@group(0) @binding(10) var gbuf_material: texture_2d<u32>;
+@group(0) @binding(17) var<storage, read> materials: array<MaterialParams>;
+@group(0) @binding(21) var textures: binding_array<texture_2d<f32>>;
+@group(0) @binding(22) var tex_sampler: sampler;
+
+// GI
+struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
+@group(0) @binding(11) var<uniform> gi_params: GiParams;
+@group(0) @binding(12) var gi_sdf:      texture_3d<f32>;
+@group(0) @binding(13) var gi_sampler:  sampler;
+@group(0) @binding(14) var gi_history:  texture_2d<f32>;
+@group(0) @binding(15) var gi_noisy:    texture_storage_2d<rgba16float, write>;
+@group(0) @binding(16) var gi_radiance: texture_3d<f32>;
+@group(0) @binding(18) var lightmap:    texture_2d<f32>;
+
+struct LightListHeader { count: u32, };
+@group(0) @binding(19) var<uniform> light_header: LightListHeader;
+@group(0) @binding(20) var<storage, read> light_indices: array<u32>;
+
+// -----------------------------
+// RNG / Math helpers
+// -----------------------------
+const PI:  f32 = 3.14159265359;
+const TAU: f32 = 6.28318530718;
+const NO_HIT: f32 = 1e20;
+
+fn step_rng(state: u32) -> u32 { return state * 747796405u + 1u; }
+
+fn rand(state: ptr<function, u32>) -> f32 {
+    *(state) = step_rng(*(state));
+    var word: u32 = ((*(state) >> ((*(state) >> 28u) + 4u)) ^ *(state)) * 277803737u;
+    word = (word >> 22u) ^ word;
+    return f32(word) / 4294967295.0;
+}
+// Physically correct refraction for a ray direction `rd` (propagating away from the eye).
+// `n` is the *outward* geometric normal of the surface (not the microfacet half vector).
+// `ior` is the material index of refraction (> 1). Handles both enter/exit.
+fn refract_ray(rd_in: vec3<f32>, n_in: vec3<f32>, ior: f32) -> vec3<f32> {
+    var rd = normalize(rd_in);
+    var n  = normalize(n_in);
+
+    // Assume outside air = 1.0
+    var eta = 1.0 / max(ior, 1e-4);  // default: air -> material
+    // If we are *inside* (ray pointing in the same hemi as the outward normal),
+    // flip the normal and swap media: material -> air
+    if (dot(rd, n) > 0.0) {
+        n   = -n;
+        eta = ior;                   // material -> air
+    }
+
+    let cosi = -dot(rd, n);          // > 0
+    let k    = 1.0 - eta*eta * (1.0 - cosi*cosi);
+    if (k <= 0.0) {                  // total internal reflection
+        return vec3<f32>(0.0);
+    }
+    return normalize(eta * rd + (eta * cosi - sqrt(k)) * n);
+}
+
+fn init_rng(pixel: vec2<u32>, frame: u32) -> u32 {
+    var seed = pixel.x * 1973u + pixel.y * 9277u + frame * 26699u;
+    seed = seed ^ (seed << 13u);
+    seed = seed ^ (seed >> 17u);
+    seed = seed ^ (seed << 5u);
+    return seed;
+}
+
+fn random_in_unit_sphere(state: ptr<function, u32>) -> vec3<f32> {
+    return normalize(vec3<f32>(rand(state) * 2.0 - 1.0, rand(state) * 2.0 - 1.0, rand(state) * 2.0 - 1.0));
+}
+
+fn random_in_unit_cube(state: ptr<function, u32>) -> vec3<f32> {
+    return vec3<f32>(rand(state) * 2.0 - 1.0, rand(state) * 2.0 - 1.0, rand(state) * 2.0 - 1.0);
+}
+
+fn random_cube_surface(state: ptr<function, u32>) -> vec3<f32> {
+    var p = random_in_unit_cube(state);
+    let a = abs(p);
+    if (a.x >= a.y && a.x >= a.z) { p.x = sign(p.x); }
+    else if (a.y >= a.x && a.y >= a.z) { p.y = sign(p.y); }
+    else { p.z = sign(p.z); }
+    return p;
+}
+
+fn random_in_unit_disk(state: ptr<function, u32>) -> vec2<f32> {
+    let r = sqrt(rand(state));
+    let phi = TAU * rand(state);
+    return vec2<f32>(r * cos(phi), r * sin(phi));
+}
+
+// ---- Atmospheric scattering helpers ----
+
+fn ray_sphere_intersect(start: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
+    let a = dot(dir, dir);
+    let b = 2.0 * dot(dir, start);
+    let c = dot(start, start) - radius * radius;
+    let d = b * b - 4.0 * a * c;
+    if (d < 0.0) { return vec2<f32>(1e9, -1e9); }
+    let sqrt_d = sqrt(d);
+    return vec2<f32>((-b - sqrt_d) / (2.0 * a), (-b + sqrt_d) / (2.0 * a));
+}
+
+fn calculate_scattering(
+    atmo: Atmosphere,
+    start: vec3<f32>,          // camera-relative
+    dir: vec3<f32>,            // normalized
+    max_t: f32,
+    light_dir: vec3<f32>,      // normalized
+    light_intensity: vec3<f32>
+) -> Scattering {
+    // Everything operates in camera-relative space.
+    let cam = params.camera_pos.xyz;
+    let center = atmo.center_radius.xyz - cam;
+
+    // Intersect view ray with atmosphere shell (relative to center).
+    var pos_rel = start - center;
+    let seg = ray_sphere_intersect(pos_rel, dir, atmo.atmo_g_height.x);
+    var t0 = max(seg.x, 0.0);
+    var t1 = min(seg.y, max_t);
+    if (t0 > t1) { return Scattering(vec3<f32>(0.0), vec3<f32>(1.0)); }
+
+    // Phase (cheap HG)
+    let mu   = dot(dir, light_dir);
+    let mumu = mu * mu;
+    let g    = atmo.atmo_g_height.y;
+    let gg   = g * g;
+    let phase_ray = 0.05968310366 * (1.0 + mumu);                    // 3/(16π)
+    let den = 1.0 + gg - 2.0 * mu * g;
+    let phase_mie = 0.11936620732 * (1.0 - gg) * (1.0 + mumu) / (den * sqrt(den)); // 3/(8π)
+
+    // Precompute reciprocals
+    let invHR = 1.0 / atmo.atmo_g_height.z;
+    let invHM = 1.0 / atmo.atmo_g_height.w;
+
+    // Adaptive steps (cap by authoring)
+    let len = t1 - t0;
+    let base_steps = min(i32(atmo.absorb_params.z), MAX_SCATTER_STEPS);
+    let target_dl  = max(0.5 * atmo.atmo_g_height.z, 1e-3);
+    let steps_f = clamp(ceil(len / target_dl), 4.0, f32(base_steps));
+    let steps = i32(steps_f);
+
+    let dt = len / f32(steps);
+    var t  = t0 + 0.5 * dt;
+
+    var acc_ray = vec3<f32>(0.0);
+    var acc_mie = vec3<f32>(0.0);
+
+    // Scalar optical depths along the view (expand to RGB on use)
+    var tauR = 0.0; var tauM = 0.0; var tauA = 0.0;
+
+    for (var i: i32 = 0; i < steps; i = i + 1) {
+        let sp = pos_rel + dir * t;
+        let h  = length(sp) - atmo.center_radius.w; // height above planet
+
+        let dR = exp(-h * invHR);
+        let dM = exp(-h * invHM);
+        let denom = (atmo.absorb_params.x - h) / atmo.absorb_params.y;
+        let dA = (1.0 / (denom * denom + 1.0)) * dR;
+
+        tauR += dR * dt;
+        tauM += dM * dt;
+        tauA += dA * dt;
+
+        // Planet occlusion of the light (cheap: solid sphere)
+        var TrL = vec3<f32>(1.0);
+        let pl = ray_sphere_intersect(sp, light_dir, atmo.center_radius.w);
+        if (pl.y > 0.0 && pl.x > 0.0) {
+            TrL = vec3<f32>(0.0);
+        } else {
+            // Coarse integral along light segment inside atmosphere
+            let lr = ray_sphere_intersect(sp, light_dir, atmo.atmo_g_height.x);
+            let l_len = max(0.0, lr.y);
+            let lsteps = max(2, min(i32(atmo.absorb_params.w), MAX_LIGHT_STEPS));
+            let ldt = l_len / f32(lsteps);
+            var lt = 0.5 * ldt;
+
+            var iR = 0.0; var iM = 0.0; var iA = 0.0;
+            for (var j: i32 = 0; j < lsteps; j = j + 1) {
+                let sl = sp + light_dir * lt;
+                let hl = length(sl) - atmo.center_radius.w;
+                let dRl = exp(-hl * invHR);
+                let dMl = exp(-hl * invHM);
+                let denl = (atmo.absorb_params.x - hl) / atmo.absorb_params.y;
+                let dAl = (1.0 / (denl * denl + 1.0)) * dRl;
+                iR += dRl * ldt; iM += dMl * ldt; iA += dAl * ldt;
+                lt += ldt;
+            }
+            let tauL = atmo.ray_beta.xyz * vec3<f32>(iR)
+            + atmo.mie_beta.xyz * vec3<f32>(iM)
+            + atmo.absorption_beta.xyz * vec3<f32>(iA);
+            TrL = exp(-tauL);
+        }
+
+        let Tview = exp(-(atmo.ray_beta.xyz * vec3<f32>(tauR)
+        + atmo.mie_beta.xyz * vec3<f32>(tauM)
+        + atmo.absorption_beta.xyz * vec3<f32>(tauA)));
+
+        acc_ray += dR * Tview * TrL * dt;
+        acc_mie += dM * Tview * TrL * dt;
+
+        if (Tview.x + Tview.y + Tview.z < T_EARLY_OUT) { break; }
+
+        t += dt;
+    }
+
+    let result = phase_ray * atmo.ray_beta.xyz * acc_ray
+    + phase_mie * atmo.mie_beta.xyz * acc_mie
+    + tauR * atmo.ambient_beta.xyz;
+
+    let trans = exp(-(atmo.ray_beta.xyz * vec3<f32>(tauR)
+    + atmo.mie_beta.xyz * vec3<f32>(tauM)
+    + atmo.absorption_beta.xyz * vec3<f32>(tauA)));
+
+    return Scattering(result * light_intensity, trans);
+}
+
+fn apply_atmosphere(origin_world: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
+    if (params.atmosphere == 0u || params.atmo_count == 0u) { return background; }
+
+    // Convert to camera-relative once
+    let cam = params.camera_pos.xyz;
+    let origin = origin_world - cam;
+
+    let sun_dir = normalize(-params.dir_light_dir.xyz);
+    let sun_I   = params.dir_light_color.xyz * params.dir_light_dir.w;
+
+    // Find atmospheres intersected (small N)
+    var count: u32 = 0u;
+    var tvals: array<f32, MAX_ATMOSPHERES>;
+    var idx:   array<u32, MAX_ATMOSPHERES>;
+    for (var i: u32 = 0u; i < params.atmo_count; i = i + 1u) {
+        let atmo = params.atmos[i];
+        let center = atmo.center_radius.xyz - cam;
+        let pos = origin - center;
+        let rl = ray_sphere_intersect(pos, dir, atmo.atmo_g_height.x);
+        let t0 = max(rl.x, 0.0);
+        let t1 = min(rl.y, max_t);
+        if (t0 <= t1) { tvals[count] = t0; idx[count] = i; count = count + 1u; }
+    }
+    // tiny selection sort
+    for (var i: u32 = 0u; i < count; i = i + 1u) {
+        var k = i; var j = i + 1u;
+        while (j < count) { if (tvals[j] < tvals[k]) { k = j; } j = j + 1u; }
+        if (k != i) {
+            let tt = tvals[i]; tvals[i] = tvals[k]; tvals[k] = tt;
+            let ii = idx[i];   idx[i]   = idx[k];   idx[k]   = ii;
+        }
+    }
+
+    var col   = vec3<f32>(0.0);
+    var trans = vec3<f32>(1.0);
+
+    for (var i: u32 = 0u; i < count; i = i + 1u) {
+        let atmo = params.atmos[idx[i]];
+
+        // Sun
+        let sc = calculate_scattering(atmo, origin, dir, max_t, sun_dir, sun_I);
+        col += trans * sc.color;
+
+        // A few emissive lights (bounded)
+        let max_lights: u32 = min(MAX_ATMO_LIGHTS, light_header.count);
+        for (var l: u32 = 0u; l < max_lights; l = l + 1u) {
+            let obj_idx = light_indices[l];
+            let obj = objects[obj_idx];
+            let mat = materials[obj.material_index];
+            if (mat.emissiveStrength > 0.0) {
+                let ldir = normalize((obj.position - cam) - origin);
+                var lintensity = mat.baseColorFactor.rgb * mat.emissiveStrength;
+                if (obj.is_cube > 0u) {
+                    let size = obj.size * obj.scale;
+                    let area = 2.0 * (size.x * size.y + size.y * size.z + size.z * size.x);
+                    lintensity *= area;
+                } else {
+                    let r = obj.radius * obj.scale.x;
+                    let area = 4.0 * PI * r * r;
+                    lintensity *= area;
+                }
+                let sc_l = calculate_scattering(atmo, origin, dir, max_t, ldir, lintensity);
+                col += trans * sc_l.color;
+            }
+        }
+
+        trans *= sc.transmittance;
+        if (trans.x + trans.y + trans.z < T_EARLY_OUT) { break; }
+    }
+
+    col += trans * background;
+
+    // Sun glow only for sky rays
+    let sun_cos = dot(dir, sun_dir);
+    let sun_size = 0.9995;
+    if (max_t >= 1e9 && sun_cos > sun_size) {
+        let glow = (sun_cos - sun_size) / (1.0 - sun_size);
+        col += trans * sun_I * glow * 50.0;
+    }
+    return col;
+}
+
+fn quat_normalize(q: vec4<f32>) -> vec4<f32> { return q * inverseSqrt(dot(q, q)); }
+fn quat_conjugate(q: vec4<f32>) -> vec4<f32> { return vec4<f32>(-q.xyz, q.w); }
+fn quat_rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    let nq = quat_normalize(q);
+    return v + 2.0 * cross(nq.xyz, cross(nq.xyz, v) + nq.w * v);
+}
+
+fn sample_ggx(normal: vec3<f32>, roughness: f32, rng: ptr<function, u32>) -> vec3<f32> {
+    if (roughness <= 0.0) { return normal; }
+    let a = roughness * roughness;
+    let r1 = rand(rng);
+    let r2 = rand(rng);
+    let phi = 2.0 * PI * r1;
+    let cos_phi = cos(phi);
+    let sin_phi = sin(phi);
+    let cos_theta = sqrt((1.0 - r2) / (1.0 + (a * a - 1.0) * r2));
+    let sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
+    let h_local = vec3<f32>(cos_phi * sin_theta, sin_phi * sin_theta, cos_theta);
+    var up = vec3<f32>(0.0, 0.0, 1.0);
+    if (abs(normal.z) >= 0.999) { up = vec3<f32>(1.0, 0.0, 0.0); }
+    let tangent_x = normalize(cross(up, normal));
+    let tangent_y = cross(normal, tangent_x);
+    return normalize(tangent_x * h_local.x + tangent_y * h_local.y + normal * h_local.z);
+}
+
+// -----------------------------
+// Intersections
+// -----------------------------
+// Returns the first positive intersection distance, even if the ray starts inside.
+fn sphere_intersect(origin: vec3<f32>, dir: vec3<f32>, center: vec3<f32>, radius: f32) -> f32 {
+    let oc = origin - center;
+    let b  = dot(oc, dir);
+    let c  = dot(oc, oc) - radius * radius;
+    let h  = b * b - c;
+    if (h < 0.0) { return NO_HIT; }
+
+    let s   = sqrt(h);
+    let t0  = -b - s;     // near
+    let t1  = -b + s;     // far
+    let eps = max(radius * 1e-5, 1e-4);
+
+    if (t0 > eps) { return t0; }
+    if (t1 > eps) { return t1; }  // when starting inside
+    return NO_HIT;
+}
+
+struct BoxHit { t: f32, n: vec3<f32>, }
+
+fn cube_hit(
+    origin: vec3<f32>, dir: vec3<f32>,
+    pos: vec3<f32>, size: vec3<f32>, orient: vec4<f32>, scale: vec3<f32>
+) -> BoxHit {
+    let qn = quat_normalize(orient);
+    let inv_q = quat_conjugate(qn);
+
+    let oL = quat_rotate(inv_q, origin - pos);
+    let dL = quat_rotate(inv_q, dir);
+
+    let half = (size * scale) * 0.5;
+
+    // tiny inflation to avoid edge cracks
+    let grow = 1e-4 * max(half.x, max(half.y, half.z));
+    let bmin = -half - vec3<f32>(grow);
+    let bmax =  half + vec3<f32>(grow);
+
+    let safe = vec3<f32>(1e30);
+    let inv_d = select(1.0 / dL, safe, abs(dL) < vec3<f32>(1e-8));
+
+    let tx0 = (bmin.x - oL.x) * inv_d.x; let tx1 = (bmax.x - oL.x) * inv_d.x;
+    let ty0 = (bmin.y - oL.y) * inv_d.y; let ty1 = (bmax.y - oL.y) * inv_d.y;
+    let tz0 = (bmin.z - oL.z) * inv_d.z; let tz1 = (bmax.z - oL.z) * inv_d.z;
+
+    let tminx = min(tx0, tx1); let tmaxx = max(tx0, tx1);
+    let tminy = min(ty0, ty1); let tmaxy = max(ty0, ty1);
+    let tminz = min(tz0, tz1); let tmaxz = max(tz0, tz1);
+
+    let t_enter = max(max(tminx, tminy), tminz);
+    let t_exit  = min(min(tmaxx, tmaxy), tmaxz);
+
+    if (t_exit < max(t_enter, 0.0)) {
+        return BoxHit(1e20, vec3<f32>(0.0, 0.0, 1.0));
+    }
+
+    // inside: take exit distance
+    let t_hit = select(t_enter, t_exit, t_enter < 0.0);
+
+    // choose face stably
+    let pL = oL + dL * t_hit;
+    let ax = abs(pL.x) - half.x;
+    let ay = abs(pL.y) - half.y;
+    let az = abs(pL.z) - half.z;
+
+    var nL = vec3<f32>(0.0);
+    if (ax >= ay && ax >= az)      { nL = vec3<f32>(sign(pL.x), 0.0, 0.0); }
+    else if (ay >= ax && ay >= az) { nL = vec3<f32>(0.0, sign(pL.y), 0.0); }
+    else                           { nL = vec3<f32>(0.0, 0.0, sign(pL.z)); }
+
+    // fix for non-uniform scale
+    let nW = normalize(quat_rotate(qn, nL / scale));
+    return BoxHit(t_hit, nW);
+}
+
+// SDF helpers (GI)
+fn sdf_cube(p: vec3<f32>, pos: vec3<f32>, size: vec3<f32>, orient: vec4<f32>, scale: vec3<f32>) -> f32 {
+    let inv_q = quat_conjugate(quat_normalize(orient));
+    let lp = quat_rotate(inv_q, p - pos);
+    let d = abs(lp) - (size * scale) * 0.5;
+    let out_dist = length(max(d, vec3<f32>(0.0)));
+    let in_dist = min(max(d.x, max(d.y, d.z)), 0.0);
+    return out_dist + in_dist;
+}
+fn sdf_sphere(p: vec3<f32>, pos: vec3<f32>, r: f32) -> f32 { return length(p - pos) - r; }
+fn object_sdf(p: vec3<f32>, obj: Object) -> f32 {
+    let cam = params.camera_pos.xyz;
+    if (obj.is_cube > 0u) { return sdf_cube(p, obj.position - cam, obj.size, obj.orientation, obj.scale); }
+    return sdf_sphere(p, obj.position - cam, obj.radius);
+}
+
+// GI cone sampling
+const SDF_MIN: vec3<f32> = vec3<f32>(-10.0, -10.0, -10.0);
+const SDF_SIZE: vec3<f32> = vec3<f32>(20.0, 20.0, 20.0);
+fn sdf_uv(p: vec3<f32>) -> vec3<f32> {
+    let uv = (p - SDF_MIN) / SDF_SIZE;
+    return clamp(uv, vec3<f32>(0.01), vec3<f32>(0.99));
+}
+fn sample_radiance_cone(origin: vec3<f32>, dir: vec3<f32>, step: f32) -> vec3<f32> {
+    var t = step;
+    var col = vec3<f32>(0.0);
+    let dims = vec3<f32>(textureDimensions(gi_sdf, 0));
+    let voxel = SDF_SIZE / dims;
+    let voxel_size = max(voxel.x, max(voxel.y, voxel.z));
+    let max_mip = f32(textureNumLevels(gi_sdf) - 1u);
+    let half_angle = 0.261799f; // 15 deg
+    for (var i: u32 = 0u; i < 8u; i = i + 1u) {
+        let pos = origin + dir * t;
+        let uv = sdf_uv(pos);
+        let cone_r = t * tan(half_angle);
+        let cone_d = cone_r * 2.0;
+        let lod = clamp(log2(cone_d / voxel_size), 0.0, max_mip);
+        let d = textureSampleLevel(gi_sdf, gi_sampler, uv, lod).x;
+        if (d <= 0.0 || d > 2.0) { break; }
+        let rad = textureSampleLevel(gi_radiance, gi_sampler, uv, lod).xyz;
+        col += rad * exp(-d * d * 5.0);
+        t += step * 1.5;
+    }
+    return col / 8.0;
+}
+fn random_cone_offset(state: ptr<function, u32>) -> vec3<f32> { return random_in_unit_sphere(state); }
+
+fn trace_gi(hit_pos: vec3<f32>, normal: vec3<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+    if (gi_params.quality == 3u /*OFF*/) { return vec3<f32>(0.0); }
+    if (gi_params.quality == 2u /*LOW*/) { return textureSampleLevel(lightmap, gi_sampler, hit_pos.xy, 0.0).rgb; }
+
+    var cones: u32 = 6u;
+    if (gi_params.quality == 1u /*HIGH*/) { cones = 3u; }
+    let dims = vec3<f32>(textureDimensions(gi_sdf, 0));
+    let voxel = SDF_SIZE / dims;
+    let voxel_size = max(voxel.x, max(voxel.y, voxel.z));
+    let start = hit_pos + normal * max(voxel_size, 0.01);
+    var gi = vec3<f32>(0.0);
+    for (var c: u32 = 0u; c < cones; c = c + 1u) {
+        let dir = normalize(normal + random_cone_offset(rng));
+        gi += sample_radiance_cone(start, dir, voxel_size);
+    }
+    return gi / f32(cones);
+}
+
+fn path_trace_gi(p: vec3<f32>, n: vec3<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+    let cam = params.camera_pos.xyz;
+    let origin = p - cam + n * 0.01;
+    let dir = normalize(n + random_cone_offset(rng));
+    return trace_ray_no_gi(origin, dir, 0, rng).color;
+}
+fn sample_diffuse_gi(p: vec3<f32>, n: vec3<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+    if (gi_params.mode == 1u) { return path_trace_gi(p, n, rng); }
+    return trace_gi(p, n, rng);
+}
+
+// -----------------------------
+// RR / Tri / AABB / Mesh
+// -----------------------------
+const RR_MIN_PROB: f32 = 0.1;
+fn russian_roulette(depth: i32, roughness: f32, rng: ptr<function, u32>) -> f32 {
+    if (depth <= 0) { return 1.0; }
+    let rr_prob = max(RR_MIN_PROB, 1.0 - roughness);
+    if (rand(rng) > rr_prob) { return 0.0; }
+    return 1.0 / rr_prob;
+}
+
+struct TriHit { t: f32, u: f32, v: f32, };
+fn tri_intersect(origin: vec3<f32>, dir: vec3<f32>, v0: vec3<f32>, e1: vec3<f32>, e2: vec3<f32>) -> TriHit {
+    let h = cross(dir, e2);
+    let a = dot(e1, h);
+    let area2 = length(cross(e1, e2));
+    let eps = max(area2 * 1e-8, 1e-7);
+    if (abs(a) < eps) { return TriHit(1e20, 0.0, 0.0); }
+    let f = 1.0 / a;
+    let s = origin - v0;
+    let u = f * dot(s, h);
+    if (u < -eps || u > 1.0 + eps) { return TriHit(1e20, 0.0, 0.0); }
+    let q = cross(s, e1);
+    let v = f * dot(dir, q);
+    if (v < -eps || u + v > 1.0 + eps) { return TriHit(1e20, 0.0, 0.0); }
+    let t = f * dot(e2, q);
+    if (t <= max(1e-5, 1e-6 * (length(e1) + length(e2)))) { return TriHit(1e20, 0.0, 0.0); }
+    return TriHit(t, u, v);
+}
+
+fn aabb_hit(o: vec3<f32>, d: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>, tmax_cap: f32) -> bool {
+    let ext = bmax - bmin;
+    let eps = max(max(ext.x, max(ext.y, ext.z)) * 1e-4, 1e-5);
+    let bminE = bmin - vec3<f32>(eps);
+    let bmaxE = bmax + vec3<f32>(eps);
+
+    let c = 0.5 * (bminE + bmaxE);
+    let oC = o - c;
+    let bminC = bminE - c;
+    let bmaxC = bmaxE - c;
+
+    let safe = vec3<f32>(1e30);
+    let inv_d = select(1.0 / d, safe, abs(d) < vec3<f32>(1e-8));
+
+    let t0 = (bminC - oC) * inv_d;
+    let t1 = (bmaxC - oC) * inv_d;
+
+    let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+    let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+    return (tmax >= max(tmin, 0.0)) && (tmin <= tmax_cap);
+}
+
+struct MeshHit { n: vec3<f32>, t: f32, tri: u32, uv: vec2<f32>, };
+
+fn mesh_intersect(origin_w: vec3<f32>, dir_w: vec3<f32>, obj: Object, obj_pos: vec3<f32>) -> MeshHit {
+    let qn = quat_normalize(obj.orientation);
+    let inv_q = quat_conjugate(qn);
+    let oL = quat_rotate(inv_q, origin_w - obj_pos) / obj.scale;
+    let dL = quat_rotate(inv_q, dir_w) / obj.scale;
+
+    var best_tL = NO_HIT;
+    var nL = vec3<f32>(0.0, 0.0, 1.0);
+    var best_tri: u32 = 0xffffffffu;
+    var best_uv = vec2<f32>(0.0);
+
+    var stack: array<i32, 256>;
+    var sp: i32 = 0;
+    let root = i32(obj.tri_bvh_start);
+    if (root < 0) {
+        return MeshHit(vec3<f32>(0.0, 0.0, 1.0), NO_HIT, 0xffffffffu, vec2<f32>(0.0));
+    }
+    stack[sp] = root; sp = sp + 1;
+
+    loop {
+        if (sp == 0) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tri_node(ni)) { continue; }
+        let node = tri_bvh_nodes[ni];
+        if (!aabb_hit(oL, dL, node.bmin.xyz, node.bmax.xyz, best_tL)) { continue; }
+        let c0 = node.child_tri.x; let c1 = node.child_tri.y;
+        if (c0 < 0 && c1 < 0) {
+            let ti = u32(node.child_tri.z);
+            if (in_bounds_tri(ti)) {
+                let tri = triangles[ti];
+                let hit = tri_intersect(oL, dL, tri.v0, tri.e1, tri.e2);
+                if (hit.t < best_tL) {
+                    best_tL = hit.t;
+                    let w0 = 1.0 - hit.u - hit.v;
+                    nL = normalize(w0 * tri.n0 + hit.u * tri.n1 + hit.v * tri.n2);
+                    best_tri = ti;
+                    best_uv = tri.uv0 + tri.duv1 * hit.u + tri.duv2 * hit.v;
+                }
+            }
+        } else {
+            if (c0 >= 0 && sp < 256) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 256) { stack[sp] = c1; sp = sp + 1; }
+        }
+    }
+
+    if (best_tL >= 1e19) {
+        return MeshHit(vec3<f32>(0.0, 0.0, 1.0), NO_HIT, 0xffffffffu, vec2<f32>(0.0));
+    }
+
+    let pL = oL + dL * best_tL;
+    let pW = obj_pos + quat_rotate(qn, pL * obj.scale);
+    let tW = dot(pW - origin_w, dir_w);
+    let nW = normalize(quat_rotate(qn, nL / obj.scale));
+    return MeshHit(nW, tW, best_tri, best_uv);
+}
+
+
+// -----------------------------
+// TLAS traversal
+// -----------------------------
+fn sphere_hit(o: vec3<f32>, d: vec3<f32>, c: vec3<f32>, r: f32, t_cap: f32) -> bool {
+    let oc = o - c;
+    let b = dot(oc, d);
+    let c2 = dot(oc, oc) - r * r;
+    let h = b * b - c2;
+    if (h < 0.0) { return false; }
+    let s = sqrt(h);
+    let t_near = -b - s;
+    let t_far  = -b + s;
+    return (t_far > 0.0) && (t_near < t_cap);
+}
+
+fn in_bounds_tlas(i: u32) -> bool { return i < params.total_bvh_nodes; }
+fn in_bounds_tri_node(i: u32) -> bool { return i < params.total_tri_bvh_nodes; }
+fn in_bounds_tri(i: u32) -> bool { return i < params.total_triangles; }
+
+// Alpha cutout (never cut glass)
+fn hit_alpha(obj_idx: u32, tri_idx: u32, uv: vec2<f32>) -> f32 {
+    if (objects[obj_idx].is_glass > 0u) { return 1.0; }
+    var mat_idx: u32 = objects[obj_idx].material_index;
+    if (tri_idx != 0xffffffffu) {
+        let tri = triangles[tri_idx]; mat_idx = tri.material_index;
+    }
+    let mat = materials[mat_idx];
+    var a = mat.baseColorFactor.w;
+    if (mat.baseColorTex != 0u && tri_idx != 0xffffffffu) {
+        let tex = textureSampleLevel(textures[mat.baseColorTex], tex_sampler, uv, 0.0);
+        a = a * tex.a;
+    }
+    return select(0.0, 1.0, a >= 0.5);
+}
+
+struct ObjHit { t: f32, n: vec3<f32>, idx: i32, tri: u32, uv: vec2<f32>, };
+
+fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
+    var best = ObjHit(1e20, vec3<f32>(0.0, 0.0, 1.0), -1, 0xffffffffu, vec2<f32>(0.0));
+    if (params.total_bvh_nodes == 0u) { return best; }
+    var stack: array<i32, 256>; var sp: i32 = 0;
+    let root: i32 = 0; stack[sp] = root; sp = sp + 1;
+    let cam = params.camera_pos.xyz;
+
+    loop {
+        if (sp == 0) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tlas(ni)) { continue; }
+        let node = bvh_nodes[ni];
+        if (!sphere_hit(o, d, node.center_radius.xyz - cam, node.center_radius.w, best.t)) { continue; }
+
+        let c0 = node.child_object.x; let c1 = node.child_object.y;
+        if (c0 < 0 && c1 < 0) {
+            let i0 = node.child_object.z; let i1 = node.child_object.w;
+
+            if (i0 >= 0) {
+                let i = u32(i0);
+                if (i32(i) != skip && i < u32(params.num_objects)) {
+                    let oref = objects[i];
+                    let pos = oref.position - cam;
+                    var t = 1e20; var n = vec3<f32>(0.0); var tri_idx: u32 = 0xffffffffu; var uv = vec2<f32>(0.0);
+
+                    if (oref.is_mesh > 0u) {
+                        let res = mesh_intersect(o, d, oref, pos);
+                        t = res.t; n = res.n; tri_idx = res.tri; uv = res.uv;
+                    } else if (oref.is_cube > 0u) {
+                        let bh = cube_hit(o, d, pos, oref.size, oref.orientation, oref.scale);
+                        t = bh.t; if (t < 1e20) { n = bh.n; }
+                    } else {
+                        t = sphere_intersect(o, d, pos, oref.radius);
+                        if (t < 1e20) { let hp = o + d * t; n = normalize(hp - pos); }
+                    }
+
+                    if (t < best.t) {
+                        if (dot(n, d) > 0.0) { n = -n; }
+                        best.t = t; best.n = n; best.idx = i32(i); best.tri = tri_idx; best.uv = uv;
+                    }
+                }
+            }
+
+            if (i1 >= 0) {
+                let i = u32(i1);
+                if (i32(i) != skip && i < u32(params.num_objects)) {
+                    let oref = objects[i];
+                    let pos = oref.position - cam;
+                    var t = 1e20; var n = vec3<f32>(0.0); var tri_idx: u32 = 0xffffffffu; var uv = vec2<f32>(0.0);
+
+                    if (oref.is_mesh > 0u) {
+                        let res = mesh_intersect(o, d, oref, pos);
+                        t = res.t; n = res.n; tri_idx = res.tri; uv = res.uv;
+                    } else if (oref.is_cube > 0u) {
+                        let bh = cube_hit(o, d, pos, oref.size, oref.orientation, oref.scale);
+                        t = bh.t; if (t < 1e20) { n = bh.n; }
+                    } else {
+                        t = sphere_intersect(o, d, pos, oref.radius);
+                        if (t < 1e20) { let hp = o + d * t; n = normalize(hp - pos); }
+                    }
+
+                    if (t < best.t) {
+                        if (dot(n, d) > 0.0) { n = -n; }
+                        best.t = t; best.n = n; best.idx = i32(i); best.tri = tri_idx; best.uv = uv;
+                    }
+                }
+            }
+        } else {
+            if (c0 >= 0 && sp < 256) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 256) { stack[sp] = c1; sp = sp + 1; }
+        }
+    }
+    return best;
+}
+
+fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip_b: u32) -> bool {
+    if (params.total_bvh_nodes == 0u) { return false; }
+    var stack: array<i32, 256>; var sp: i32 = 0;
+    let root: i32 = 0; stack[sp] = root; sp = sp + 1;
+    let cam = params.camera_pos.xyz;
+
+    loop {
+        if (sp == 0) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tlas(ni)) { continue; }
+        let node = bvh_nodes[ni];
+        if (!sphere_hit(o, d, node.center_radius.xyz - cam, node.center_radius.w, t_cap)) { continue; }
+
+        let c0 = node.child_object.x; let c1 = node.child_object.y;
+        if (c0 < 0 && c1 < 0) {
+            let i0 = node.child_object.z; let i1 = node.child_object.w;
+
+            if (i0 >= 0) {
+                let i = u32(i0);
+                if (i != skip_a && i != skip_b && i < u32(params.num_objects)) {
+                    let oref = objects[i]; let pos = oref.position - cam;
+                    var t = 1e20; var tri_idx: u32 = 0xffffffffu; var uv = vec2<f32>(0.0);
+
+                    if (oref.is_mesh > 0u) {
+                        let res = mesh_intersect(o, d, oref, pos);
+                        t = res.t; tri_idx = res.tri; uv = res.uv;
+                    } else if (oref.is_cube > 0u) {
+                        t = cube_hit(o, d, pos, oref.size, oref.orientation, oref.scale).t;
+                    } else {
+                        t = sphere_intersect(o, d, pos, oref.radius);
+                    }
+
+                    if (t < t_cap) {
+                        let a = hit_alpha(i, tri_idx, uv);
+                        if (a > 0.001) { return true; }
+                    }
+                }
+            }
+
+            if (i1 >= 0) {
+                let i = u32(i1);
+                if (i != skip_a && i != skip_b && i < u32(params.num_objects)) {
+                    let oref = objects[i]; let pos = oref.position - cam;
+                    var t = 1e20; var tri_idx: u32 = 0xffffffffu; var uv = vec2<f32>(0.0);
+
+                    if (oref.is_mesh > 0u) {
+                        let res = mesh_intersect(o, d, oref, pos);
+                        t = res.t; tri_idx = res.tri; uv = res.uv;
+                    } else if (oref.is_cube > 0u) {
+                        t = cube_hit(o, d, pos, oref.size, oref.orientation, oref.scale).t;
+                    } else {
+                        t = sphere_intersect(o, d, pos, oref.radius);
+                    }
+
+                    if (t < t_cap) {
+                        let a = hit_alpha(i, tri_idx, uv);
+                        if (a > 0.001) { return true; }
+                    }
+                }
+            }
+        } else {
+            if (c0 >= 0 && sp < 256) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 256) { stack[sp] = c1; sp = sp + 1; }
+        }
+    }
+    return false;
+}
+
+fn is_visible(origin: vec3<f32>, end_pos: vec3<f32>, skip_a: u32, skip_b: u32) -> bool {
+    var dir = end_pos - origin;
+    let dist = length(dir);
+    dir = dir / dist;
+    return !object_tlas_any_hit(origin, dir, dist - 0.01, skip_a, skip_b);
+}
+
+// -----------------------------
+// Lighting / Shading
+// -----------------------------
+fn soft_shadow(origin: vec3<f32>, normal: vec3<f32>, light: Object, light_idx: u32, rng: ptr<function, u32>) -> f32 {
+    let lm = materials[light.material_index];
+    if (lm.emissiveStrength <= 0.0) { return 1.0; }
+    let cam = params.camera_pos.xyz;
+    var vis: f32 = 0.0;
+    let samples: u32 = max(1u, u32(params.light_samples));
+    for (var s: u32 = 0u; s < samples; s = s + 1u) {
+        var offset = vec3<f32>(0.0);
+        if (light.is_cube > 0u) {
+            let local = random_cube_surface(rng) * (light.size * light.scale * 0.5);
+            offset = quat_rotate(light.orientation, local);
+        } else {
+            offset = random_in_unit_sphere(rng) * light.radius;
+        }
+        let targetc = light.position - cam + offset;
+        if (is_visible(origin, targetc, 0xffffffffu, light_idx)) { vis = vis + 1.0; }
+    }
+    return vis / f32(samples);
+}
+
+const DIR_SHADOW_RADIUS: f32 = 0.05;
+fn dir_soft_shadow(origin: vec3<f32>, dir: vec3<f32>, rng: ptr<function, u32>) -> f32 {
+    var vis: f32 = 0.0;
+    let samples: u32 = max(1u, u32(params.dir_shadow_samples));
+    for (var s: u32 = 0u; s < samples; s = s + 1u) {
+        let jitter = random_in_unit_sphere(rng) * DIR_SHADOW_RADIUS;
+        let sdir = normalize(dir + jitter);
+        if (is_visible(origin, origin + sdir * 1000.0, 0xffffffffu, 0xffffffffu)) { vis = vis + 1.0; }
+    }
+    return vis / f32(samples);
+}
+
+fn ambient_occlusion(_origin: vec3<f32>, _normal: vec3<f32>, _obj_idx: u32, _rng: ptr<function, u32>) -> f32 {
+    return 1.0; // SSAO elsewhere
+}
+
+fn shade_base(
+    hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, gi: vec3<f32>, rng: ptr<function, u32>
+) -> vec3<f32> {
+    let cam = params.camera_pos.xyz;
+    var mat_idx: u32 = objects[obj_idx].material_index;
+    if (tri_idx != 0xffffffffu) { let tri = triangles[tri_idx]; mat_idx = tri.material_index; }
+    let mat = materials[mat_idx];
+
+    var tex = vec3<f32>(1.0, 1.0, 1.0);
+    if (mat.baseColorTex != 0u && tri_idx != 0xffffffffu) {
+        tex = textureSampleLevel(textures[mat.baseColorTex], tex_sampler, uv, 0.0).rgb;
+    }
+    let base = mat.baseColorFactor.rgb * tex;
+
+    let sky_tint = params.skycolor.xyz;
+    let sky = max(dot(normal, vec3<f32>(0.0, 1.0, 0.0)), 0.0);
+    let sky_mix = mix(1.0, sky, params.sky_occlusion);
+    var col = base * sky_tint * 0.2 * sky_mix;
+
+    col += gi * base * sky_mix;
+
+    if (mat.emissiveStrength > 0.0) { col += mat.emissiveFactor * mat.emissiveStrength; }
+
+    let ao = ambient_occlusion(hit + normal * 0.01, normal, obj_idx, rng);
+
+    let light_count: u32 = light_header.count;
+    if (light_count > 0u) {
+        let choice = u32(rand(rng) * f32(light_count));
+        let idx = light_indices[choice];
+        if (idx != obj_idx) {
+            let light = objects[idx];
+            let lm = materials[light.material_index];
+            if (lm.emissiveStrength > 0.0) {
+                let light_pos = light.position - params.camera_pos.xyz;
+                var light_target = light_pos;
+                var light_area = 1.0;
+                if (light.is_cube > 0u) {
+                    let size = light.size * light.scale;
+                    light_area = 2.0 * (size.x * size.y + size.y * size.z + size.z * size.x);
+                    let local = random_cube_surface(rng) * (size * 0.5);
+                    light_target = light_pos + quat_rotate(light.orientation, local);
+                } else {
+                    let r = light.radius * light.scale.x;
+                    light_area = 4.0 * PI * r * r;
+                    let local = random_in_unit_sphere(rng) * r;
+                    light_target = light_pos + local;
+                }
+                let ldir = normalize(light_target - hit);
+                let diff = max(dot(normal, ldir), 0.0);
+                if (diff > 0.0) {
+                    let visibility = soft_shadow(hit + normal * 0.01, normal, light, idx, rng);
+                    if (visibility > 0.0) {
+                        let dist = length(light_target - hit);
+                        let attenuation = 1.0 / max(dist * dist, 1.0);
+                        let weight = f32(light_count);
+                        let L = lm.baseColorFactor.rgb * lm.emissiveStrength;
+                        col += base * L * diff * visibility * attenuation * weight * light_area;
+                    }
+                }
+            }
+        }
+    }
+    if (params.dir_light_dir.w > 0.0) {
+        let ldir = normalize(-params.dir_light_dir.xyz);
+        let vis = dir_soft_shadow(hit + normal * 0.01, ldir, rng);
+        if (vis > 0.0) {
+            let diff = max(dot(normal, ldir), 0.0);
+            col += base * params.dir_light_color.xyz * diff * params.dir_light_dir.w * vis;
+        }
+    }
+    col = col * ao;
+    return col;
+}
+
+fn shade(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+    let cam = params.camera_pos.xyz;
+    let gi = sample_diffuse_gi(hit + cam, normal, rng);
+    return shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
+}
+fn shade_no_gi(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+    return shade_base(hit, normal, obj_idx, tri_idx, uv, vec3<f32>(0.0), rng);
+}
+
+// -----------------------------
+// Rays
+// -----------------------------
+struct RayResult { color: vec3<f32>, depth: f32, normal: vec3<f32>, obj_idx: i32, tri_idx: u32, };
+
+fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
+    if (depth >= params.max_bounces) {
+        let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+    }
+    var o = origin; var t_total = 0.0;
+    for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
+        let hit = object_tlas_intersect(o, dir, -1);
+        if (hit.idx < 0) { break; }
+        let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
+        t_total = t_total + hit.t;
+        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
+        let hit_pos = origin + dir * t_total;
+        var col: vec3<f32> = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        col = apply_atmosphere(params.camera_pos.xyz + origin, dir, t_total, col);
+        return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
+    }
+    let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+}
+
+fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
+    if (depth >= params.max_bounces) {
+        let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+    }
+    var o = origin; var t_total = 0.0;
+    for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
+        let hit = object_tlas_intersect(o, dir, -1);
+        if (hit.idx < 0) { break; }
+        let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
+        t_total = t_total + hit.t;
+        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
+        let hit_pos = origin + dir * t_total;
+        var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        col = apply_atmosphere(params.camera_pos.xyz + origin, dir, t_total, col);
+        return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
+    }
+    let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+}
+
+// ---- helpers for size-scaled eps and skipping self ----
+fn object_extent(obj: Object) -> f32 {
+    let s = obj.size * obj.scale;
+    return max(s.x, max(s.y, s.z));
+}
+fn surf_eps(obj: Object) -> f32 {
+    return max(1e-4, object_extent(obj) * 1e-4);
+}
+
+// identical to trace_ray(...) but skips `skip` on the first TLAS hit
+fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
+    if (depth >= params.max_bounces) {
+        let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+    }
+    var o = origin; var t_total = 0.0;
+    for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
+        let hit = object_tlas_intersect(o, dir, skip);
+        if (hit.idx < 0) { break; }
+        let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
+        t_total = t_total + hit.t;
+        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
+        let hit_pos = origin + dir * t_total;
+        var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        col = apply_atmosphere(params.camera_pos.xyz + origin, dir, t_total, col);
+        return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
+    }
+    let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+}
+
+// -----------------------------
+// Glass (solid) with fixed exit refraction + distance blur
+// -----------------------------
+fn shade_glass(
+    view_dir: vec3<f32>,    // primary ray direction (camera space), points from camera into scene
+               normal:   vec3<f32>,    // geometric surface normal at the entry point
+               hit_pos:  vec3<f32>,    // entry point in camera space
+               depth:    i32,
+               mat_idx:  u32,
+               obj:      Object,
+               rng:      ptr<function, u32>
+) -> vec3<f32> {
+    let mat = materials[mat_idx];
+
+    // RR to keep bright rough-glass paths under control
+    let rr = russian_roulette(depth, mat.roughnessFactor, rng);
+    if (rr == 0.0) { return vec3<f32>(0.0); }
+
+    // --- ENTRY INTERFACE ---
+    // Microfacet (rough glass). We refract/reflect against the microfacet normal,
+    // but use a physically consistent refraction helper that handles enter/exit.
+    let m_enter = sample_ggx(normal, mat.roughnessFactor, rng);
+
+    // Entry reflection
+    let refl_dir = normalize(reflect(view_dir, m_enter));
+    let ndotR    = abs(dot(normal, refl_dir));
+    let eps_R    = mix(0.002, 0.02, 1.0 - ndotR);
+    let refl_col = trace_ray(hit_pos + refl_dir * eps_R, refl_dir, depth + 1, rng).color;
+
+    // Entry refraction (air -> glass). If TIR happens on the entry microfacet, fall back to reflection.
+    let refr_in = refract_ray(view_dir, m_enter, mat.ior);
+    if (length(refr_in) == 0.0) {
+        return refl_col * rr;
+    }
+
+    // Small step inside to avoid immediately re-hitting the entry face
+    let dir_in   = normalize(refr_in);
+    let eps_in   = 0.002;
+    let origin_in = hit_pos + dir_in * eps_in;
+
+    // --- FIND EXIT OF THE *SAME* OBJECT ---
+    let cam = params.camera_pos.xyz;
+    var exit_t: f32 = 1e20;
+    var exit_n: vec3<f32> = vec3<f32>(0.0, 0.0, 1.0);
+
+    if (obj.is_cube > 0u) {
+        let bh = cube_hit(origin_in, dir_in, obj.position - cam, obj.size, obj.orientation, obj.scale);
+        exit_t = bh.t; exit_n = bh.n;
+    } else if (obj.is_mesh > 0u) {
+        let mh = mesh_intersect(origin_in, dir_in, obj, obj.position - cam);
+        exit_t = mh.t; exit_n = mh.n;
+    } else {
+        // sphere
+        let t = sphere_intersect(origin_in, dir_in, obj.position - cam, obj.radius);
+        exit_t = t;
+        if (t < 1e20) {
+            let hp = origin_in + dir_in * t;
+            exit_n = normalize(hp - (obj.position - cam));
+        }
+    }
+
+    // If no exit was found (degenerate case), just return the entry reflection
+    if (exit_t >= 1e19) {
+        return refl_col * rr;
+    }
+
+    // Point on the *inner* side of the exit interface
+    let hit_exit = origin_in + dir_in * exit_t;
+
+    // --- EXIT INTERFACE ---
+    let m_exit = sample_ggx(exit_n, mat.roughnessFactor, rng);
+
+    // Inside (glass) -> outside (air) refraction
+    var dir_out = refract_ray(dir_in, m_exit, mat.ior);
+    if (length(dir_out) == 0.0) {
+        // Internal reflection at the inner face — trace that and mix by Fresnel
+        let r_inside = normalize(reflect(dir_in, m_exit));
+        let col_bounce = trace_ray(hit_exit + r_inside * 0.003, r_inside, depth + 1, rng).color;
+
+        // Schlick based on entry view angle
+        let F0g = mat.f0;
+        let cos_theta = abs(dot(-view_dir, normal));
+        let fresnel = F0g + (vec3<f32>(1.0) - F0g) * pow(1.0 - cos_theta, 5.0);
+
+        var tint = mat.baseColorFactor.rgb;
+        tint = select(vec3<f32>(1.0), tint, max(max(tint.x, tint.y), tint.z) > 0.0);
+
+        return mix(col_bounce * tint, refl_col, fresnel) * rr;
+    }
+
+    // --- DISTANCE-DEPENDENT TRANSMISSION BLUR (rough glass) ---
+    dir_out = normalize(dir_out);
+    let eps_out = 0.002;
+
+    // Peek distance to the next surface *behind* the glass to scale blur amount
+    let peek = object_tlas_intersect(hit_exit + dir_out * eps_out, dir_out, -1);
+    var dist_behind = peek.t;
+    if (peek.idx < 0) { dist_behind = 4.0; }  // "far" background fallback
+
+    // Blur grows with roughness and distance. Tweak these to taste.
+    let max_angle = 0.25;  // ≈14°
+    let d_scale   = 2.0;   // distance where blur is ~half of max for roughness=1
+    let blur_amt  = clamp(mat.roughnessFactor, 0.0, 1.0)
+    * clamp(dist_behind / d_scale, 0.0, 1.5);
+
+    // Jitter in a cone around dir_out (single sample; converges with TAA/multiple frames)
+    let up_vec = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(1.0, 0.0, 0.0), abs(dir_out.z) > 0.999);
+    let tx = normalize(cross(up_vec, dir_out));
+    let ty = cross(dir_out, tx);
+    let d   = random_in_unit_disk(rng);
+    let cone_angle = max_angle * blur_amt;
+    let jitter = (tx * d.x + ty * d.y) * tan(cone_angle);
+    let dir_out_jitter = normalize(dir_out + jitter);
+
+    let refr_col = trace_ray(hit_exit + dir_out_jitter * eps_out, dir_out_jitter, depth + 1, rng).color;
+
+    // Transmission tint (optional)
+    var tint = mat.baseColorFactor.rgb;
+    tint = select(vec3<f32>(1.0), tint, max(max(tint.x, tint.y), tint.z) > 0.0);
+
+    // Fresnel mix (use entry view angle for stable energy split)
+    let F0g = mat.f0;
+    let cos_theta = abs(dot(-view_dir, normal));
+    let fresnel = F0g + (vec3<f32>(1.0) - F0g) * pow(1.0 - cos_theta, 5.0);
+
+    return mix(refr_col * tint, refl_col, fresnel) * rr;
+}
+
+
+// -----------------------------
+// Thin-lens camera sampling (DOF)
+// -----------------------------
+struct CamRay { ro: vec3<f32>, rd: vec3<f32> };
+
+fn sample_camera_ray(view_dir: vec3<f32>, rng: ptr<function, u32>) -> CamRay {
+    if (params.dof_enable == 0u || params.dof_aperture <= 0.0 || params.dof_focus_dist <= 0.0) {
+        return CamRay(vec3<f32>(0.0), normalize(view_dir));
+    }
+
+    let f = normalize(params.camera_front.xyz);
+    let r = normalize(params.camera_right.xyz);
+    let u = normalize(params.camera_up.xyz);
+
+    let vdir = normalize(view_dir);
+    let denom = max(1e-4, dot(vdir, f));
+    let t_focus = params.dof_focus_dist / denom;
+    let p_focus = vdir * t_focus;
+
+    let lens_radius = 0.5 * params.dof_aperture;
+    let d = random_in_unit_disk(rng) * lens_radius;
+    let offset = r * d.x + u * d.y;
+
+    let ro = offset;
+    let rd = normalize(p_focus - offset);
+    return CamRay(ro, rd);
+}
+
+// -----------------------------
+// Main
+// -----------------------------
+@compute @workgroup_size(8,8)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let dims = textureDimensions(color_tex);
+    if (id.x >= dims.x || id.y >= dims.y) { return; }
+
+    let uv = (vec2<f32>(f32(id.x), f32(id.y)) + 0.5) / vec2<f32>(dims);
+    var rng_state: u32 = init_rng(id.xy, u32(params.frame_number));
+
+    var view_dir: vec3<f32>;
+    var hit_pos: vec3<f32>;
+    var surf_normal: vec3<f32>;
+    var out_normal: vec3<f32>;
+    var out_depth: f32;
+    var out_obj: i32;
+    var gi_pos: vec3<f32>;
+    var gi_normal: vec3<f32>;
+    var final_col: vec3<f32>;
+
+    if (params.is_fisheye != 0) {
+        var uvn = uv * 2.0 - vec2<f32>(1.0);
+        uvn.x *= f32(dims.x) / f32(dims.y);
+        let r = length(uvn);
+        let theta = atan2(r, 1.0) * 2.0;
+        let phi = atan2(uvn.y, uvn.x);
+        let fwd = normalize(params.camera_front.xyz);
+        let rvec = normalize(cross(fwd, params.camera_up.xyz));
+        let upv = cross(rvec, fwd);
+        view_dir = cos(theta) * fwd + sin(theta) * (cos(phi) * rvec + sin(phi) * upv);
+
+        let cam_ray = sample_camera_ray(view_dir, &rng_state);
+        let primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
+        hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
+        view_dir = cam_ray.rd;
+
+        surf_normal = primary.normal;
+        out_normal = surf_normal;
+        out_depth = primary.depth;
+        out_obj = primary.obj_idx;
+        gi_pos = hit_pos + params.camera_pos.xyz;
+        gi_normal = surf_normal;
+
+        if (primary.obj_idx >= 0) {
+            let obj = objects[u32(primary.obj_idx)];
+            var mat_idx = obj.material_index;
+            if (primary.tri_idx != 0xffffffffu) { mat_idx = triangles[primary.tri_idx].material_index; }
+            let mat = materials[mat_idx];
+            if (obj.is_glass > 0u) {
+                final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
+                    let rough = mat.roughnessFactor;
+                    let rr = russian_roulette(1, rough, &rng_state);
+                    if (rr == 0.0) { final_col = primary.color; }
+                    else if (rough <= 0.02) {
+                        let refl_dir = normalize(reflect(view_dir, surf_normal));
+                        let res = trace_ray(hit_pos + surf_normal * 0.01, refl_dir, 1, &rng_state);
+                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
+                        let cos_theta = abs(dot(-view_dir, surf_normal));
+                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
+                        final_col = mix(primary.color, res.color * rr, fresnel);
+                    } else if (rough < 0.96) {
+                        let h = sample_ggx(surf_normal, rough, &rng_state);
+                        let refl_dir = normalize(reflect(view_dir, h));
+                        let res = trace_ray(hit_pos + h * 0.01, refl_dir, 1, &rng_state);
+                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
+                        let cos_theta = abs(dot(-view_dir, surf_normal));
+                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
+                        final_col = mix(primary.color, res.color * rr, fresnel);
+                    } else {
+                        final_col = primary.color;
+                    }
+                }
+        } else {
+            out_depth = 1.0; out_normal = vec3<f32>(0.0); out_obj = -1; gi_normal = vec3<f32>(0.0);
+            final_col = primary.color;
+        }
+    } else {
+        var clip = vec4<f32>(uv * 2.0 - vec2<f32>(1.0), 1.0, 1.0);
+        var world = params.inv_view_proj * clip; world = world / world.w;
+        view_dir = normalize(world.xyz - params.camera_pos.xyz);
+
+        let cam_ray = sample_camera_ray(view_dir, &rng_state);
+        let primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
+        hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
+        view_dir = cam_ray.rd;
+
+        surf_normal = primary.normal;
+        out_depth = primary.depth;
+        out_normal = primary.normal;
+        out_obj = primary.obj_idx;
+        gi_pos = hit_pos + params.camera_pos.xyz;
+        gi_normal = surf_normal;
+
+        if (primary.obj_idx >= 0) {
+            let obj = objects[u32(primary.obj_idx)];
+            var mat_idx = obj.material_index;
+            if (primary.tri_idx != 0xffffffffu) { mat_idx = triangles[primary.tri_idx].material_index; }
+            let mat = materials[mat_idx];
+            if (obj.is_glass > 0u) {
+                final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
+                    let rough = mat.roughnessFactor;
+                    let rr = russian_roulette(1, rough, &rng_state);
+                    if (rr == 0.0) { final_col = primary.color; }
+                    else if (rough <= 0.02) {
+                        let refl_dir = normalize(reflect(view_dir, surf_normal));
+                        let res = trace_ray(hit_pos + surf_normal * 0.01, refl_dir, 1, &rng_state);
+                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
+                        let cos_theta = abs(dot(-view_dir, surf_normal));
+                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
+                        final_col = mix(primary.color, res.color * rr, fresnel);
+                    } else if (rough < 0.96) {
+                        let h = sample_ggx(surf_normal, rough, &rng_state);
+                        let refl_dir = normalize(reflect(view_dir, h));
+                        let res = trace_ray(hit_pos + h * 0.01, refl_dir, 1, &rng_state);
+                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
+                        let cos_theta = abs(dot(-view_dir, surf_normal));
+                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
+                        final_col = mix(primary.color, res.color * rr, fresnel);
+                    } else {
+                        final_col = primary.color;
+                    }
+                }
+        } else {
+            out_depth = 1.0; out_normal = vec3<f32>(0.0); out_obj = -1; gi_normal = vec3<f32>(0.0);
+            final_col = primary.color;
+        }
+    }
+
+    var gi = vec3<f32>(0.0);
+    if (gi_params.quality != 3u) {
+        gi = sample_diffuse_gi(gi_pos + gi_normal * 0.01, gi_normal, &rng_state);
+    }
+
+    let L = final_col;
+    let max_lum = 10.0;
+    let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
+    let final_tone = L * min(1.0, max_lum / (lum + 1e-4));
+
+    textureStore(color_tex,  vec2<i32>(id.xy), vec4(final_tone, f32(out_obj)));
+    textureStore(depth_tex,  vec2<i32>(id.xy), vec4(out_depth, 0.0, 0.0, 1.0));
+    textureStore(normal_tex, vec2<i32>(id.xy), vec4(out_normal, out_depth));
+    textureStore(gi_noisy,   vec2<i32>(id.xy), vec4<f32>(gi, f32(out_obj)));
+}
