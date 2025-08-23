@@ -48,10 +48,11 @@ impl App for MyApp {
     }
 
     fn on_input(&mut self, engine: &mut Engine, event: &InputEvent) {
+        use sdl2::keyboard::Keycode;
         match event {
             InputEvent::KeyPressed { key } => {
-                println!("Key pressed: {}", key);
-                if key == "Escape" {
+                println!("Key pressed: {:?}", key);
+                if *key == Keycode::Escape {
                     engine.running = false;
                 }
             }
@@ -177,15 +178,16 @@ The framework provides unified input event handling:
 
 ```rust
 use vetrace_engine::app::InputEvent;
+use sdl2::keyboard::Keycode;
 
 impl App for MyApp {
     fn on_input(&mut self, engine: &mut Engine, event: &InputEvent) {
         match event {
             InputEvent::KeyPressed { key } => {
-                println!("Key pressed: {}", key);
+                println!("Key pressed: {:?}", key);
             }
             InputEvent::KeyReleased { key } => {
-                println!("Key released: {}", key);
+                println!("Key released: {:?}", key);
             }
             InputEvent::MousePressed { button, x, y } => {
                 println!("Mouse button {:?} pressed at ({}, {})", button, x, y);

@@ -8,6 +8,7 @@ use crate::ecs::World;
 use crate::engine::engine::Engine;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use sdl2::keyboard::Keycode;
 
 pub mod events;
 pub mod plugin;
@@ -37,10 +38,10 @@ pub trait App: 'static {
 }
 
 /// Input events that can be handled by applications
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum InputEvent {
-    KeyPressed { key: String },
-    KeyReleased { key: String },
+    KeyPressed { key: Keycode },
+    KeyReleased { key: Keycode },
     MousePressed { button: MouseButton, x: i32, y: i32 },
     MouseReleased { button: MouseButton, x: i32, y: i32 },
     MouseMoved { x: i32, y: i32 },
@@ -218,17 +219,15 @@ impl AppBuilder {
                     sdl2::event::Event::KeyDown {
                         keycode: Some(k), ..
                     } => {
-                        let key_name = format!("{:?}", k);
-                        if k == sdl2::keyboard::Keycode::Escape {
+                        if k == Keycode::Escape {
                             engine.running = false;
                         }
-                        input_events.push(InputEvent::KeyPressed { key: key_name });
+                        input_events.push(InputEvent::KeyPressed { key: k });
                     }
                     sdl2::event::Event::KeyUp {
                         keycode: Some(k), ..
                     } => {
-                        let key_name = format!("{:?}", k);
-                        input_events.push(InputEvent::KeyReleased { key: key_name });
+                        input_events.push(InputEvent::KeyReleased { key: k });
                     }
                     sdl2::event::Event::MouseMotion { x, y, .. } => {
                         input_events.push(InputEvent::MouseMoved { x, y });

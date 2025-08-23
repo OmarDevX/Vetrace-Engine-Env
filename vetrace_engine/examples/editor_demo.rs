@@ -5,6 +5,7 @@
 
 use vetrace_engine::app::{app, App, InputEvent};
 use vetrace_engine::engine::engine::Engine;
+use sdl2::keyboard::Keycode;
 
 /// Demo application with editor
 struct EditorDemoApp {
@@ -83,8 +84,8 @@ impl App for EditorDemoApp {
         
         match event {
             InputEvent::KeyPressed { key } => {
-                match key.as_str() {
-                    "F1" => {
+                match *key {
+                    Keycode::F1 => {
                         println!("🆘 Help:");
                         println!("   F1 - Show this help");
                         println!("   F2 - Create demo scene");
@@ -92,21 +93,21 @@ impl App for EditorDemoApp {
                         println!("   F5 - Save scene");
                         println!("   F9 - Load scene");
                     }
-                    "F2" => {
+                    Keycode::F2 => {
                         println!("🎬 Creating new demo scene...");
                         engine.clear_scene();
                         self.create_demo_scene(engine);
                     }
-                    "F3" => {
+                    Keycode::F3 => {
                         println!("🗑️  Clearing scene...");
                         engine.clear_scene();
                         self.scene_loaded = false;
                     }
-                    "F5" => {
+                    Keycode::F5 => {
                         println!("💾 Save scene functionality would go here");
                         // The editor plugin handles file operations through its UI
                     }
-                    "F9" => {
+                    Keycode::F9 => {
                         println!("📂 Load scene functionality would go here");
                         // The editor plugin handles file operations through its UI
                     }

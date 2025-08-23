@@ -5,6 +5,7 @@
 
 use vetrace_engine::app::{app, plugin::Plugin, App, InputEvent};
 use vetrace_engine::engine::engine::Engine;
+use sdl2::keyboard::Keycode;
 
 // Import the editor plugin
 extern crate vetrace_editor;
@@ -231,19 +232,19 @@ impl App for DemoApp {
 
     fn on_input(&mut self, engine: &mut Engine, event: &InputEvent) {
         match event {
-            InputEvent::KeyPressed { key, .. } => match key.as_str() {
-                "Space" => {
+            InputEvent::KeyPressed { key } => match *key {
+                Keycode::Space => {
                     println!("⏸️  Space pressed - Pause/Resume not implemented in app framework");
                 }
-                "r" | "R" => {
+                Keycode::R => {
                     println!("🔄 R pressed - Restart not implemented in app framework");
                 }
-                "c" | "C" => {
+                Keycode::C => {
                     println!("🧹 C pressed - Clear scene");
                     engine.scene.objects.clear();
                     engine.scene.bvh_dirty = true;
                 }
-                "Escape" => {
+                Keycode::Escape => {
                     println!("👋 ESC pressed - Exiting...");
                     std::process::exit(0);
                 }
