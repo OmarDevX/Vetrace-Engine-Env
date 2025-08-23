@@ -16,7 +16,7 @@ pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_array(&[
 ]);
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct GiParams {
     pub quality: u32,
     pub debug_mode: u32,
@@ -25,7 +25,7 @@ pub struct GiParams {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct PostFxUniforms {
     pub dof_enabled: u32,
     pub dof_manual: u32,
@@ -146,7 +146,7 @@ impl Default for PostFxUniforms {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct ShaderParams {
     pub camera_pos: [f32; 4],
     pub camera_front: [f32; 4],
@@ -183,7 +183,7 @@ pub struct ShaderParams {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct BlitParams {
     pub camera_pos: [f32; 4],
     pub inv_view_proj: [[f32; 4]; 4],
@@ -193,13 +193,13 @@ pub struct BlitParams {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct LightListHeader {
     pub count: u32,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct LightUniform {
     pub dir: [f32; 2],
     pub _pad: [f32; 2],
