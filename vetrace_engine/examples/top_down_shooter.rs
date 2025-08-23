@@ -360,7 +360,6 @@ impl App for TopDownShooterApp {
             look.rotate_z = true;
         }
         let player_ent = player_actor.entity();
-        engine.sandbox_window.skycolor = [255.0, 100.0, 100.0];
         engine.add_behaviour(MovementSystem);
         engine.add_behaviour(PlayerController);
         engine.add_behaviour(LookAtBehaviour);

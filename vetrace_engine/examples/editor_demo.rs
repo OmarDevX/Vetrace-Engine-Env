@@ -127,7 +127,6 @@ impl EditorDemoApp {
         sphere1.position = [-2.0, 0.0, 0.0];
         sphere1.radius = 1.0;
         sphere1.color = [1.0, 0.5, 0.1]; // Orange
-        sphere1.metallic = 0.9;
         sphere1.roughness = 0.1;
         engine.spawn_object(sphere1);
         
@@ -137,7 +136,6 @@ impl EditorDemoApp {
         cube.size = [1.5, 1.5, 1.5];
         cube.is_cube = true;
         cube.color = [0.2, 0.8, 0.3]; // Green
-        cube.metallic = 0.0;
         cube.roughness = 0.8;
         engine.spawn_object(cube);
         
@@ -146,9 +144,8 @@ impl EditorDemoApp {
         sphere2.position = [2.0, 0.0, 0.0];
         sphere2.radius = 0.8;
         sphere2.color = [0.2, 0.4, 1.0]; // Blue
-        sphere2.metallic = 0.0;
         sphere2.roughness = 0.3;
-        sphere2.emission_strength = 2.0;
+        sphere2.emission = 2.0;
         engine.spawn_object(sphere2);
         
         // Small red sphere
@@ -156,7 +153,6 @@ impl EditorDemoApp {
         small_sphere.position = [0.0, -1.5, 1.0];
         small_sphere.radius = 0.5;
         small_sphere.color = [1.0, 0.2, 0.2]; // Red
-        small_sphere.metallic = 0.5;
         small_sphere.roughness = 0.5;
         engine.spawn_object(small_sphere);
         
@@ -166,7 +162,6 @@ impl EditorDemoApp {
         ground.size = [10.0, 0.1, 10.0];
         ground.is_cube = true;
         ground.color = [0.7, 0.7, 0.7]; // Gray
-        ground.metallic = 0.0;
         ground.roughness = 0.9;
         engine.spawn_object(ground);
         

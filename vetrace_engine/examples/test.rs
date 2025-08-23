@@ -41,7 +41,6 @@ fn main() {
     // Start the engine in 2D mode
     let mut engine = Engine::new(true);
 
-    engine.sandbox_window.skycolor = [135.0, 206.0, 235.0];
 
     // Load the tree texture used for all sprites
     let mut textures = TextureStorage::new();

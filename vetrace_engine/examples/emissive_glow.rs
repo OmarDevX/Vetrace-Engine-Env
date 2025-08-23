@@ -44,10 +44,9 @@ fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
 struct EmissiveGlow {
     time: f32,
     #[cfg(feature = "wgpu")]
-    #[allow(dead_code)]
-    glitch_pipeline: Option<wgpu::RenderPipeline>,
+    glitch_pipeline: Option<std::sync::Arc<wgpu::RenderPipeline>>,
     #[cfg(feature = "wgpu")]
-    glitch_bind_group: Option<wgpu::BindGroup>,
+    glitch_bind_group: Option<std::sync::Arc<wgpu::BindGroup>>,
     #[cfg(feature = "wgpu")]
     time_buffer: Option<wgpu::Buffer>,
 }
@@ -153,14 +152,14 @@ impl App for EmissiveGlow {
                 }],
             });
 
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            let bind_group = std::sync::Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("glitch bg"),
                 layout: &bind_group_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
                     resource: time_buffer.as_entire_binding(),
                 }],
-            });
+            }));
 
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("glitch layout"),
@@ -168,13 +167,14 @@ impl App for EmissiveGlow {
                 push_constant_ranges: &[],
             });
 
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            let pipeline = std::sync::Arc::new(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("glitch pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: "vs_main",
                     buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
@@ -184,27 +184,48 @@ impl App for EmissiveGlow {
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
                 }),
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
-            });
+            }));
 
             self.glitch_pipeline = Some(pipeline.clone());
             self.glitch_bind_group = Some(bind_group.clone());
             self.time_buffer = Some(time_buffer);
 
-            engine.add_ui_callback(move |ctx, _engine| {
-                use egui::{Id, LayerId, Order};
-                let rect = ctx.screen_rect();
-                let cb = egui_wgpu::Callback::new(rect, move |_, rpass, _| {
-                    rpass.set_pipeline(&pipeline);
-                    rpass.set_bind_group(0, &bind_group, &[]);
+            struct GlitchPainter {
+                pipeline: std::sync::Arc<wgpu::RenderPipeline>,
+                bind_group: std::sync::Arc<wgpu::BindGroup>,
+            }
+
+            impl egui_wgpu::CallbackTrait for GlitchPainter {
+                fn paint<'a>(
+                    &'a self,
+                    _info: egui::PaintCallbackInfo,
+                    rpass: &mut wgpu::RenderPass<'a>,
+                    _resources: &'a egui_wgpu::CallbackResources,
+                ) {
+                    rpass.set_pipeline(&self.pipeline);
+                    rpass.set_bind_group(0, &self.bind_group, &[]);
                     rpass.draw(0..3, 0..1);
-                });
+                }
+            }
+
+            engine.add_ui_callback(move |ctx, _engine| {
+                use egui::{Id, LayerId, Order, Shape};
+                let rect = ctx.screen_rect();
+                let cb = egui_wgpu::Callback::new_paint_callback(
+                    rect,
+                    GlitchPainter {
+                        pipeline: pipeline.clone(),
+                        bind_group: bind_group.clone(),
+                    },
+                );
                 ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("glitch")))
-                    .add(egui::Shape::callback(rect, cb));
+                    .add(Shape::Callback(cb));
                 Ok(())
             });
         }

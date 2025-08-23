@@ -1,7 +1,7 @@
 use vetrace_engine::app::{app, App};
 use vetrace_engine::behaviour::look_at::LookAtBehaviour;
 use vetrace_engine::components::components::{
-    Collider, LookAt, Metadata, Renderable, ScriptComponent, UILabel, UILayout, UIScreenSpace, Velocity
+    Collider, LookAt, Metadata, ScriptComponent, UILabel, UILayout, UIScreenSpace, Velocity,
 };
 use vetrace_engine::ecs::Component;
 use vetrace_engine::engine::Engine;
@@ -30,7 +30,6 @@ impl App for TopDownLua {
         engine.auto_register_component::<UILayout>("UILayout");
         engine.auto_register_component::<UIScreenSpace>("UIScreenSpace");
         engine.auto_register_component::<Score>("Score");
-        engine.sandbox_window.skycolor= [0.0, 0.0, 0.0];
         let mut player_obj = Object::default();
         player_obj.is_static = false;
         player_obj.size = [0.5, 0.5, 0.5];
