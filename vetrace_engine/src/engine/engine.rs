@@ -459,18 +459,46 @@ impl Engine {
         }
 
         // Prepare GPU data (from run.rs line 161-170)
-        let (raw_gpu_objects, gpu_triangles) = self.scene.get_gpu_buffers();
-        let bvh_nodes = self.scene.get_bvh_nodes();
-        let tri_bvh_nodes = self.scene.get_tri_bvh_nodes();
+        let (raw_gpu_objects, raw_triangles) = self.scene.get_gpu_buffers();
         let raw_atmos = self.scene.get_gpu_atmospheres();
         let cam_pos = cam.position;
 
+        // Offset all GPU objects by the camera so the camera stays at the origin
         let mut gpu_objects: Vec<_> = raw_gpu_objects.to_vec();
         for obj in &mut gpu_objects {
             obj.position[0] -= cam_pos.x;
             obj.position[1] -= cam_pos.y;
             obj.position[2] -= cam_pos.z;
         }
+
+        // Translate triangles into camera-relative space
+        let mut gpu_triangles: Vec<_> = raw_triangles.to_vec();
+        for tri in &mut gpu_triangles {
+            tri.v0[0] -= cam_pos.x;
+            tri.v0[1] -= cam_pos.y;
+            tri.v0[2] -= cam_pos.z;
+        }
+
+        // Shift BVH nodes so bounding volumes track the camera-relative objects
+        let mut bvh_nodes: Vec<_> = self.scene.get_bvh_nodes().to_vec();
+        for node in &mut bvh_nodes {
+            node.center_radius[0] -= cam_pos.x;
+            node.center_radius[1] -= cam_pos.y;
+            node.center_radius[2] -= cam_pos.z;
+        }
+
+        // Shift triangle BVH nodes as well
+        let mut tri_bvh_nodes: Vec<_> = self.scene.get_tri_bvh_nodes().to_vec();
+        for node in &mut tri_bvh_nodes {
+            node.bounds_min[0] -= cam_pos.x;
+            node.bounds_min[1] -= cam_pos.y;
+            node.bounds_min[2] -= cam_pos.z;
+            node.bounds_max[0] -= cam_pos.x;
+            node.bounds_max[1] -= cam_pos.y;
+            node.bounds_max[2] -= cam_pos.z;
+        }
+
+        // Translate atmospheres relative to the camera
         let atmos: Vec<_> = raw_atmos
             .iter()
             .map(|a| {
