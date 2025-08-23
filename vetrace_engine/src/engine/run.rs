@@ -287,15 +287,33 @@ impl Engine {
             // Rebuild GPU objects with updated material indices
             self.scene.gpu_objects = self.scene.objects.iter().map(|o| o.to_gpu()).collect();
 
-            let (gpu_objects, gpu_triangles) = self.scene.get_gpu_buffers();
-            let atmos = self.scene.get_gpu_atmospheres().to_vec();
-            let have_atmos = !atmos.is_empty();
-            let bvh_nodes = self.scene.get_bvh_nodes();
-            let tri_bvh_nodes = self.scene.get_tri_bvh_nodes();
+            let (raw_gpu_objects, gpu_triangles) = self.scene.get_gpu_buffers();
+            let raw_atmos = self.scene.get_gpu_atmospheres();
             let cam = self.active_camera_info();
+            let cam_pos = cam.position;
             let cam_front = cam.orientation * Vec3::X;
             let cam_up = cam.orientation * Vec3::Y;
             let cam_right = cam.orientation * Vec3::Z;
+
+            let mut gpu_objects: Vec<_> = raw_gpu_objects.to_vec();
+            for obj in &mut gpu_objects {
+                obj.position[0] -= cam_pos.x;
+                obj.position[1] -= cam_pos.y;
+                obj.position[2] -= cam_pos.z;
+            }
+            let atmos: Vec<_> = raw_atmos
+                .iter()
+                .map(|a| {
+                    let mut at = *a;
+                    at.center_radius[0] -= cam_pos.x;
+                    at.center_radius[1] -= cam_pos.y;
+                    at.center_radius[2] -= cam_pos.z;
+                    at
+                })
+                .collect();
+            let have_atmos = !atmos.is_empty();
+            let bvh_nodes = self.scene.get_bvh_nodes();
+            let tri_bvh_nodes = self.scene.get_tri_bvh_nodes();
 
             let mut gi_quality = 0u32;
             let mut gi_debug_mode = 0u32;
@@ -341,7 +359,7 @@ impl Engine {
             }
 
             let render_params = RenderParams {
-                camera_pos: vec3_to_array(cam.position),
+                camera_pos: [0.0, 0.0, 0.0],
                 camera_front: vec3_to_array(cam_front),
                 camera_up: vec3_to_array(cam_up),
                 camera_right: vec3_to_array(cam_right),
@@ -363,9 +381,9 @@ impl Engine {
                     let (w, h) = self.renderer.screen_dimensions();
                     let aspect = w as f32 / h as f32;
                     let vp = (perspective(cam.fov, aspect, 0.1, 1000.0)
-                        * look_at(&cam.position, &(cam.position + cam_front), &cam_up))
-                    .inverse()
-                    .to_cols_array();
+                        * look_at(&Vec3::ZERO, &cam_front, &cam_up))
+                        .inverse()
+                        .to_cols_array();
                     [
                         [vp[0], vp[1], vp[2], vp[3]],
                         [vp[4], vp[5], vp[6], vp[7]],
@@ -402,7 +420,7 @@ impl Engine {
             };
             #[cfg(feature = "wgpu")]
             self.renderer.update_scene_data(
-                gpu_objects,
+                &gpu_objects,
                 gpu_triangles,
                 &bvh_nodes,
                 tri_bvh_nodes,
@@ -411,14 +429,14 @@ impl Engine {
             );
             #[cfg(not(feature = "wgpu"))]
             self.renderer
-                .update_scene_data(gpu_objects, gpu_triangles, &bvh_nodes, tri_bvh_nodes);
+                .update_scene_data(&gpu_objects, gpu_triangles, &bvh_nodes, tri_bvh_nodes);
             #[cfg(feature = "wgpu")]
             {
                 use crate::components::components::Transform;
 
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
-                let view_mat = look_at(&cam.position, &(cam.position + cam_front), &cam_up);
+                let view_mat = look_at(&Vec3::ZERO, &cam_front, &cam_up);
                 let proj_mat = perspective(cam.fov, aspect, 0.1, 1000.0);
 
                 let mut pbr_meshes = Vec::new();
@@ -433,7 +451,7 @@ impl Engine {
                             transform.orientation[2],
                             transform.orientation[3],
                         ),
-                        Vec3::from(transform.position),
+                        Vec3::from(transform.position) - cam_pos,
                     );
                     let mvp = (proj_mat * view_mat * model).to_cols_array_2d();
                     pbr_meshes.push(PbrRenderData {
@@ -446,7 +464,7 @@ impl Engine {
 
                 let mut sprite_batches = Vec::new();
                 for (_e, transform, sprite) in self.world.query2::<Transform, Sprite3D>() {
-                    let pos = Vec3::from(transform.position);
+                    let pos = Vec3::from(transform.position) - cam_pos;
                     let mut right = Vec3::X;
                     let mut up_v = Vec3::Y;
                     if self.is_2d {

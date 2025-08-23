@@ -436,12 +436,28 @@ impl Engine {
         }
 
         // Prepare GPU data (from run.rs line 161-170)
-        let (gpu_objects, gpu_triangles) = self.scene.get_gpu_buffers();
+        let (raw_gpu_objects, gpu_triangles) = self.scene.get_gpu_buffers();
         let bvh_nodes = self.scene.get_bvh_nodes();
         let tri_bvh_nodes = self.scene.get_tri_bvh_nodes();
+        let raw_atmos = self.scene.get_gpu_atmospheres();
+        let cam_pos = cam.position;
 
-        // Gather atmosphere data so the renderer can apply scattering
-        let atmos = self.scene.get_gpu_atmospheres().to_vec();
+        let mut gpu_objects: Vec<_> = raw_gpu_objects.to_vec();
+        for obj in &mut gpu_objects {
+            obj.position[0] -= cam_pos.x;
+            obj.position[1] -= cam_pos.y;
+            obj.position[2] -= cam_pos.z;
+        }
+        let atmos: Vec<_> = raw_atmos
+            .iter()
+            .map(|a| {
+                let mut at = *a;
+                at.center_radius[0] -= cam_pos.x;
+                at.center_radius[1] -= cam_pos.y;
+                at.center_radius[2] -= cam_pos.z;
+                at
+            })
+            .collect();
         let have_atmos = !atmos.is_empty();
 
         // Get rendering settings from the active camera's PostProcessing component
@@ -481,7 +497,7 @@ impl Engine {
 
         // Create render parameters (from run.rs line 343-394)
         let render_params = RenderParams {
-            camera_pos: vec3_to_array(cam.position),
+            camera_pos: [0.0, 0.0, 0.0],
             camera_front: vec3_to_array(cam_front),
             camera_up: vec3_to_array(cam_up),
             camera_right: vec3_to_array(cam_right),
@@ -503,7 +519,7 @@ impl Engine {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
                 let vp = perspective(cam.fov, aspect, 0.1, 1000.0)
-                    * look_at(&cam.position, &(cam.position + cam_front), &cam_up);
+                    * look_at(&Vec3::ZERO, &cam_front, &cam_up);
                 vp.inverse().to_cols_array_2d()
             },
             prev_view_proj: [[0.0; 4]; 4], // Simplified for app framework
@@ -548,7 +564,7 @@ impl Engine {
 
             let (w, h) = self.renderer.screen_dimensions();
             let aspect = w as f32 / h as f32;
-            let view_mat = look_at(&cam.position, &(cam.position + cam_front), &cam_up);
+            let view_mat = look_at(&Vec3::ZERO, &cam_front, &cam_up);
             let proj_mat = perspective(cam.fov, aspect, 0.1, 1000.0);
 
             // Build PBR meshes from ECS world (from run.rs line 416-437)
@@ -570,7 +586,7 @@ impl Engine {
                         transform.orientation[2],
                         transform.orientation[3],
                     ]),
-                    Vec3::from(transform.position),
+                    Vec3::from(transform.position) - cam_pos,
                 );
                 let mvp = (proj_mat * view_mat * model).to_cols_array_2d();
                 pbr_meshes.push(PbrRenderData {
@@ -584,7 +600,7 @@ impl Engine {
             // Build sprite batches from ECS world (from run.rs line 439-484)
             let mut sprite_batches = Vec::new();
             for (_e, transform, sprite) in self.world.query2::<Transform, Sprite3D>() {
-                let pos = Vec3::from(transform.position);
+                let pos = Vec3::from(transform.position) - cam_pos;
                 let mut right = Vec3::X;
                 let mut up_v = Vec3::Y;
                 if self.is_2d {
