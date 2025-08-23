@@ -9,6 +9,7 @@ use crate::engine::component_io::apply_component_data;
 use crate::inspector::Inspectable;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::loader::ComponentFactory;
+use crate::AutoLod;
 use crate::Behaviour;
 use egui::{self, Slider, TextEdit};
 use std::rc::Rc;
@@ -150,6 +151,7 @@ impl Engine {
         self.auto_register_component::<Shape>("Shape");
         self.auto_register_component::<ScriptComponent>("Script");
         self.auto_register_component::<LookAt>("LookAt");
+        self.auto_register_component::<AutoLod>("AutoLod");
         self.auto_register_component::<crate::components::components::Particle>("Particle");
         self.auto_register_component::<crate::components::components::Animation>("Animation");
         self.auto_register_component::<crate::components::components::Lerp>("Lerp");
