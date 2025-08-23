@@ -7,7 +7,7 @@ use vetrace_engine::components::components::{
 };
 use vetrace_engine::engine::Engine;
 use vetrace_engine::scene::object::Object;
-
+use vetrace_editor::EditorPlugin;
 struct EmissiveGlow {
     time: Arc<Mutex<f32>>,
 }
@@ -23,7 +23,9 @@ impl App for EmissiveGlow {
         if let Some(mut actor) = engine.spawn_object_as_actor(planet) {
             actor.with_bundle(Atmosphere::default());
         }
-
+    let assets = engine.assets.clone();
+        let cat_id = assets.load_gltf_pbr(engine, "/assets/oii_cat/scene.gltf").expect("Failed to load cat");
+        
         // A second planet with its own atmosphere to demonstrate multiple instances
         let mut planet2 = Object::default();
         planet2.is_cube = false;
@@ -96,5 +98,7 @@ impl App for EmissiveGlow {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    app().with_title("Emissive Glow").run(EmissiveGlow { time: Arc::new(Mutex::new(0.0)) })
+    app().with_title("Emissive Glow")
+    .add_plugin(EditorPlugin::new()) // Add the editor plugin
+    .run(EmissiveGlow { time: Arc::new(Mutex::new(0.0)) })
 }
