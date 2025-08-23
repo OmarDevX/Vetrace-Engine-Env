@@ -287,7 +287,7 @@ impl Engine {
             // Rebuild GPU objects with updated material indices
             self.scene.gpu_objects = self.scene.objects.iter().map(|o| o.to_gpu()).collect();
 
-            let (raw_gpu_objects, gpu_triangles) = self.scene.get_gpu_buffers();
+            let (raw_gpu_objects, raw_triangles) = self.scene.get_gpu_buffers();
             let raw_atmos = self.scene.get_gpu_atmospheres();
             let cam = self.active_camera_info();
             let cam_pos = cam.position;
@@ -301,6 +301,12 @@ impl Engine {
                 obj.position[1] -= cam_pos.y;
                 obj.position[2] -= cam_pos.z;
             }
+            let mut gpu_triangles: Vec<_> = raw_triangles.to_vec();
+            for tri in &mut gpu_triangles {
+                tri.v0[0] -= cam_pos.x;
+                tri.v0[1] -= cam_pos.y;
+                tri.v0[2] -= cam_pos.z;
+            }
             let atmos: Vec<_> = raw_atmos
                 .iter()
                 .map(|a| {
@@ -312,8 +318,21 @@ impl Engine {
                 })
                 .collect();
             let have_atmos = !atmos.is_empty();
-            let bvh_nodes = self.scene.get_bvh_nodes();
-            let tri_bvh_nodes = self.scene.get_tri_bvh_nodes();
+            let mut bvh_nodes: Vec<_> = self.scene.get_bvh_nodes().to_vec();
+            for node in &mut bvh_nodes {
+                node.center_radius[0] -= cam_pos.x;
+                node.center_radius[1] -= cam_pos.y;
+                node.center_radius[2] -= cam_pos.z;
+            }
+            let mut tri_bvh_nodes: Vec<_> = self.scene.get_tri_bvh_nodes().to_vec();
+            for node in &mut tri_bvh_nodes {
+                node.bounds_min[0] -= cam_pos.x;
+                node.bounds_min[1] -= cam_pos.y;
+                node.bounds_min[2] -= cam_pos.z;
+                node.bounds_max[0] -= cam_pos.x;
+                node.bounds_max[1] -= cam_pos.y;
+                node.bounds_max[2] -= cam_pos.z;
+            }
 
             let mut gi_quality = 0u32;
             let mut gi_debug_mode = 0u32;
@@ -421,15 +440,15 @@ impl Engine {
             #[cfg(feature = "wgpu")]
             self.renderer.update_scene_data(
                 &gpu_objects,
-                gpu_triangles,
+                &gpu_triangles,
                 &bvh_nodes,
-                tri_bvh_nodes,
+                &tri_bvh_nodes,
                 &gpu_materials,
                 &tex_handles,
             );
             #[cfg(not(feature = "wgpu"))]
             self.renderer
-                .update_scene_data(&gpu_objects, gpu_triangles, &bvh_nodes, tri_bvh_nodes);
+                .update_scene_data(&gpu_objects, &gpu_triangles, &bvh_nodes, &tri_bvh_nodes);
             #[cfg(feature = "wgpu")]
             {
                 use crate::components::components::Transform;
