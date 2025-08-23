@@ -174,17 +174,33 @@ impl Engine {
     }
 
     pub fn spawn_with_triangles(&mut self, mut object: Object, mut tris: Vec<GpuTriangle>) {
+        // Center mesh geometry around the origin so rotation/scale operate about
+        // the object's true center and the top-level BVH encloses the mesh
+        // correctly even when source data is offset in space.
+        let (min_b, max_b) = crate::scene::tri_bvh::mesh_bounds(&tris);
+        let center = [
+            (min_b[0] + max_b[0]) * 0.5,
+            (min_b[1] + max_b[1]) * 0.5,
+            (min_b[2] + max_b[2]) * 0.5,
+        ];
+        for t in &mut tris {
+            t.v0[0] -= center[0];
+            t.v0[1] -= center[1];
+            t.v0[2] -= center[2];
+            if t.material_index == u32::MAX {
+                t.material_index = object.material_index;
+            }
+        }
+
+        // Recompute bounds after centering to determine the unscaled size
         let (min_b, max_b) = crate::scene::tri_bvh::mesh_bounds(&tris);
         object.size = [
             max_b[0] - min_b[0],
             max_b[1] - min_b[1],
             max_b[2] - min_b[2],
         ];
-        for t in &mut tris {
-            if t.material_index == u32::MAX {
-                t.material_index = object.material_index;
-            }
-        }
+
+        // Add triangles and their BVH nodes to the scene
         let start = self.scene.triangles.len();
         let count = tris.len();
         self.scene.add_triangles(tris.clone());
@@ -193,6 +209,7 @@ impl Engine {
         crate::scene::tri_bvh::offset_nodes(&mut bvh_nodes, bvh_start as i32);
         let bvh_count = bvh_nodes.len();
         self.scene.add_tri_bvh_nodes(bvh_nodes);
+
         object.is_mesh = true;
         object.triangle_start_idx = start;
         object.triangle_count = count;
@@ -394,13 +411,27 @@ impl Engine {
             .query4_mut::<crate::components::components::ObjMesh, crate::components::components::ObjectRef, crate::components::components::Renderable, crate::components::components::Shape>()
         {
             if !mesh.loaded && !mesh.path.is_empty() {
-                if let Ok(tris) = crate::rendering::resource::load_obj_file(&mesh.path) {
+                if let Ok(mut tris) = crate::rendering::resource::load_obj_file(&mesh.path) {
+                    // Center the mesh geometry about the origin to keep BVH and
+                    // transforms stable even when source OBJ data is offset.
+                    let (bmin, bmax) = crate::scene::tri_bvh::mesh_bounds(&tris);
+                    let center = [
+                        (bmin[0] + bmax[0]) * 0.5,
+                        (bmin[1] + bmax[1]) * 0.5,
+                        (bmin[2] + bmax[2]) * 0.5,
+                    ];
+                    for t in &mut tris {
+                        t.v0[0] -= center[0];
+                        t.v0[1] -= center[1];
+                        t.v0[2] -= center[2];
+                    }
+                    let (bmin, bmax) = crate::scene::tri_bvh::mesh_bounds(&tris);
+
                     let start = self.scene.triangles.len();
                     self.scene.add_triangles(tris.clone());
 
                     // Build a per-mesh triangle BVH and determine the mesh bounds
                     let mut bvh_nodes = crate::scene::tri_bvh::build_bvh(&tris);
-                    let (bmin, bmax) = crate::scene::tri_bvh::mesh_bounds(&tris);
                     let b_start = self.scene.tri_bvh_nodes.len();
                     crate::scene::tri_bvh::offset_nodes(&mut bvh_nodes, b_start as i32);
                     let b_count = bvh_nodes.len();
@@ -421,12 +452,10 @@ impl Engine {
                         obj.triangle_count = count;
                         obj.tri_bvh_start = b_start;
                         obj.tri_bvh_count = b_count;
-                        // Compute symmetric extents around the mesh origin so the
-                        // top-level BVH radius encapsulates meshes offset from the origin.
                         obj.size = [
-                            bmax[0].abs().max(bmin[0].abs()) * 2.0,
-                            bmax[1].abs().max(bmin[1].abs()) * 2.0,
-                            bmax[2].abs().max(bmin[2].abs()) * 2.0,
+                            bmax[0] - bmin[0],
+                            bmax[1] - bmin[1],
+                            bmax[2] - bmin[2],
                         ];
                     }
 
