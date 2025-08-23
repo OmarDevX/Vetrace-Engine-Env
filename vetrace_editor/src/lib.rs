@@ -6,6 +6,7 @@
 use vetrace_engine::app::plugin::Plugin;
 use vetrace_engine::engine::engine::Engine;
 use vetrace_engine::engine::ui::EditorUIRenderer;
+use sdl2::keyboard::Keycode;
 
 pub mod windows;
 pub mod inspector;
@@ -259,10 +260,10 @@ pub trait EditorTool {
 }
 
 /// Editor-specific input events
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum EditorInputEvent {
-    KeyPressed { key: String },
-    KeyReleased { key: String },
+    KeyPressed { key: Keycode },
+    KeyReleased { key: Keycode },
     MousePressed { button: MouseButton, x: i32, y: i32 },
     MouseReleased { button: MouseButton, x: i32, y: i32 },
     MouseMoved { x: i32, y: i32 },
