@@ -11,8 +11,8 @@ use crate::behaviour::script::EntityProxy;
 use crate::behaviour::script::ScriptBehaviour;
 use crate::components::components::CameraAttachment;
 use crate::components::components::{
-    AngularVelocity, Collider, LookAt, Material, ObjectRef, Player, Renderable, Rotate,
-    ScriptComponent, Shape, Transform, Velocity,
+    AngularVelocity, Collider, GlobalTransform, LookAt, Material, ObjectRef, Player,
+    Renderable, Rotate, ScriptComponent, Shape, Transform, Velocity,
 };
 use crate::components::generated::{
     FieldType, GeneratedComponent, GeneratedSpec, GeneratedStorage,
@@ -43,6 +43,7 @@ use crate::systems::sprite_render::SpriteRenderSystem;
 use glam::{Quat, Vec3};
 use mlua::{Function, Lua, Value as LuaValue};
 use serde_json::{Map, Value};
+use rapier3d::prelude::*;
 
 #[derive(Clone, Copy)]
 pub struct CameraInfo {
@@ -322,6 +323,28 @@ impl Engine {
             return info;
         }
         info
+    }
+
+    /// Shift all world and physics objects so the active camera is at the origin
+    pub fn shift_origin(&mut self, offset: Vec3) {
+        if offset.length_squared() == 0.0 {
+            return;
+        }
+
+        for (_e, t) in self.world.query::<&mut Transform>() {
+            let pos = Vec3::from_array(t.position) - offset;
+            t.position = pos.to_array();
+        }
+
+        for (_e, gt) in self.world.query::<&mut GlobalTransform>() {
+            let pos = Vec3::from_array(gt.position) - offset;
+            gt.position = pos.to_array();
+        }
+
+        for (_handle, body) in self.physics.bodies.iter_mut() {
+            let p = body.translation();
+            body.set_translation(vector![p.x - offset.x, p.y - offset.y, p.z - offset.z], true);
+        }
     }
 
     /// Complete render method for app framework

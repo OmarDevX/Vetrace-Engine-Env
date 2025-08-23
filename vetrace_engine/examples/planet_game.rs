@@ -17,7 +17,6 @@ const ROT_SPEED: f32 = 1.5;
 const THROTTLE_RATE: f32 = 3.0;
 const MAX_THROTTLE: f32 = 5.0;
 const MAX_SPEED: f32 = 150.0;
-const FLOATING_ORIGIN_THRESHOLD: f32 = 1000.0;
 
 struct Planet {
     entity: Entity,
@@ -95,49 +94,6 @@ impl PlanetGame {
         });
     }
 
-    fn shift_world(&mut self, engine: &mut Engine, offset: Vec3) {
-        for planet in &self.planets {
-            if let Some(t) = engine.world.get_mut::<Transform>(planet.entity) {
-                let pos = Vec3::from_array(t.position) - offset;
-                t.position = pos.to_array();
-            }
-            if let Some(sb) = engine.world.get::<StaticBody>(planet.entity) {
-                if let Some(handle) = sb.handle {
-                    if let Some(body) = engine.physics.bodies.get_mut(handle) {
-                        let p = body.translation();
-                        body.set_translation(
-                            vector![p.x - offset.x, p.y - offset.y, p.z - offset.z],
-                            true,
-                        );
-                    }
-                }
-            }
-            if let Some(at) = engine.world.get_mut::<Transform>(planet.atmosphere) {
-                let pos = Vec3::from_array(at.position) - offset;
-                at.position = pos.to_array();
-            }
-        }
-
-        if let Some(t) = engine.world.get_mut::<Transform>(self.player.entity) {
-            let pos = Vec3::from_array(t.position) - offset;
-            t.position = pos.to_array();
-        }
-        if let Some(rb) = engine.world.get::<RigidBody3D>(self.player.entity) {
-            if let Some(handle) = rb.handle {
-                if let Some(body) = engine.physics.bodies.get_mut(handle) {
-                    let p = body.translation();
-                    body.set_translation(
-                        vector![p.x - offset.x, p.y - offset.y, p.z - offset.z],
-                        true,
-                    );
-                }
-            }
-        }
-        if let Some(cam_t) = engine.world.get_mut::<Transform>(self.camera) {
-            let pos = Vec3::from_array(cam_t.position) - offset;
-            cam_t.position = pos.to_array();
-        }
-    }
 }
 
 impl App for PlanetGame {
@@ -270,12 +226,6 @@ impl App for PlanetGame {
             ];
         }
 
-        if let Some(t) = engine.world.get::<Transform>(self.player.entity) {
-            let ship_pos = Vec3::from_array(t.position);
-            if ship_pos.length() > FLOATING_ORIGIN_THRESHOLD {
-                self.shift_world(engine, ship_pos);
-            }
-        }
     }
 
     fn render(&mut self, engine: &mut Engine) {

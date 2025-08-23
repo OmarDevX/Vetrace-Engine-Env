@@ -95,6 +95,12 @@ impl Engine {
                 self.behaviours = behaviours;
             }
 
+            // Keep the camera at the origin by shifting the world
+            let cam_pos = self.active_camera_info().position;
+            if cam_pos.length_squared() > 0.0 {
+                self.shift_origin(cam_pos);
+            }
+
             let (logical_w, logical_h) = self.window.get_size();
             let (drawable_w, _) = self.window.window.drawable_size();
             let screen_size = egui::vec2(logical_w as f32, logical_h as f32);
