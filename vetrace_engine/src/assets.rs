@@ -7,7 +7,7 @@ use ahash::HashMap;
 use anyhow::Context;
 use parking_lot::RwLock;
 
-use glam::{Mat3, Mat4, Vec3, Vec4};
+use glam::{Mat4, Vec4};
 use gltf::animation::util::ReadOutputs;
 
 use crate::components::components::{Animation, MorphTargets, MorphWeights};
@@ -309,8 +309,7 @@ fn spawn_gltf_node(
 ) -> anyhow::Result<Vec<u32>> {
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
     let world = parent * local;
-    let world3 = Mat3::from_mat4(world);
-    let normal_mat = world3.inverse().transpose();
+    let (scale, rot, _trans) = world.to_scale_rotation_translation();
     let mut ids = Vec::new();
 
     if let Some(mesh) = node.mesh() {
@@ -339,14 +338,9 @@ fn spawn_gltf_node(
                 (0..positions.len() as u32).collect()
             };
 
-            let mut world_pos = Vec::with_capacity(positions.len());
-            for p in &positions {
-                let pw = world * Vec4::new(p[0], p[1], p[2], 1.0);
-                world_pos.push([pw.x, pw.y, pw.z]);
-            }
             let mut min = [f32::MAX; 3];
             let mut max = [f32::MIN; 3];
-            for p in &world_pos {
+            for p in &positions {
                 for i in 0..3 {
                     if p[i] < min[i] {
                         min[i] = p[i];
@@ -362,14 +356,12 @@ fn spawn_gltf_node(
                 (min[2] + max[2]) * 0.5,
             ];
 
-            let mut vertices = Vec::with_capacity(world_pos.len());
-            for (i, pw) in world_pos.iter().enumerate() {
-                let n = normal_mat * Vec3::new(normals[i][0], normals[i][1], normals[i][2]);
-                let t = normal_mat * Vec3::new(tangents[i][0], tangents[i][1], tangents[i][2]);
+            let mut vertices = Vec::with_capacity(positions.len());
+            for (i, p) in positions.iter().enumerate() {
                 vertices.push(Vertex {
-                    pos: [pw[0] - center[0], pw[1] - center[1], pw[2] - center[2]],
-                    nrm: [n.x, n.y, n.z],
-                    tan: [t.x, t.y, t.z, tangents[i][3]],
+                    pos: [p[0] - center[0], p[1] - center[1], p[2] - center[2]],
+                    nrm: normals[i],
+                    tan: tangents[i],
                     uv: texcoords[i],
                 });
             }
@@ -428,7 +420,10 @@ fn spawn_gltf_node(
 
             let mut obj = Object::default();
             obj.is_cube = false;
-            obj.position = center;
+            let wc = world * Vec4::new(center[0], center[1], center[2], 1.0);
+            obj.position = [wc.x, wc.y, wc.z];
+            obj.orientation = [rot.x, rot.y, rot.z, rot.w];
+            obj.scale = [scale.x, scale.y, scale.z];
             engine.spawn_with_triangles(obj, tris.clone());
             let id = (engine.scene.objects.len() - 1) as u32;
             if let Some(entity) = engine.core.find_entity_by_object_id(id) {
