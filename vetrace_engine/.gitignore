@@ -1,0 +1,4 @@
+/target
+assets/textures/*.png
+.env
+assets/models/*

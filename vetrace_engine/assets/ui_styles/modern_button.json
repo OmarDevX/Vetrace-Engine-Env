@@ -1,0 +1,193 @@
+{
+  "name": "Modern Button",
+  "version": "1.0.0",
+  "description": "A modern button style with gradient background and hover effects",
+  "style": {
+    "background": {
+      "color": [0.2, 0.4, 0.8, 1.0],
+      "image": null,
+      "image_mode": "Stretch",
+      "gradient": {
+        "gradient_type": "Linear",
+        "stops": [
+          [0.0, [0.3, 0.5, 0.9, 1.0]],
+          [1.0, [0.1, 0.3, 0.7, 1.0]]
+        ],
+        "angle": 90.0,
+        "center": [0.5, 0.5]
+      },
+      "opacity": 1.0
+    },
+    "border": {
+      "width": 2.0,
+      "color": [0.4, 0.6, 1.0, 1.0],
+      "radius": {
+        "top_left": 8.0,
+        "top_right": 8.0,
+        "bottom_right": 8.0,
+        "bottom_left": 8.0
+      },
+      "style": "Solid",
+      "dash_pattern": [5.0, 5.0]
+    },
+    "shadow": {
+      "enabled": true,
+      "offset": [0.0, 2.0],
+      "blur_radius": 4.0,
+      "spread_radius": 0.0,
+      "color": [0.0, 0.0, 0.0, 0.3],
+      "inset": false
+    },
+    "glass": {
+      "enabled": false,
+      "blur_intensity": 10.0,
+      "tint": [1.0, 1.0, 1.0, 0.1],
+      "noise_texture": null,
+      "noise_intensity": 0.1,
+      "frost_intensity": 0.0
+    },
+    "animation": {
+      "transition_duration": 0.2,
+      "easing": "EaseInOut",
+      "animated_properties": [
+        "BackgroundColor",
+        "BorderColor",
+        "Scale",
+        "ShadowBlur"
+      ],
+      "hover_animation": {
+        "scale": [1.05, 1.05],
+        "color_tint": [1.1, 1.1, 1.1, 1.0],
+        "shadow_intensity": 1.5,
+        "glow": {
+          "color": [0.4, 0.6, 1.0, 0.8],
+          "intensity": 0.5,
+          "radius": 8.0
+        }
+      }
+    },
+    "states": {
+      "hover": {
+        "background": {
+          "color": [0.25, 0.45, 0.85, 1.0],
+          "gradient": {
+            "gradient_type": "Linear",
+            "stops": [
+              [0.0, [0.35, 0.55, 0.95, 1.0]],
+              [1.0, [0.15, 0.35, 0.75, 1.0]]
+            ],
+            "angle": 90.0,
+            "center": [0.5, 0.5]
+          }
+        },
+        "border": {
+          "color": [0.5, 0.7, 1.0, 1.0]
+        },
+        "shadow": {
+          "blur_radius": 6.0,
+          "color": [0.0, 0.0, 0.0, 0.4]
+        }
+      },
+      "pressed": {
+        "background": {
+          "color": [0.15, 0.35, 0.75, 1.0],
+          "gradient": {
+            "gradient_type": "Linear",
+            "stops": [
+              [0.0, [0.1, 0.3, 0.7, 1.0]],
+              [1.0, [0.2, 0.4, 0.8, 1.0]]
+            ],
+            "angle": 90.0,
+            "center": [0.5, 0.5]
+          }
+        },
+        "shadow": {
+          "offset": [0.0, 1.0],
+          "blur_radius": 2.0
+        }
+      },
+      "disabled": {
+        "background": {
+          "color": [0.3, 0.3, 0.3, 1.0],
+          "gradient": null
+        },
+        "border": {
+          "color": [0.5, 0.5, 0.5, 1.0]
+        },
+        "shadow": {
+          "enabled": false
+        }
+      }
+    }
+  },
+  "variants": {
+    "danger": {
+      "background": {
+        "color": [0.8, 0.2, 0.2, 1.0],
+        "gradient": {
+          "gradient_type": "Linear",
+          "stops": [
+            [0.0, [0.9, 0.3, 0.3, 1.0]],
+            [1.0, [0.7, 0.1, 0.1, 1.0]]
+          ],
+          "angle": 90.0,
+          "center": [0.5, 0.5]
+        }
+      },
+      "border": {
+        "width": 2.0,
+        "color": [1.0, 0.4, 0.4, 1.0],
+        "radius": {
+          "top_left": 8.0,
+          "top_right": 8.0,
+          "bottom_right": 8.0,
+          "bottom_left": 8.0
+        }
+      },
+      "shadow": {
+        "enabled": true,
+        "offset": [0.0, 2.0],
+        "blur_radius": 4.0,
+        "color": [0.8, 0.0, 0.0, 0.3]
+      },
+      "animation": {
+        "hover_animation": {
+          "glow": {
+            "color": [1.0, 0.4, 0.4, 0.8],
+            "intensity": 0.5,
+            "radius": 8.0
+          }
+        }
+      }
+    },
+    "success": {
+      "background": {
+        "color": [0.2, 0.8, 0.2, 1.0],
+        "gradient": {
+          "gradient_type": "Linear",
+          "stops": [
+            [0.0, [0.3, 0.9, 0.3, 1.0]],
+            [1.0, [0.1, 0.7, 0.1, 1.0]]
+          ],
+          "angle": 90.0,
+          "center": [0.5, 0.5]
+        }
+      },
+      "border": {
+        "color": [0.4, 1.0, 0.4, 1.0]
+      },
+      "shadow": {
+        "color": [0.0, 0.8, 0.0, 0.3]
+      },
+      "animation": {
+        "hover_animation": {
+          "glow": {
+            "color": [0.4, 1.0, 0.4, 0.8],
+            "intensity": 0.5,
+            "radius": 8.0
+          }
+        }
+      }
+    }
+  }
+}
