@@ -225,12 +225,14 @@ impl Engine {
                 ui.label("Try clicking the button above to test interaction.");
             });
 
-        // Call the editor UI callback if it exists
-        if let Some(mut callback) = self.editor_ui_callback.take() {
-            if let Err(e) = callback(ctx, self) {
-                println!("⚠️ Error in editor UI callback: {}", e);
+        // Call all registered UI callbacks
+        let engine_ptr = self as *mut Engine;
+        for callback in self.ui_callbacks.iter_mut() {
+            // SAFETY: we only create a temporary mutable reference for the callback
+            let engine: &mut Engine = unsafe { &mut *engine_ptr };
+            if let Err(e) = callback(ctx, engine) {
+                println!("⚠️ Error in UI callback: {}", e);
             }
-            self.editor_ui_callback = Some(callback);
         }
     }
 
@@ -246,17 +248,17 @@ impl Engine {
         }
     }
 
-    /// Set the editor UI callback
-    pub fn set_editor_ui_callback<F>(&mut self, callback: F)
+    /// Register a UI callback
+    pub fn add_ui_callback<F>(&mut self, callback: F)
     where
         F: FnMut(&egui::Context, &mut Engine) -> Result<(), Box<dyn std::error::Error>> + 'static,
     {
-        self.editor_ui_callback = Some(Box::new(callback));
+        self.ui_callbacks.push(Box::new(callback));
     }
 
-    /// Clear the editor UI callback
-    pub fn clear_editor_ui_callback(&mut self) {
-        self.editor_ui_callback = None;
+    /// Clear all registered UI callbacks
+    pub fn clear_ui_callbacks(&mut self) {
+        self.ui_callbacks.clear();
     }
 
     /// Draw editor UI with access to an editor plugin

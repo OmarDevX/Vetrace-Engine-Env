@@ -122,7 +122,7 @@ impl Engine {
             started_scripts: HashSet::new(),
             paused: false,
             saved_scene: None,
-            editor_ui_callback: None,
+            ui_callbacks: Vec::new(),
             assets,
         };
 

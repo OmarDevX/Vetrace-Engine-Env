@@ -147,9 +147,8 @@ pub struct Engine {
     pub started_scripts: std::collections::HashSet<Entity>,
     pub paused: bool,
     pub saved_scene: Option<SceneFile>,
-    pub editor_ui_callback: Option<
-        Box<dyn FnMut(&egui::Context, &mut Engine) -> Result<(), Box<dyn std::error::Error>>>,
-    >,
+    pub ui_callbacks:
+        Vec<Box<dyn FnMut(&egui::Context, &mut Engine) -> Result<(), Box<dyn std::error::Error>>>>,
 }
 
 impl Engine {

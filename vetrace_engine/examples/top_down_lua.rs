@@ -1,4 +1,4 @@
-use vetrace_engine::app::{run_app, App, AppConfig};
+use vetrace_engine::app::{app, App};
 use vetrace_engine::behaviour::look_at::LookAtBehaviour;
 use vetrace_engine::components::components::{
     Collider, LookAt, Metadata, Renderable, ScriptComponent, UILabel, UILayout, UIScreenSpace, Velocity
@@ -21,7 +21,7 @@ impl Component for Score {}
 struct TopDownLua;
 
 impl App for TopDownLua {
-    fn on_start(&mut self, engine: &mut Engine) {
+    fn setup(&mut self, engine: &mut Engine) {
         engine.reload_scripts();
         engine.add_behaviour(LookAtBehaviour);
         // Register UI components so prefabs can instantiate them. The names
@@ -71,15 +71,13 @@ impl App for TopDownLua {
         }
     }
 
-    fn on_update(&mut self, _engine: &mut Engine, _delta: f32) {}
+    fn update(&mut self, _engine: &mut Engine, _delta: f32) {}
+
+    fn render(&mut self, engine: &mut Engine) {
+        engine.render_frame();
+    }
 }
 
-fn main() {
-    run_app(
-        TopDownLua,
-        AppConfig {
-            is_2d: true,
-            enable_editor: false,
-        },
-    );
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    app().with_title("Top Down Lua").run(TopDownLua)
 }

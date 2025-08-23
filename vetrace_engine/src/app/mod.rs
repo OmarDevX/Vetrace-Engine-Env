@@ -140,12 +140,9 @@ impl AppBuilder {
         // Initialize plugins
         plugin_manager.initialize_plugins(&mut engine)?;
 
-        // Set up editor UI callback if editor plugin is present
-        plugin_manager.setup_editor_ui_callback(&mut engine)?;
-
-        // Set up a callback that includes plugin UI rendering
+        // Register a callback that renders plugin UIs
         let plugin_manager_ptr = &mut plugin_manager as *mut PluginManager;
-        engine.set_editor_ui_callback(move |ctx, engine| {
+        engine.add_ui_callback(move |ctx, engine| {
             // Safely access the plugin manager
             let plugin_manager = unsafe { &mut *plugin_manager_ptr };
             plugin_manager.render_plugin_uis(ctx, engine)

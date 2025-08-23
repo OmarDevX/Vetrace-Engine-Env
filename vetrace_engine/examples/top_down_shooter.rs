@@ -1,7 +1,7 @@
 use rand::Rng;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
-use vetrace_engine::app::{run_app, App, AppConfig};
+use vetrace_engine::app::{app, App};
 use vetrace_engine::behaviour::look_at::LookAtBehaviour;
 use vetrace_engine::components::components::{Anchor, UILabel, UILayout, UIScreenSpace};
 use vetrace_engine::components::components::{
@@ -327,7 +327,7 @@ impl Behaviour for GameBehaviour {
 struct TopDownShooterApp;
 
 impl App for TopDownShooterApp {
-    fn on_start(&mut self, engine: &mut Engine) {
+    fn setup(&mut self, engine: &mut Engine) {
         engine.auto_register_component::<Health>("Health");
         engine.auto_register_component::<CustomPlayer>("Custom Player");
         engine.auto_register_component::<UILabel>("UI Label");
@@ -373,15 +373,13 @@ impl App for TopDownShooterApp {
         });
     }
 
-    fn on_update(&mut self, _engine: &mut Engine, _delta: f32) {}
+    fn update(&mut self, _engine: &mut Engine, _delta: f32) {}
+
+    fn render(&mut self, engine: &mut Engine) {
+        engine.render_frame();
+    }
 }
 
-fn main() {
-    run_app(
-        TopDownShooterApp,
-        AppConfig {
-            is_2d: true,
-            enable_editor: false,
-        },
-    );
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    app().with_title("Top Down Shooter").run(TopDownShooterApp)
 }

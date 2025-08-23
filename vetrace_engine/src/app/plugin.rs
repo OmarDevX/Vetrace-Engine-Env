@@ -188,22 +188,6 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Set up editor UI callback if editor plugin is present
-    pub fn setup_editor_ui_callback(&mut self, engine: &mut Engine) -> Result<(), Box<dyn std::error::Error>> {
-        // Check if we have an editor plugin that implements EditorUIRenderer
-        if self.plugins.contains_key("vetrace_editor") {
-            println!("🎨 Setting up editor UI callback for vetrace_editor plugin");
-
-            // Set up a callback that will call the editor plugin's render method
-            // We need to store a reference to the plugin manager to access the editor plugin
-            engine.set_editor_ui_callback(|ctx, engine| {
-                // This is a placeholder - the actual rendering will be done in render_plugin_uis
-                Ok(())
-            });
-        }
-        Ok(())
-    }
-
     /// Render the complete editor UI with all components
     fn render_full_editor_ui(ctx: &egui::Context, engine: &mut Engine) -> Result<(), Box<dyn std::error::Error>> {
         // Main Editor Window - Scene Hierarchy

@@ -1,4 +1,4 @@
-use vetrace_engine::app::{run_app, App, AppConfig};
+use vetrace_engine::app::{app, App};
 use vetrace_engine::components::components::{
     Anchor, Metadata, ScriptComponent, UIButton, UILabel, UILayout, UIPanel, UIScreenSpace,
     UITextEditor,
@@ -9,7 +9,7 @@ use vetrace_engine::scene::object::Object;
 struct UiExample;
 
 impl App for UiExample {
-    fn on_start(&mut self, engine: &mut Engine) {
+    fn setup(&mut self, engine: &mut Engine) {
         engine.auto_register_component::<UILabel>("UILabel");
         engine.auto_register_component::<UILayout>("UILayout");
         engine.auto_register_component::<UIScreenSpace>("UIScreenSpace");
@@ -99,16 +99,14 @@ impl App for UiExample {
         engine.reload_scripts();
     }
 
-    fn on_update(&mut self, _engine: &mut Engine, _delta: f32) {}
+    fn update(&mut self, _engine: &mut Engine, _delta: f32) {}
+
+    fn render(&mut self, engine: &mut Engine) {
+        engine.render_frame();
+    }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Game UI works without the built-in editor interface
-    run_app(
-        UiExample,
-        AppConfig {
-            is_2d: true,
-            enable_editor: false,
-        },
-    );
+    app().with_title("UI Interaction").run(UiExample)
 }
