@@ -27,7 +27,7 @@ struct MeshAccum {
 #[derive(Clone, Debug)]
 pub enum AnimationChannel {
     Translation(Vec<(f32, [f32; 3])>),
-    Rotation(Vec<(f32, [f32; 4])>),    // quaternion [x, y, z, w]
+    Rotation(Vec<(f32, [f32; 4])>), // quaternion [x, y, z, w]
     Scale(Vec<(f32, [f32; 3])>),
     MorphTargetWeights(Vec<(f32, Vec<f32>)>), // time, weights for each morph target
 }
@@ -188,7 +188,6 @@ impl AssetManager {
             mats
         };
         // TODO: Fix this when we integrate scene management with new core engine
-        let mat_offset = 0; // engine.scene.materials.len() as u32;
         // engine.scene.materials.extend(materials.clone());
 
         let mut buffers_data: Vec<Vec<u8>> = Vec::new();
@@ -210,7 +209,8 @@ impl AssetManager {
 
             for channel in anim.channels() {
                 let reader = channel.reader(|b| buffers_data.get(b.index()).map(|v| v.as_slice()));
-                if let (Some(inputs), Some(outputs)) = (reader.read_inputs(), reader.read_outputs()) {
+                if let (Some(inputs), Some(outputs)) = (reader.read_inputs(), reader.read_outputs())
+                {
                     let times: Vec<f32> = inputs.collect();
                     clip.duration = times.iter().copied().fold(clip.duration, f32::max);
 
@@ -253,91 +253,27 @@ impl AssetManager {
             }
         }
 
-        let mut acc = MeshAccum::default();
         let file_path_str = format!("{}", abs.display());
+        let mut first_id: Option<u32> = None;
         for scene in gltf.scenes() {
             for node in scene.nodes() {
-                load_gltf_node(node, Mat4::IDENTITY, &buffers_data, &mut acc, &file_path_str)?;
-            }
-        }
-        for tri in acc.triangles.iter_mut() {
-            if tri.material_index != u32::MAX {
-                tri.material_index += mat_offset;
-            }
-        }
-
-        let name = format!("{}", abs.display());
-        // Check if we have morph targets for this mesh
-        let morph_targets = if !acc.morph_targets.is_empty() {
-            // For now, use the first morph target set found
-            // In a more complex system, you might want to handle multiple morph target sets per mesh
-            acc.morph_targets.values().next()
-        } else {
-            None
-        };
-
-        let gm = GpuMesh::from_cpu_with_morph_targets(
-            engine.renderer.device(),
-            &name,
-            &acc.vertices,
-            &acc.indices,
-            morph_targets
-        )?;
-        let handle = MeshHandle(Arc::new(gm));
-        self.meshes.write().insert(name.clone(), handle.clone());
-
-        // Store morph targets
-        for (morph_key, morph_set) in acc.morph_targets.clone() {
-            self.morph_targets.write().insert(morph_key, morph_set);
-        }
-
-        let mut obj = Object::default();
-        obj.is_cube = false;
-        engine.spawn_with_triangles(obj, acc.triangles.clone());
-        let id = (engine.scene.objects.len() - 1) as u32;
-        if let Some(entity) = engine.core.find_entity_by_object_id(id) {
-            // Add essential components for rendering
-            engine.world.insert(entity, handle);
-
-            // Add PBR material if available
-            if !materials.is_empty() {
-                engine.world.insert(entity, materials[0].clone());
-            }
-
-            if let Some(anim_name) = first_clip {
-                engine.world.insert(
-                    entity,
-                    Animation {
-                        clip: anim_name,
-                        ..Default::default()
-                    },
-                );
-            }
-
-            // Add morph target components if morph targets were loaded
-            if !acc.morph_targets.is_empty() {
-                // For now, use the first morph target set found
-                // In a more complex system, you might want to handle multiple morph target sets per entity
-                if let Some((morph_key, morph_set)) = acc.morph_targets.iter().next() {
-                    engine.world.insert(
-                        entity,
-                        MorphTargets {
-                            morph_key: morph_key.clone(),
-                        },
-                    );
-
-                    // Initialize morph weights to zero
-                    engine.world.insert(
-                        entity,
-                        MorphWeights {
-                            weights: vec![0.0; morph_set.targets.len()],
-                        },
-                    );
+                let ids = spawn_gltf_node(
+                    self,
+                    engine,
+                    node,
+                    Mat4::IDENTITY,
+                    &buffers_data,
+                    &materials,
+                    first_clip.as_deref(),
+                    &file_path_str,
+                )?;
+                if first_id.is_none() {
+                    first_id = ids.first().copied();
                 }
             }
         }
 
-        Ok(id) // Return the object ID
+        Ok(first_id.unwrap_or(0))
     }
 }
 
@@ -348,11 +284,7 @@ impl AssetManager {
 
     /// Returns a list of all loaded animation names.
     pub fn animation_names(&self) -> Vec<String> {
-        self.animations
-            .read()
-            .keys()
-            .cloned()
-            .collect()
+        self.animations.read().keys().cloned().collect()
     }
 
     pub fn get_morph_targets(&self, key: &str) -> Option<MorphTargetSet> {
@@ -361,25 +293,25 @@ impl AssetManager {
 
     /// Returns a list of all loaded morph target keys.
     pub fn morph_target_keys(&self) -> Vec<String> {
-        self.morph_targets
-            .read()
-            .keys()
-            .cloned()
-            .collect()
+        self.morph_targets.read().keys().cloned().collect()
     }
 }
 
-fn load_gltf_node(
+fn spawn_gltf_node(
+    assets: &AssetManager,
+    engine: &mut Engine,
     node: gltf::Node,
     parent: Mat4,
     buffers_data: &Vec<Vec<u8>>,
-    acc: &mut MeshAccum,
+    materials: &Vec<PbrMaterial>,
+    first_clip: Option<&str>,
     file_path: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<u32>> {
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
     let world = parent * local;
     let world3 = Mat3::from_mat4(world);
     let normal_mat = world3.inverse().transpose();
+    let mut ids = Vec::new();
 
     if let Some(mesh) = node.mesh() {
         for prim in mesh.primitives() {
@@ -407,62 +339,49 @@ fn load_gltf_node(
                 (0..positions.len() as u32).collect()
             };
 
-            let mat_index = prim.material().index().unwrap_or(0) as u32;
-            let start = acc.vertices.len() as u32;
+            let mut world_pos = Vec::with_capacity(positions.len());
+            for p in &positions {
+                let pw = world * Vec4::new(p[0], p[1], p[2], 1.0);
+                world_pos.push([pw.x, pw.y, pw.z]);
+            }
+            let mut min = [f32::MAX; 3];
+            let mut max = [f32::MIN; 3];
+            for p in &world_pos {
+                for i in 0..3 {
+                    if p[i] < min[i] {
+                        min[i] = p[i];
+                    }
+                    if p[i] > max[i] {
+                        max[i] = p[i];
+                    }
+                }
+            }
+            let center = [
+                (min[0] + max[0]) * 0.5,
+                (min[1] + max[1]) * 0.5,
+                (min[2] + max[2]) * 0.5,
+            ];
 
-            let mut local_verts = Vec::with_capacity(positions.len());
-            for i in 0..positions.len() {
-                let p = world * Vec4::new(positions[i][0], positions[i][1], positions[i][2], 1.0);
+            let mut vertices = Vec::with_capacity(world_pos.len());
+            for (i, pw) in world_pos.iter().enumerate() {
                 let n = normal_mat * Vec3::new(normals[i][0], normals[i][1], normals[i][2]);
                 let t = normal_mat * Vec3::new(tangents[i][0], tangents[i][1], tangents[i][2]);
-                local_verts.push(Vertex {
-                    pos: [p.x, p.y, p.z],
+                vertices.push(Vertex {
+                    pos: [pw[0] - center[0], pw[1] - center[1], pw[2] - center[2]],
                     nrm: [n.x, n.y, n.z],
                     tan: [t.x, t.y, t.z, tangents[i][3]],
                     uv: texcoords[i],
                 });
             }
 
-            acc.vertices.extend(local_verts.iter());
-            acc.indices.extend(indices.iter().map(|i| i + start));
-
-            // Load morph targets if present
-            let morph_targets_count = prim.morph_targets().len();
-            if morph_targets_count > 0 {
-                let mut morph_target_set = MorphTargetSet {
-                    targets: Vec::new(),
-                    base_vertex_count: positions.len(),
-                };
-
-                for (target_index, morph_target) in prim.morph_targets().enumerate() {
-                    let mut target = MorphTarget {
-                        name: format!("Target_{}", target_index),
-                        vertex_positions: Vec::new(),
-                        vertex_normals: None,
-                    };
-
-                    // TODO: Load morph target positions (deltas)
-                    // For now, create placeholder data - this will be implemented properly later
-                    target.vertex_positions = vec![[0.0, 0.0, 0.0]; positions.len()];
-
-                    // TODO: Load morph target normals (deltas) if available
-                    // For now, skip normals
-
-                    morph_target_set.targets.push(target);
-                }
-
-                // Store morph targets with a unique key based on mesh and primitive
-                let morph_key = format!("{}#mesh{}#prim{}", file_path, mesh.index(), prim.index());
-                acc.morph_targets.insert(morph_key, morph_target_set);
-            }
-
+            let mut tris = Vec::new();
             for idx in indices.chunks_exact(3) {
                 let i0 = idx[0] as usize;
                 let i1 = idx[1] as usize;
                 let i2 = idx[2] as usize;
-                let v0 = &local_verts[i0];
-                let v1 = &local_verts[i1];
-                let v2 = &local_verts[i2];
+                let v0 = &vertices[i0];
+                let v1 = &vertices[i1];
+                let v2 = &vertices[i2];
                 let e1 = [
                     v1.pos[0] - v0.pos[0],
                     v1.pos[1] - v0.pos[1],
@@ -475,7 +394,7 @@ fn load_gltf_node(
                 ];
                 let duv1 = [v1.uv[0] - v0.uv[0], v1.uv[1] - v0.uv[1]];
                 let duv2 = [v2.uv[0] - v0.uv[0], v2.uv[1] - v0.uv[1]];
-                acc.triangles.push(GpuTriangle {
+                tris.push(GpuTriangle {
                     v0: v0.pos,
                     _pad0: 0.0,
                     e1,
@@ -491,18 +410,60 @@ fn load_gltf_node(
                     uv0: v0.uv,
                     duv1,
                     duv2,
-                    material_index: mat_index,
+                    material_index: u32::MAX,
                     _pad6: 0,
                 });
             }
+
+            let name = format!("{}#node{}#prim{}", file_path, node.index(), prim.index());
+            let gm = GpuMesh::from_cpu_with_morph_targets(
+                engine.renderer.device(),
+                &name,
+                &vertices,
+                &indices,
+                None,
+            )?;
+            let handle = MeshHandle(Arc::new(gm));
+            assets.meshes.write().insert(name, handle.clone());
+
+            let mut obj = Object::default();
+            obj.is_cube = false;
+            obj.position = center;
+            engine.spawn_with_triangles(obj, tris.clone());
+            let id = (engine.scene.objects.len() - 1) as u32;
+            if let Some(entity) = engine.core.find_entity_by_object_id(id) {
+                engine.world.insert(entity, handle);
+                if let Some(mi) = prim.material().index().and_then(|i| materials.get(i)) {
+                    engine.world.insert(entity, mi.clone());
+                }
+                if let Some(anim_name) = first_clip {
+                    engine.world.insert(
+                        entity,
+                        Animation {
+                            clip: anim_name.to_string(),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+            ids.push(id);
         }
     }
 
     for child in node.children() {
-        load_gltf_node(child, world, buffers_data, acc, file_path)?;
+        ids.extend(spawn_gltf_node(
+            assets,
+            engine,
+            child,
+            world,
+            buffers_data,
+            materials,
+            first_clip,
+            file_path,
+        )?);
     }
 
-    Ok(())
+    Ok(ids)
 }
 
 fn srgb_to_linear(x: f32) -> f32 {
