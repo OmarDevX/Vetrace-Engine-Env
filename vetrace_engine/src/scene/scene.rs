@@ -85,12 +85,23 @@ impl Scene {
                 .get::<crate::components::components::AngularVelocity>(entity)
                 .cloned()
                 .unwrap_or_default();
+            let mut obj_scale = [1.0; 3];
             if let Some(r) = obj_ref {
                 if let Some(obj) = self.objects.get_mut(r.id as usize) {
                     let prev = previous.get(r.id as usize).copied();
                     obj.position = pos;
                     obj.orientation = ori;
-                    obj.scale = transform.size;
+                    // Derive per-axis scale factors from the world-space
+                    // transform size so triangle vertices are scaled
+                    // correctly relative to the object's original mesh
+                    // dimensions.
+                    for i in 0..3 {
+                        obj.scale[i] = if obj.size[i] != 0.0 {
+                            transform.size[i] / obj.size[i]
+                        } else {
+                            1.0
+                        };
+                    }
                     obj.color = renderable.color;
                     obj.roughness = renderable.roughness;
                     obj.emission = renderable.emission;
@@ -123,6 +134,7 @@ impl Scene {
                     }
 
                     obj_size = obj.size;
+                    obj_scale = obj.scale;
                 }
             }
 
@@ -138,7 +150,7 @@ impl Scene {
                 position: pos,
                 orientation: ori,
                 size: obj_size,
-                scale: transform.size,
+                scale: obj_scale,
                 material_index: 0,
                 radius,
                 is_glass: material.is_glass as u32,

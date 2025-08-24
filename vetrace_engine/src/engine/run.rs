@@ -13,7 +13,7 @@ use crate::scene::object::GpuMaterial;
 use crate::systems::sprite_render::SpriteRenderSystem;
 use crate::Behaviour;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
 use sdl2::mouse::MouseState;
 use std::collections::HashMap;
@@ -202,7 +202,9 @@ impl Engine {
                 });
             }
 
-            for (i, obj) in self.scene.objects.iter_mut().enumerate() {
+            let cam = self.active_camera_info();
+            let scene = &mut self.scene;
+            for (i, obj) in scene.objects.iter_mut().enumerate() {
                 // See if the object has a material component in the world
                 let entity_mat = self
                     .core
@@ -288,14 +290,18 @@ impl Engine {
                     idx
                 };
                 obj.material_index = idx;
+                let start = obj.triangle_start_idx;
+                let end = start + obj.triangle_count;
+                for tri in &mut scene.triangles[start..end] {
+                    tri.material_index = idx;
+                }
             }
 
             // Rebuild GPU objects with updated material indices
-            self.scene.gpu_objects = self.scene.objects.iter().map(|o| o.to_gpu()).collect();
+            scene.gpu_objects = scene.objects.iter().map(|o| o.to_gpu()).collect();
 
-            let (raw_gpu_objects, raw_triangles) = self.scene.get_gpu_buffers();
-            let raw_atmos = self.scene.get_gpu_atmospheres();
-            let cam = self.active_camera_info();
+            let (raw_gpu_objects, raw_triangles) = scene.get_gpu_buffers();
+            let raw_atmos = scene.get_gpu_atmospheres();
             let cam_pos = cam.position;
             let cam_front = cam.orientation * Vec3::X;
             let cam_up = cam.orientation * Vec3::Y;
@@ -308,6 +314,66 @@ impl Engine {
                 obj.position[2] -= cam_pos.z;
             }
             let mut gpu_triangles: Vec<_> = raw_triangles.to_vec();
+            let mut tri_bvh_nodes: Vec<_> = scene.get_tri_bvh_nodes().to_vec();
+            for obj in &scene.objects {
+                let start = obj.triangle_start_idx;
+                let end = start + obj.triangle_count;
+                let b_start = obj.tri_bvh_start;
+                let b_end = b_start + obj.tri_bvh_count;
+                let pos = Vec3::from(obj.position);
+                let rot = Quat::from_xyzw(
+                    obj.orientation[0],
+                    obj.orientation[1],
+                    obj.orientation[2],
+                    obj.orientation[3],
+                );
+                let rot_mat = Mat3::from_quat(rot);
+                let scale = Vec3::from(obj.scale);
+                for tri in &mut gpu_triangles[start..end] {
+                    let mut v0 = Vec3::from_array(tri.v0);
+                    let mut e1 = Vec3::from_array(tri.e1);
+                    let mut e2 = Vec3::from_array(tri.e2);
+                    v0 = rot_mat * (v0 * scale) + pos;
+                    e1 = rot_mat * (e1 * scale);
+                    e2 = rot_mat * (e2 * scale);
+                    tri.v0 = v0.to_array();
+                    tri.e1 = e1.to_array();
+                    tri.e2 = e2.to_array();
+                    let n0 = rot_mat * Vec3::from_array(tri.n0);
+                    let n1 = rot_mat * Vec3::from_array(tri.n1);
+                    let n2 = rot_mat * Vec3::from_array(tri.n2);
+                    tri.n0 = n0.normalize().to_array();
+                    tri.n1 = n1.normalize().to_array();
+                    tri.n2 = n2.normalize().to_array();
+                }
+                for node in &mut tri_bvh_nodes[b_start..b_end] {
+                    let bmin = Vec3::from_array(node.bounds_min[0..3].try_into().unwrap());
+                    let bmax = Vec3::from_array(node.bounds_max[0..3].try_into().unwrap());
+                    let corners = [
+                        Vec3::new(bmin.x, bmin.y, bmin.z),
+                        Vec3::new(bmin.x, bmin.y, bmax.z),
+                        Vec3::new(bmin.x, bmax.y, bmin.z),
+                        Vec3::new(bmin.x, bmax.y, bmax.z),
+                        Vec3::new(bmax.x, bmin.y, bmin.z),
+                        Vec3::new(bmax.x, bmin.y, bmax.z),
+                        Vec3::new(bmax.x, bmax.y, bmin.z),
+                        Vec3::new(bmax.x, bmax.y, bmax.z),
+                    ];
+                    let mut new_min = Vec3::splat(f32::INFINITY);
+                    let mut new_max = Vec3::splat(f32::NEG_INFINITY);
+                    for mut c in corners {
+                        c = rot_mat * (c * scale) + pos;
+                        new_min = new_min.min(c);
+                        new_max = new_max.max(c);
+                    }
+                    node.bounds_min[0] = new_min.x;
+                    node.bounds_min[1] = new_min.y;
+                    node.bounds_min[2] = new_min.z;
+                    node.bounds_max[0] = new_max.x;
+                    node.bounds_max[1] = new_max.y;
+                    node.bounds_max[2] = new_max.z;
+                }
+            }
             for tri in &mut gpu_triangles {
                 tri.v0[0] -= cam_pos.x;
                 tri.v0[1] -= cam_pos.y;
@@ -324,13 +390,12 @@ impl Engine {
                 })
                 .collect();
             let have_atmos = !atmos.is_empty();
-            let mut bvh_nodes: Vec<_> = self.scene.get_bvh_nodes().to_vec();
+            let mut bvh_nodes: Vec<_> = scene.get_bvh_nodes().to_vec();
             for node in &mut bvh_nodes {
                 node.center_radius[0] -= cam_pos.x;
                 node.center_radius[1] -= cam_pos.y;
                 node.center_radius[2] -= cam_pos.z;
             }
-            let mut tri_bvh_nodes: Vec<_> = self.scene.get_tri_bvh_nodes().to_vec();
             for node in &mut tri_bvh_nodes {
                 node.bounds_min[0] -= cam_pos.x;
                 node.bounds_min[1] -= cam_pos.y;

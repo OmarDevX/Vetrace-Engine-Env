@@ -126,7 +126,11 @@ impl AppBuilder {
         let mut engine = Engine::new(false); // Default to 3D mode
 
         // Configure window
-        engine.window.window.set_title(&self.window_title);
+        engine
+            .window
+            .window
+            .set_title(&self.window_title)
+            .expect("failed to set window title");
         engine
             .window
             .window

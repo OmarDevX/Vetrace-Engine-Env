@@ -361,9 +361,9 @@ bool is_visible(vec3 from, vec3 to, int skipA, int skipB)
                     int r = tnode.child_tri.y;
                     int tri = tnode.child_tri.z;
                     if (tri >= 0) {
-                        vec3 v0 = triangles[tri + objects[obj].triangle_start_idx].v0 + objects[obj].position;
-                        vec3 v1 = triangles[tri + objects[obj].triangle_start_idx].v1 + objects[obj].position;
-                        vec3 v2 = triangles[tri + objects[obj].triangle_start_idx].v2 + objects[obj].position;
+                        vec3 v0 = triangles[tri + objects[obj].triangle_start_idx].v0;
+                        vec3 v1 = triangles[tri + objects[obj].triangle_start_idx].v1;
+                        vec3 v2 = triangles[tri + objects[obj].triangle_start_idx].v2;
                         vec3 nrm = normalize(cross(v1 - v0, v2 - v0));
                         if (dot(dir, nrm) > 0.0) continue;
                         if (intersectTriangleShadow(from, dir, v0, v1, v2, dist))
@@ -433,9 +433,9 @@ bool is_visible(vec3 from, vec3 to, int skipA, int skipB)
                 continue;
             for (int t = 0; t < int(objects[obj].triangle_count); ++t) {
                 int tri = t + int(objects[obj].triangle_start_idx);
-                vec3 v0 = triangles[tri].v0 + objects[obj].position;
-                vec3 v1 = triangles[tri].v1 + objects[obj].position;
-                vec3 v2 = triangles[tri].v2 + objects[obj].position;
+                vec3 v0 = triangles[tri].v0;
+                vec3 v1 = triangles[tri].v1;
+                vec3 v2 = triangles[tri].v2;
                 vec3 nrm = normalize(cross(v1 - v0, v2 - v0));
                 if (dot(dir, nrm) > 0.0) continue;
                 if (intersectTriangleShadow(from, dir, v0, v1, v2, dist))
@@ -536,9 +536,9 @@ vec4 calculateLightContribution(vec3 rayOrigin, vec3 rayDir, inout uint rngState
                         if (tri >= 0) {
                             float t;
                             vec2 uv;
-                            vec3 v0 = triangles[tri + objects[i].triangle_start_idx].v0 + objects[i].position;
-                            vec3 v1 = triangles[tri + objects[i].triangle_start_idx].v1 + objects[i].position;
-                            vec3 v2 = triangles[tri + objects[i].triangle_start_idx].v2 + objects[i].position;
+                            vec3 v0 = triangles[tri + objects[i].triangle_start_idx].v0;
+                            vec3 v1 = triangles[tri + objects[i].triangle_start_idx].v1;
+                            vec3 v2 = triangles[tri + objects[i].triangle_start_idx].v2;
                             vec3 nrm = normalize(cross(v1 - v0, v2 - v0));
                             if (dot(rayDir, nrm) > 0.0) continue;
                             if (intersectTriangle(rayOrigin, rayDir, v0, v1, v2, t, uv)) {
@@ -631,9 +631,9 @@ vec4 calculateLightContribution(vec3 rayOrigin, vec3 rayDir, inout uint rngState
                     int tri = t + int(objects[i].triangle_start_idx);
                     float tt;
                     vec2 uv;
-                    vec3 v0 = triangles[tri].v0 + objects[i].position;
-                    vec3 v1 = triangles[tri].v1 + objects[i].position;
-                    vec3 v2 = triangles[tri].v2 + objects[i].position;
+                    vec3 v0 = triangles[tri].v0;
+                    vec3 v1 = triangles[tri].v1;
+                    vec3 v2 = triangles[tri].v2;
                     vec3 nrm = normalize(cross(v1 - v0, v2 - v0));
                     if (dot(rayDir, nrm) > 0.0) continue;
                     if (intersectTriangle(rayOrigin, rayDir, v0, v1, v2, tt, uv)) {
