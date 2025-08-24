@@ -1,0 +1,16 @@
+{
+  "name": "Player",
+  "tags": ["player"],
+  "position": [0.0, 0.0, 0.0],
+  "color": [0.0, 150.0, 255.0],
+  "size": [0.5, 0.5, 0.5],
+  "is_cube": true,
+  "components": [
+    {"name": "Velocity", "data": {"velocity": [0.0, 0.0, 0.0], "acceleration": [0.0, 0.0, 0.0]}},
+    {"name": "Collider", "data": {"radius": 0.5, "is_cube": true}},
+    {"name": "LookAt", "data": {"target": "mouse", "rotate_x": true, "rotate_y": true, "rotate_z": true}},
+    {"name": "Script", "data": {"script": "player"}},
+    {"name": "Score", "data": {"value": 0}},
+    {"name": "Renderable", "data": {"emission": 1.0, "roughness": 1.0}}
+  ]
+}
