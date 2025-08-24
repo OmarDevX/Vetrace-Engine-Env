@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use crate::ecs::Component;
 use crate::inspector::Inspectable;
+use vetrace_engine_macros::Inspectable;
+use crate::inspector::export::{ExportedField, ExportKind};
 
 /// User-provided material with custom WGSL evaluation code.
 #[derive(Debug, Clone, Inspectable)]

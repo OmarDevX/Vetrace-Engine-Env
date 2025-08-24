@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use vetrace_engine::app::App;
+use vetrace_engine::app::{app, App};
 use vetrace_engine::scene::object::Object;
 use vetrace_engine::{CustomMaterial, Engine, MaterialParameter};
 
@@ -64,13 +64,16 @@ impl App for RainbowExample {
             engine.world.insert(e, custom);
         }
     }
+
+    fn render(&mut self, engine: &mut Engine) {
+        engine.render_frame();
+    }
 }
 
-fn main() -> anyhow::Result<()> {
-    let mut engine = Engine::builder()
-        .with_window_title("Rainbow Custom Material")
-        .with_window_size(800, 600)
-        .build()?;
-    engine.run_app(RainbowExample);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    app()
+        .with_title("Custom Material Demo")
+        .with_size(720, 720)
+        .run(RainbowExample)?;
     Ok(())
 }
