@@ -33,11 +33,13 @@ pub use input::Input;
 // Other core modules
 pub mod math;
 pub mod materials;
+pub mod custom_material;
 pub mod gpu;
 pub mod lod;
 pub use lod::{
     AutoLod, AutoLodProcessor, LodLevel, LodSettings, LodStats, MeshData, SimplifiedMesh,
 };
+pub use custom_material::{CustomMaterial, MaterialParameter, RaytraceShaderCompiler};
 // Legacy modules (for migration)
 pub mod scene {
     pub mod bvh;

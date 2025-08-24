@@ -959,7 +959,7 @@ impl Engine {
                 ior: mat.ior,
                 base_color_tex: 0, // No texture support for primitives yet
                 f0,
-                _pad1: 0,
+                ..Default::default()
             });
         }
 
@@ -986,7 +986,7 @@ impl Engine {
                         ior: 1.5, // Default IOR
                         base_color_tex: 0,
                         f0: [0.04; 3], // Default F0 for dielectrics
-                        _pad1: 0,
+                        ..Default::default()
                     });
                     idx
                 })
@@ -1009,7 +1009,7 @@ impl Engine {
                         ior: 1.5,
                         base_color_tex: 0,
                         f0: [0.04; 3],
-                        _pad1: 0,
+                        ..Default::default()
                     });
                     idx
                 })
@@ -1303,7 +1303,7 @@ impl Engine {
                 ior: mat.ior,
                 base_color_tex: tex_idx,
                 f0,
-                _pad1: 0,
+                ..Default::default()
             });
         }
 
@@ -1353,7 +1353,7 @@ impl Engine {
                         ior: mat.ior,
                         base_color_tex: tex_idx,
                         f0,
-                        _pad1: 0,
+                        ..Default::default()
                     });
                     idx
                 })
@@ -1389,7 +1389,7 @@ impl Engine {
                     ior: obj.ior,
                     base_color_tex: 0,
                     f0,
-                    _pad1: 0,
+                    ..Default::default()
                 });
                 idx
             };

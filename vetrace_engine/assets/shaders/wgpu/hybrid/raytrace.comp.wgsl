@@ -51,8 +51,32 @@ struct MaterialParams {
     roughnessFactor: f32,
     ior: f32,
     baseColorTex: u32,
-    f0: vec3<f32>, _pad1: u32,
+    f0: vec3<f32>, has_custom_material: u32,
+    custom_material_id: u32,
+    _pad2: vec3<u32>,
 };
+
+struct CustomMaterialParams {
+    color_tint: vec4<f32>,
+    roughness: f32,
+    metallic: f32,
+    noise_scale: f32,
+    emission_strength: f32,
+    custom_float_1: f32,
+    custom_float_2: f32,
+    custom_float_3: f32,
+    custom_float_4: f32,
+};
+
+struct MaterialResult {
+    base_color: vec3<f32>,
+    normal: vec3<f32>,
+    roughness: f32,
+    metallic: f32,
+    emission: vec3<f32>,
+};
+
+// MATERIAL_FUNCTIONS_PLACEHOLDER
 
 struct Atmosphere {
     center_radius: vec4<f32>,
@@ -134,6 +158,7 @@ struct Params {
 @group(0) @binding(17) var<storage, read> materials: array<MaterialParams>;
 @group(0) @binding(21) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(22) var tex_sampler: sampler;
+@group(0) @binding(23) var<storage, read> custom_materials: array<CustomMaterialParams>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -924,6 +949,32 @@ fn ambient_occlusion(_origin: vec3<f32>, _normal: vec3<f32>, _obj_idx: u32, _rng
     return 1.0; // SSAO elsewhere
 }
 
+fn default_material_result(hit_point: vec3<f32>, normal: vec3<f32>, _view_dir: vec3<f32>, _uv: vec2<f32>) -> MaterialResult {
+    var result: MaterialResult;
+    result.base_color = vec3<f32>(1.0, 1.0, 1.0);
+    result.normal = normal;
+    result.roughness = 1.0;
+    result.metallic = 0.0;
+    result.emission = vec3<f32>(0.0, 0.0, 0.0);
+    return result;
+}
+
+// MATERIAL_EVALUATION_PLACEHOLDER
+
+fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialParams, tri_idx: u32, uv: vec2<f32>) -> MaterialResult {
+    var result: MaterialResult;
+    var tex = vec3<f32>(1.0, 1.0, 1.0);
+    if (mat.baseColorTex != 0u && tri_idx != 0xffffffffu) {
+        tex = textureSampleLevel(textures[mat.baseColorTex], tex_sampler, uv, 0.0).rgb;
+    }
+    result.base_color = mat.baseColorFactor.rgb * tex;
+    result.normal = normal;
+    result.roughness = mat.roughnessFactor;
+    result.metallic = mat.metallicFactor;
+    result.emission = mat.emissiveFactor * mat.emissiveStrength;
+    return result;
+}
+
 fn shade_base(
     hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, gi: vec3<f32>, rng: ptr<function, u32>
 ) -> vec3<f32> {
@@ -931,22 +982,26 @@ fn shade_base(
     if (tri_idx != 0xffffffffu) { let tri = triangles[tri_idx]; mat_idx = tri.material_index; }
     let mat = materials[mat_idx];
 
-    var tex = vec3<f32>(1.0, 1.0, 1.0);
-    if (mat.baseColorTex != 0u && tri_idx != 0xffffffffu) {
-        tex = textureSampleLevel(textures[mat.baseColorTex], tex_sampler, uv, 0.0).rgb;
+    var material_result: MaterialResult;
+    if (mat.has_custom_material != 0u) {
+        material_result = evaluate_custom_material(hit, normal, -normalize(hit), uv, mat.custom_material_id);
+    } else {
+        material_result = evaluate_default_material(hit, normal, mat, tri_idx, uv);
     }
-    let base = mat.baseColorFactor.rgb * tex;
+
+    let base = material_result.base_color;
+    var surface_normal = material_result.normal;
 
     let sky_tint = params.skycolor.xyz;
-    let sky = max(dot(normal, vec3<f32>(0.0, 1.0, 0.0)), 0.0);
+    let sky = max(dot(surface_normal, vec3<f32>(0.0, 1.0, 0.0)), 0.0);
     let sky_mix = mix(1.0, sky, params.sky_occlusion);
     var col = base * sky_tint * 0.2 * sky_mix;
 
     col += gi * base * sky_mix;
 
-    if (mat.emissiveStrength > 0.0) { col += mat.emissiveFactor * mat.emissiveStrength; }
+    col += material_result.emission;
 
-    let ao = ambient_occlusion(hit + normal * 0.01, normal, obj_idx, rng);
+    let ao = ambient_occlusion(hit + surface_normal * 0.01, surface_normal, obj_idx, rng);
 
     let light_count: u32 = light_header.count;
     if (light_count > 0u) {
@@ -971,9 +1026,9 @@ fn shade_base(
                     light_target = light_pos + local;
                 }
                 let ldir = normalize(light_target - hit);
-                let diff = max(dot(normal, ldir), 0.0);
+                let diff = max(dot(surface_normal, ldir), 0.0);
                 if (diff > 0.0) {
-                    let visibility = soft_shadow(hit + normal * 0.01, normal, light, idx, rng);
+                    let visibility = soft_shadow(hit + surface_normal * 0.01, surface_normal, light, idx, rng);
                     if (visibility > 0.0) {
                         let dist = length(light_target - hit);
                         let attenuation = 1.0 / max(dist * dist, 1.0);
@@ -987,9 +1042,9 @@ fn shade_base(
     }
     if (params.dir_light_dir.w > 0.0) {
         let ldir = normalize(-params.dir_light_dir.xyz);
-        let vis = dir_soft_shadow(hit + normal * 0.01, ldir, rng);
+        let vis = dir_soft_shadow(hit + surface_normal * 0.01, ldir, rng);
         if (vis > 0.0) {
-            let diff = max(dot(normal, ldir), 0.0);
+            let diff = max(dot(surface_normal, ldir), 0.0);
             col += base * params.dir_light_color.xyz * diff * params.dir_light_dir.w * vis;
         }
     }

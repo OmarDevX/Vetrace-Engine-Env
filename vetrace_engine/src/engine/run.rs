@@ -198,7 +198,7 @@ impl Engine {
                     ior: mat.ior,
                     base_color_tex: tex_idx,
                     f0,
-                    _pad1: 0,
+                    ..Default::default()
                 });
             }
 
@@ -249,7 +249,7 @@ impl Engine {
                             ior: mat.ior,
                             base_color_tex: tex_idx,
                             f0,
-                            _pad1: 0,
+                            ..Default::default()
                         });
                         idx
                     })
@@ -285,7 +285,7 @@ impl Engine {
                         ior: obj.ior,
                         base_color_tex: 0,
                         f0,
-                        _pad1: 0,
+                        ..Default::default()
                     });
                     idx
                 };

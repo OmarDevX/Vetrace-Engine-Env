@@ -88,7 +88,9 @@ pub struct GpuMaterial {
     pub ior: f32,
     pub base_color_tex: u32,
     pub f0: [f32; 3],
-    pub _pad1: u32,
+    pub has_custom_material: u32,
+    pub custom_material_id: u32,
+    pub _pad2: [u32; 3],
 }
 
 impl Default for GpuMaterial {
@@ -102,7 +104,9 @@ impl Default for GpuMaterial {
             ior: 1.5,
             base_color_tex: 0,
             f0: [0.0, 0.0, 0.0],
-            _pad1: 0,
+            has_custom_material: 0,
+            custom_material_id: 0,
+            _pad2: [0; 3],
         }
     }
 }
