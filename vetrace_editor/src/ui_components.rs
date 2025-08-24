@@ -235,7 +235,7 @@ impl Toolbar {
                     let was_clicked = response.clicked();
 
                     if let Some(tooltip) = &item.tooltip {
-                        // response.on_hover_text_at_pointer(tooltip); // TODO: Fix hover text API
+                        response.on_hover_text(tooltip);
                     }
 
                     if was_clicked {
