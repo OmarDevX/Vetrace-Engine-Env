@@ -344,11 +344,8 @@ fn calculate_scattering(
     return Scattering(result * light_intensity, trans);
 }
 
-fn apply_atmosphere(origin_world: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
+fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
     if (params.atmosphere == 0u || params.atmo_count == 0u) { return background; }
-
-    // Convert to camera-relative once
-    let origin = origin_world - params.camera_pos.xyz;
 
     let sun_dir = normalize(-params.dir_light_dir.xyz);
     let sun_I   = params.dir_light_color.xyz * params.dir_light_dir.w;
@@ -1015,7 +1012,7 @@ struct RayResult { color: vec3<f32>, depth: f32, normal: vec3<f32>, obj_idx: i32
 
 fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
     if (depth >= params.max_bounces) {
-        let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
         return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
     }
     var o = origin; var t_total = 0.0;
@@ -1027,16 +1024,16 @@ fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<funct
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
         var col: vec3<f32> = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
-        col = apply_atmosphere(params.camera_pos.xyz + origin, dir, t_total, col);
+        col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
-    let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+    let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
     return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
 }
 
 fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
     if (depth >= params.max_bounces) {
-        let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
         return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
     }
     var o = origin; var t_total = 0.0;
@@ -1048,10 +1045,10 @@ fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
         var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
-        col = apply_atmosphere(params.camera_pos.xyz + origin, dir, t_total, col);
+        col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
-    let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+    let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
     return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
 }
 
@@ -1067,7 +1064,7 @@ fn surf_eps(obj: Object) -> f32 {
 // identical to trace_ray(...) but skips `skip` on the first TLAS hit
 fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
     if (depth >= params.max_bounces) {
-        let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
         return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
     }
     var o = origin; var t_total = 0.0;
@@ -1079,10 +1076,10 @@ fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
         var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
-        col = apply_atmosphere(params.camera_pos.xyz + origin, dir, t_total, col);
+        col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
-    let sky = apply_atmosphere(params.camera_pos.xyz + origin, dir, 1e9, params.skycolor.xyz);
+    let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
     return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
 }
 
@@ -1283,7 +1280,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         out_normal = surf_normal;
         out_depth = primary.depth;
         out_obj = primary.obj_idx;
-        gi_pos = hit_pos + params.camera_pos.xyz;
+        gi_pos = hit_pos;
         gi_normal = surf_normal;
 
         if (primary.obj_idx >= 0) {
@@ -1333,7 +1330,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         out_depth = primary.depth;
         out_normal = primary.normal;
         out_obj = primary.obj_idx;
-        gi_pos = hit_pos + params.camera_pos.xyz;
+        gi_pos = hit_pos;
         gi_normal = surf_normal;
 
         if (primary.obj_idx >= 0) {
