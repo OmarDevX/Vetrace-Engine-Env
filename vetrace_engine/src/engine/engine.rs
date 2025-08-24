@@ -924,6 +924,7 @@ impl Engine {
     /// This replicates the primitive object processing from run.rs line 199-288
     fn process_primitive_objects(&mut self) {
         use crate::scene::object::GpuMaterial;
+        use crate::CustomMaterial;
         use std::collections::HashMap;
 
         // Assemble GPU materials for every scene object, generating
@@ -1014,6 +1015,13 @@ impl Engine {
                     idx
                 })
             };
+            if let Some(entity) = self.core.object_entity_map.get(&(i as u32)) {
+                if self.world.get::<CustomMaterial>(*entity).is_some() {
+                    if let Some(m) = gpu_materials.get_mut(idx as usize) {
+                        m.has_custom_material = 1;
+                    }
+                }
+            }
             obj.material_index = idx;
         }
 

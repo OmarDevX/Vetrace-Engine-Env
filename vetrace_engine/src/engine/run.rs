@@ -4,6 +4,7 @@ use crate::components::components::ObjectRef;
 use crate::components::components::Sprite3D;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
+use crate::CustomMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::{PbrRenderData, SpriteRenderData};
@@ -289,6 +290,13 @@ impl Engine {
                     });
                     idx
                 };
+                if let Some(entity) = self.core.object_entity_map.get(&(i as u32)) {
+                    if self.world.get::<CustomMaterial>(*entity).is_some() {
+                        if let Some(m) = gpu_materials.get_mut(idx as usize) {
+                            m.has_custom_material = 1;
+                        }
+                    }
+                }
                 obj.material_index = idx;
                 let start = obj.triangle_start_idx;
                 let end = start + obj.triangle_count;

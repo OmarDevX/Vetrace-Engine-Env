@@ -949,6 +949,30 @@ fn ambient_occlusion(_origin: vec3<f32>, _normal: vec3<f32>, _obj_idx: u32, _rng
     return 1.0; // SSAO elsewhere
 }
 
+fn hsv_to_rgb(hsv: vec3<f32>) -> vec3<f32> {
+    let h = hsv.x * 6.0;
+    let s = hsv.y;
+    let v = hsv.z;
+    let c = v * s;
+    let x = c * (1.0 - abs(fract(h * 0.5) * 2.0 - 1.0));
+    let m = v - c;
+    var rgb = vec3<f32>(0.0, 0.0, 0.0);
+    if (h < 1.0) {
+        rgb = vec3<f32>(c, x, 0.0);
+    } else if (h < 2.0) {
+        rgb = vec3<f32>(x, c, 0.0);
+    } else if (h < 3.0) {
+        rgb = vec3<f32>(0.0, c, x);
+    } else if (h < 4.0) {
+        rgb = vec3<f32>(0.0, x, c);
+    } else if (h < 5.0) {
+        rgb = vec3<f32>(x, 0.0, c);
+    } else {
+        rgb = vec3<f32>(c, 0.0, x);
+    }
+    return rgb + m;
+}
+
 fn default_material_result(hit_point: vec3<f32>, normal: vec3<f32>, _view_dir: vec3<f32>, _uv: vec2<f32>) -> MaterialResult {
     var result: MaterialResult;
     result.base_color = vec3<f32>(1.0, 1.0, 1.0);
@@ -966,8 +990,17 @@ fn evaluate_custom_material(
     uv: vec2<f32>,
     material_id: u32,
 ) -> MaterialResult {
-    // MATERIAL_EVALUATION_PLACEHOLDER
-    return default_material_result(hit_point, normal, view_dir, uv);
+    var result: MaterialResult;
+    let time = params.current_time;
+    let rainbow_factor = dot(hit_point, vec3<f32>(1.0, 0.0, 0.0)) + time;
+    let hue = fract(rainbow_factor);
+    let rainbow_color = hsv_to_rgb(vec3<f32>(hue, 1.0, 1.0));
+    result.base_color = rainbow_color;
+    result.normal = normal;
+    result.roughness = 0.5;
+    result.metallic = 0.0;
+    result.emission = vec3<f32>(0.0, 0.0, 0.0);
+    return result;
 }
 
 fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialParams, tri_idx: u32, uv: vec2<f32>) -> MaterialResult {
