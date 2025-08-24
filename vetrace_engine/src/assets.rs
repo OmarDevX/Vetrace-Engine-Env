@@ -187,8 +187,10 @@ impl AssetManager {
             }
             mats
         };
-        // TODO: Fix this when we integrate scene management with new core engine
-        // engine.scene.materials.extend(materials.clone());
+        // Register all materials in the engine scene so triangles can reference
+        // them directly by index when glTF nodes are spawned.
+        let material_base = engine.scene.materials.len() as u32;
+        engine.scene.materials.extend(materials.clone());
 
         let mut buffers_data: Vec<Vec<u8>> = Vec::new();
         for buf in gltf.buffers() {
@@ -264,6 +266,7 @@ impl AssetManager {
                     Mat4::IDENTITY,
                     &buffers_data,
                     &materials,
+                    material_base,
                     first_clip.as_deref(),
                     &file_path_str,
                 )?;
@@ -304,6 +307,7 @@ fn spawn_gltf_node(
     parent: Mat4,
     buffers_data: &Vec<Vec<u8>>,
     materials: &Vec<PbrMaterial>,
+    material_base: u32,
     first_clip: Option<&str>,
     file_path: &str,
 ) -> anyhow::Result<Vec<u32>> {
@@ -418,8 +422,15 @@ fn spawn_gltf_node(
             let handle = MeshHandle(Arc::new(gm));
             assets.meshes.write().insert(name, handle.clone());
 
+            let mat_idx = prim
+                .material()
+                .index()
+                .map(|i| material_base + i as u32)
+                .unwrap_or(0);
+
             let mut obj = Object::default();
             obj.is_cube = false;
+            obj.material_index = mat_idx;
             let wc = world * Vec4::new(center[0], center[1], center[2], 1.0);
             obj.position = [wc.x, wc.y, wc.z];
             obj.orientation = [rot.x, rot.y, rot.z, rot.w];
@@ -453,6 +464,7 @@ fn spawn_gltf_node(
             world,
             buffers_data,
             materials,
+            material_base,
             first_clip,
             file_path,
         )?);
