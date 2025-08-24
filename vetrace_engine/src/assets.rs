@@ -239,9 +239,25 @@ impl AssetManager {
                             }
                         }
                         gltf::animation::Property::MorphTargetWeights => {
-                            // TODO: Implement morph target weight animation loading
-                            // For now, skip morph target weight animations
-                            println!("Found morph target weight animation - skipping for now");
+                            if let ReadOutputs::MorphTargetWeights(weights) = outputs {
+                                let frame_count = times.len().max(1);
+                                let total_weights = weights.size_hint().0;
+                                let targets_per_frame = total_weights / frame_count;
+                                let mut values = Vec::with_capacity(frame_count);
+                                let mut iter = weights.into_f32();
+                                for _ in 0..frame_count {
+                                    let mut frame = Vec::with_capacity(targets_per_frame);
+                                    for _ in 0..targets_per_frame {
+                                        if let Some(w) = iter.next() {
+                                            frame.push(w);
+                                        }
+                                    }
+                                    values.push(frame);
+                                }
+                                let keyframes = times.into_iter().zip(values.into_iter()).collect();
+                                clip.channels
+                                    .push(AnimationChannel::MorphTargetWeights(keyframes));
+                            }
                         }
                     }
                 }

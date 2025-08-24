@@ -124,6 +124,12 @@ impl Engine {
             saved_scene: None,
             ui_callbacks: Vec::new(),
             assets,
+            #[cfg(feature = "wgpu")]
+            cached_gpu_materials: Vec::new(),
+            #[cfg(feature = "wgpu")]
+            cached_tex_handles: Vec::new(),
+            #[cfg(feature = "wgpu")]
+            materials_dirty: true,
         };
 
         #[cfg(feature = "wgpu")]

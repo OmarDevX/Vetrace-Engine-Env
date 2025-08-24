@@ -1,13 +1,24 @@
-use std::sync::Arc;
 use crate::assets::AssetManager;
 use crate::ecs::World;
 use crate::engine::core::EngineCore;
-use crate::engine::physics::PhysicsState;
-use crate::engine::managers::{
-    RenderingManager, InputManager, ScriptingManager, 
-    ComponentManager, EventManager, UIManager
-};
 use crate::engine::engine_v2::Engine;
+use crate::engine::managers::{
+    ComponentManager, EventManager, InputManager, RenderingManager, ScriptingManager, UIManager,
+};
+use crate::engine::physics::PhysicsState;
+use crate::engine::SceneManager;
+use crate::input::{window::WindowManager, Input};
+#[cfg(feature = "use_epi")]
+use crate::rendering::EguiRenderer;
+use crate::rendering::Renderer;
+use crate::scene::scene::Scene;
+#[cfg(all(not(feature = "wgpu"), feature = "use_epi"))]
+use crate::shared::ShaderVersion;
+use crate::systems::free_flight::FreeFlightState;
+#[cfg(not(feature = "wgpu"))]
+use crate::systems::sprite_render::SpriteRenderSystem;
+use egui::Context as EguiContext;
+use std::sync::Arc;
 
 /// Builder for creating Engine instances with a fluent API
 pub struct EngineBuilder {
@@ -18,9 +29,7 @@ pub struct EngineBuilder {
 impl EngineBuilder {
     /// Create a new EngineBuilder
     pub fn new() -> Self {
-        Self {
-            is_2d: false,
-        }
+        Self { is_2d: false }
     }
 
     /// Set whether the engine should run in 2D mode
@@ -30,13 +39,16 @@ impl EngineBuilder {
     }
 
     /// Build the Engine instance
-    /// 
+    ///
     /// This method creates all the necessary managers and components,
     /// then assembles them into a complete Engine instance.
     pub fn build(self) -> Result<Engine, Box<dyn std::error::Error>> {
         // Initialize SDL
         let sdl_context = sdl2::init()?;
-        
+
+        // Create window first so it can be shared between managers
+        let window = WindowManager::new(sdl_context.clone());
+
         // Create core components
         let world = World::new();
         let core = EngineCore::new();
@@ -48,49 +60,65 @@ impl EngineBuilder {
         let scripting = ScriptingManager::new();
         let components = ComponentManager::new();
 
-        // Initialize rendering (this would need to be adapted from the current init code)
-        let rendering = self.create_rendering_manager()?;
-        
+        // Initialize rendering
+        let rendering = self.create_rendering_manager(&window)?;
+
         // Initialize input
-        let input = self.create_input_manager(sdl_context)?;
-        
+        let input = self.create_input_manager(sdl_context, window)?;
+
         // Initialize UI
         let ui = self.create_ui_manager()?;
 
         Ok(Engine::new(
-            core,
-            world,
-            physics,
-            assets,
-            rendering,
-            input,
-            scripting,
-            components,
-            events,
-            ui,
+            core, world, physics, assets, rendering, input, scripting, components, events, ui,
         ))
     }
 
-    /// Create the rendering manager (placeholder - needs implementation)
-    fn create_rendering_manager(&self) -> Result<RenderingManager, Box<dyn std::error::Error>> {
-        // This would contain the rendering initialization logic
-        // For now, this is a placeholder that would need to be implemented
-        // based on the current engine initialization code
-        todo!("Rendering manager creation needs to be implemented")
+    /// Create the rendering manager using the provided window
+    fn create_rendering_manager(
+        &self,
+        window: &WindowManager,
+    ) -> Result<RenderingManager, Box<dyn std::error::Error>> {
+        let (width, height) = window.get_size();
+        let renderer = Renderer::new(&window.window, width, height, self.is_2d);
+        let scene = Scene::new();
+        let egui_ctx = EguiContext::default();
+        #[cfg(all(feature = "wgpu", feature = "use_epi"))]
+        let egui_renderer = EguiRenderer::new(
+            renderer.device(),
+            renderer.surface_format(),
+            1.0,
+            (width as u32, height as u32),
+        );
+        #[cfg(all(not(feature = "wgpu"), feature = "use_epi"))]
+        let egui_renderer = EguiRenderer::new(&window.window, 1.0, ShaderVersion::Default);
+        #[cfg(not(feature = "wgpu"))]
+        let sprite_renderer = SpriteRenderSystem::new();
+        Ok(RenderingManager::new(
+            renderer,
+            scene,
+            egui_ctx,
+            #[cfg(feature = "use_epi")]
+            egui_renderer,
+            #[cfg(not(feature = "wgpu"))]
+            sprite_renderer,
+        ))
     }
 
-    /// Create the input manager (placeholder - needs implementation)
-    fn create_input_manager(&self, sdl_context: sdl2::Sdl) -> Result<InputManager, Box<dyn std::error::Error>> {
-        // This would contain the input initialization logic
-        // For now, this is a placeholder
-        todo!("Input manager creation needs to be implemented")
+    /// Create the input manager from SDL context and window
+    fn create_input_manager(
+        &self,
+        sdl_context: sdl2::Sdl,
+        window: WindowManager,
+    ) -> Result<InputManager, Box<dyn std::error::Error>> {
+        let input = Input::new();
+        let free_flight = FreeFlightState::new();
+        Ok(InputManager::new(input, window, sdl_context, free_flight))
     }
 
-    /// Create the UI manager (placeholder - needs implementation)
+    /// Create the UI manager
     fn create_ui_manager(&self) -> Result<UIManager, Box<dyn std::error::Error>> {
-        // This would contain the UI initialization logic
-        // For now, this is a placeholder
-        todo!("UI manager creation needs to be implemented")
+        Ok(UIManager::new(SceneManager::new()))
     }
 }
 

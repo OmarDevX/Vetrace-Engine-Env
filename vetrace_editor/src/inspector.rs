@@ -65,12 +65,32 @@ impl InspectorPlugin {
     }
     
     /// Draw inspector UI for multiple entities
-    pub fn draw_multi_entity_ui(&self, ui: &mut egui::Ui, entities: &[Entity]) {
+    pub fn draw_multi_entity_ui(&self, ui: &mut egui::Ui, engine: &mut Engine, entities: &[Entity]) {
         ui.label(format!("Multiple entities selected ({})", entities.len()));
-        ui.label("Multi-edit not yet supported");
-        
-        // TODO: Implement multi-entity editing
-        // This would show common components and allow batch editing
+
+        if let Some((&first, rest)) = entities.split_first() {
+            let mut common = engine.list_components_entity(first);
+            for &entity in rest {
+                let comps = engine.list_components_entity(entity);
+                common.retain(|c| comps.contains(c));
+            }
+
+            if common.is_empty() {
+                ui.label("No common components");
+            } else {
+                for comp in common {
+                    if let Some(editor_fn) = engine.component_editors.get(&comp).cloned() {
+                        ui.collapsing(&comp, |ui| {
+                            for &entity in entities {
+                                ui.push_id(entity, |ui| {
+                                    editor_fn(engine, entity, ui);
+                                });
+                            }
+                        });
+                    }
+                }
+            }
+        }
     }
     
     /// Draw inspector UI when no entity is selected
