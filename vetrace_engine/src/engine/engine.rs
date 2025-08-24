@@ -150,6 +150,12 @@ pub struct Engine {
     pub saved_scene: Option<SceneFile>,
     pub ui_callbacks:
         Vec<Box<dyn FnMut(&egui::Context, &mut Engine) -> Result<(), Box<dyn std::error::Error>>>>,
+    #[cfg(feature = "wgpu")]
+    cached_gpu_materials: Vec<crate::scene::object::GpuMaterial>,
+    #[cfg(feature = "wgpu")]
+    cached_tex_handles: Vec<crate::gpu::TextureHandle>,
+    #[cfg(feature = "wgpu")]
+    materials_dirty: bool,
 }
 
 impl Engine {
@@ -182,6 +188,11 @@ impl Engine {
         let base = std::path::Path::new("generated");
         let _ = std::fs::create_dir_all(base.join("components"));
         let _ = std::fs::create_dir_all(base.join("behaviours"));
+    }
+
+    #[cfg(feature = "wgpu")]
+    pub fn invalidate_material_cache(&mut self) {
+        self.materials_dirty = true;
     }
 
     pub fn create_custom_component(&self, name: &str) {
@@ -427,7 +438,6 @@ impl Engine {
         self.process_primitive_objects();
 
         // Build GPU materials and texture handles first (to avoid borrowing conflicts)
-        // TODO: This should be cached and only rebuilt when scene changes
         #[cfg(feature = "wgpu")]
         let (gpu_materials, tex_handles) = self.build_gpu_materials_and_textures();
 
@@ -1231,6 +1241,13 @@ impl Engine {
         Vec<crate::scene::object::GpuMaterial>,
         Vec<crate::gpu::TextureHandle>,
     ) {
+        if !self.materials_dirty && !self.cached_gpu_materials.is_empty() {
+            return (
+                self.cached_gpu_materials.clone(),
+                self.cached_tex_handles.clone(),
+            );
+        }
+
         use crate::gpu::TextureHandle;
         use crate::materials::PbrMaterial;
         use crate::scene::object::GpuMaterial;
@@ -1381,6 +1398,9 @@ impl Engine {
             obj.material_index = idx;
         }
 
+        self.cached_gpu_materials = gpu_materials.clone();
+        self.cached_tex_handles = tex_handles.clone();
+        self.materials_dirty = false;
         (gpu_materials, tex_handles)
     }
 }
