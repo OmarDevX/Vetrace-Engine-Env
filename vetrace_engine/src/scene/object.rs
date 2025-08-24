@@ -95,7 +95,7 @@ pub struct GpuMaterial {
     /// Index into the `custom_materials` storage buffer
     pub custom_material_id: u32,
     /// Extra padding to keep struct size 96 bytes, matching WGSL layout
-    pub _pad2: [u32; 3],
+    pub _pad2: [u32; 6],
 }
 
 impl Default for GpuMaterial {
@@ -112,7 +112,7 @@ impl Default for GpuMaterial {
             _pad_f0: 0.0,
             has_custom_material: 0,
             custom_material_id: 0,
-            _pad2: [0; 3],
+            _pad2: [0; 6],
         }
     }
 }
