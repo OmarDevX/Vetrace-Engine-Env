@@ -202,6 +202,7 @@ impl Engine {
                 });
             }
 
+            let cam = self.active_camera_info();
             let scene = &mut self.scene;
             for (i, obj) in scene.objects.iter_mut().enumerate() {
                 // See if the object has a material component in the world
@@ -301,7 +302,6 @@ impl Engine {
 
             let (raw_gpu_objects, raw_triangles) = scene.get_gpu_buffers();
             let raw_atmos = scene.get_gpu_atmospheres();
-            let cam = self.active_camera_info();
             let cam_pos = cam.position;
             let cam_front = cam.orientation * Vec3::X;
             let cam_up = cam.orientation * Vec3::Y;
