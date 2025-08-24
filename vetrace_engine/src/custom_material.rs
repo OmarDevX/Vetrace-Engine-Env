@@ -70,7 +70,10 @@ impl RaytraceShaderCompiler {
         shader_source = shader_source.replace("// MATERIAL_FUNCTIONS_PLACEHOLDER", &material_functions);
 
         let dispatcher = self.generate_material_dispatcher(used_materials);
-        shader_source = shader_source.replace("// MATERIAL_EVALUATION_PLACEHOLDER", &dispatcher);
+        shader_source = shader_source.replace(
+            "    // MATERIAL_EVALUATION_PLACEHOLDER\n    return default_material_result(hit_point, normal, view_dir, uv);",
+            &dispatcher,
+        );
 
         let shader_module = self
             .device
@@ -83,10 +86,7 @@ impl RaytraceShaderCompiler {
     }
 
     fn generate_material_dispatcher(&self, materials: &[String]) -> String {
-        let mut dispatcher = String::from(
-            "fn evaluate_custom_material(hit_point: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, uv: vec2<f32>, material_id: u32) -> MaterialResult {\n",
-        );
-        dispatcher.push_str("    switch material_id {\n");
+        let mut dispatcher = String::from("    switch material_id {\n");
         for (i, material_name) in materials.iter().enumerate() {
             dispatcher.push_str(&format!(
                 "        case {}u: {{ return evaluate_{}(hit_point, normal, view_dir, uv, custom_materials[material_id]); }}\n",
@@ -94,7 +94,7 @@ impl RaytraceShaderCompiler {
             ));
         }
         dispatcher.push_str(
-            "        default: { return default_material_result(hit_point, normal, view_dir, uv); }\n    }\n}\n",
+            "        default: { return default_material_result(hit_point, normal, view_dir, uv); }\n    }\n",
         );
         dispatcher
     }

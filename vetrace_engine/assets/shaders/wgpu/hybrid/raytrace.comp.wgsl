@@ -959,7 +959,16 @@ fn default_material_result(hit_point: vec3<f32>, normal: vec3<f32>, _view_dir: v
     return result;
 }
 
-// MATERIAL_EVALUATION_PLACEHOLDER
+fn evaluate_custom_material(
+    hit_point: vec3<f32>,
+    normal: vec3<f32>,
+    view_dir: vec3<f32>,
+    uv: vec2<f32>,
+    material_id: u32,
+) -> MaterialResult {
+    // MATERIAL_EVALUATION_PLACEHOLDER
+    return default_material_result(hit_point, normal, view_dir, uv);
+}
 
 fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialParams, tri_idx: u32, uv: vec2<f32>) -> MaterialResult {
     var result: MaterialResult;
