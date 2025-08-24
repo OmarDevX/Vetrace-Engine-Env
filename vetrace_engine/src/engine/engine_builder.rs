@@ -76,21 +76,21 @@ impl EngineBuilder {
         // This would contain the rendering initialization logic
         // For now, this is a placeholder that would need to be implemented
         // based on the current engine initialization code
-        todo!("Rendering manager creation needs to be implemented")
+        Err("Rendering manager creation not implemented".into())
     }
 
     /// Create the input manager (placeholder - needs implementation)
     fn create_input_manager(&self, sdl_context: sdl2::Sdl) -> Result<InputManager, Box<dyn std::error::Error>> {
         // This would contain the input initialization logic
         // For now, this is a placeholder
-        todo!("Input manager creation needs to be implemented")
+        Err("Input manager creation not implemented".into())
     }
 
     /// Create the UI manager (placeholder - needs implementation)
     fn create_ui_manager(&self) -> Result<UIManager, Box<dyn std::error::Error>> {
         // This would contain the UI initialization logic
         // For now, this is a placeholder
-        todo!("UI manager creation needs to be implemented")
+        Err("UI manager creation not implemented".into())
     }
 }
 
