@@ -202,7 +202,8 @@ impl Engine {
                 });
             }
 
-            for (i, obj) in self.scene.objects.iter_mut().enumerate() {
+            let scene = &mut self.scene;
+            for (i, obj) in scene.objects.iter_mut().enumerate() {
                 // See if the object has a material component in the world
                 let entity_mat = self
                     .core
@@ -288,13 +289,18 @@ impl Engine {
                     idx
                 };
                 obj.material_index = idx;
+                let start = obj.triangle_start_idx;
+                let end = start + obj.triangle_count;
+                for tri in &mut scene.triangles[start..end] {
+                    tri.material_index = idx;
+                }
             }
 
             // Rebuild GPU objects with updated material indices
-            self.scene.gpu_objects = self.scene.objects.iter().map(|o| o.to_gpu()).collect();
+            scene.gpu_objects = scene.objects.iter().map(|o| o.to_gpu()).collect();
 
-            let (raw_gpu_objects, raw_triangles) = self.scene.get_gpu_buffers();
-            let raw_atmos = self.scene.get_gpu_atmospheres();
+            let (raw_gpu_objects, raw_triangles) = scene.get_gpu_buffers();
+            let raw_atmos = scene.get_gpu_atmospheres();
             let cam = self.active_camera_info();
             let cam_pos = cam.position;
             let cam_front = cam.orientation * Vec3::X;
@@ -308,8 +314,8 @@ impl Engine {
                 obj.position[2] -= cam_pos.z;
             }
             let mut gpu_triangles: Vec<_> = raw_triangles.to_vec();
-            let mut tri_bvh_nodes: Vec<_> = self.scene.get_tri_bvh_nodes().to_vec();
-            for obj in &self.scene.objects {
+            let mut tri_bvh_nodes: Vec<_> = scene.get_tri_bvh_nodes().to_vec();
+            for obj in &scene.objects {
                 let start = obj.triangle_start_idx;
                 let end = start + obj.triangle_count;
                 let b_start = obj.tri_bvh_start;
@@ -384,7 +390,7 @@ impl Engine {
                 })
                 .collect();
             let have_atmos = !atmos.is_empty();
-            let mut bvh_nodes: Vec<_> = self.scene.get_bvh_nodes().to_vec();
+            let mut bvh_nodes: Vec<_> = scene.get_bvh_nodes().to_vec();
             for node in &mut bvh_nodes {
                 node.center_radius[0] -= cam_pos.x;
                 node.center_radius[1] -= cam_pos.y;
