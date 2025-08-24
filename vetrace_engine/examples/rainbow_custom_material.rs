@@ -61,7 +61,7 @@ impl App for RainbowExample {
                 parameters: params,
             };
             let e = actor.entity();
-            engine.world.insert(e, custom);
+            engine.insert_custom_material(e, custom);
         }
     }
 

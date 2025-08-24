@@ -11,12 +11,13 @@ use crate::behaviour::script::EntityProxy;
 use crate::behaviour::script::ScriptBehaviour;
 use crate::components::components::CameraAttachment;
 use crate::components::components::{
-    AngularVelocity, Collider, GlobalTransform, LookAt, Material, ObjectRef, Player,
-    Renderable, Rotate, ScriptComponent, Shape, Transform, Velocity,
+    AngularVelocity, Collider, GlobalTransform, LookAt, Material, ObjectRef, Player, Renderable,
+    Rotate, ScriptComponent, Shape, Transform, Velocity,
 };
 use crate::components::generated::{
     FieldType, GeneratedComponent, GeneratedSpec, GeneratedStorage,
 };
+use crate::custom_material::CustomMaterial;
 use crate::ecs::Entity;
 use crate::ecs::{Component, World};
 use crate::engine::component_io::{apply_component_data, export_component_data};
@@ -42,8 +43,8 @@ use crate::systems::sprite_render::SpriteRenderSystem;
 
 use glam::{Mat3, Quat, Vec3};
 use mlua::{Function, Lua, Value as LuaValue};
-use serde_json::{Map, Value};
 use rapier3d::prelude::*;
+use serde_json::{Map, Value};
 
 #[derive(Clone, Copy)]
 pub struct CameraInfo {
@@ -195,6 +196,15 @@ impl Engine {
         self.materials_dirty = true;
     }
 
+    /// Attach a [`CustomMaterial`] to an entity and ensure GPU data is rebuilt.
+    pub fn insert_custom_material(&mut self, entity: Entity, material: CustomMaterial) {
+        self.world.insert(entity, material);
+        #[cfg(feature = "wgpu")]
+        {
+            self.invalidate_material_cache();
+        }
+    }
+
     pub fn create_custom_component(&self, name: &str) {
         self.ensure_generated_folder();
         let path =
@@ -266,7 +276,7 @@ impl Engine {
     pub fn find_entity_by_name(&mut self, name: &str) -> Option<Entity> {
         self.find_actor_by_name(name).map(|a| a.entity())
     }
- /// Enable or disable mouse capture (relative mouse mode).
+    /// Enable or disable mouse capture (relative mouse mode).
     pub fn capture_mouse(&mut self, capture: bool) {
         let mouse = self.sdl_context.mouse();
         let _ = mouse.set_relative_mouse_mode(capture);
@@ -360,7 +370,10 @@ impl Engine {
 
         for (_handle, body) in self.physics.bodies.iter_mut() {
             let p = body.translation();
-            body.set_translation(vector![p.x - offset.x, p.y - offset.y, p.z - offset.z], true);
+            body.set_translation(
+                vector![p.x - offset.x, p.y - offset.y, p.z - offset.z],
+                true,
+            );
         }
     }
 
@@ -423,11 +436,7 @@ impl Engine {
                 .get::<crate::components::components::DirectionalLight>(*entity)
             {
                 dir_light_dir = light.direction;
-                dir_light_color = [
-                    light.color[0],
-                    light.color[1],
-                    light.color[2],
-                ];
+                dir_light_color = [light.color[0], light.color[1], light.color[2]];
                 dir_light_intensity = light.intensity;
                 break; // Use first directional light found
             }
