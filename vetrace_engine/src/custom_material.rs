@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::ecs::Component;
@@ -63,13 +63,17 @@ impl RaytraceShaderCompiler {
         let mut shader_source = self.base_shader_template.clone();
 
         let mut material_functions = String::new();
+        let mut inserted = HashSet::new();
         for material_name in used_materials {
-            if let Some(code) = self.material_registry.get(material_name) {
-                material_functions.push_str(code);
-                material_functions.push('\n');
+            if inserted.insert(material_name.clone()) {
+                if let Some(code) = self.material_registry.get(material_name) {
+                    material_functions.push_str(code);
+                    material_functions.push('\n');
+                }
             }
         }
-        shader_source = shader_source.replace("// MATERIAL_FUNCTIONS_PLACEHOLDER", &material_functions);
+        shader_source =
+            shader_source.replace("// MATERIAL_FUNCTIONS_PLACEHOLDER", &material_functions);
 
         let dispatcher = self.generate_material_dispatcher(used_materials);
         shader_source = shader_source.replace(

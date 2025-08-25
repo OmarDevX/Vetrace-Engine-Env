@@ -1,7 +1,10 @@
 use crate::math::*;
 use crate::rendering::renderer::RenderParams;
 use crate::rendering::texture::set_wgpu_device_queue;
-use crate::scene::object::{GpuMaterial, GpuObject, GpuTriangle, GpuAtmosphere, MAX_ATMOSPHERES};
+use crate::scene::object::{
+    GpuAtmosphere, GpuCustomMaterial, GpuMaterial, GpuObject, GpuTriangle, MAX_ATMOSPHERES,
+};
+use crate::custom_material::RaytraceShaderCompiler;
 use crate::scene::{bvh::GpuBvhNode, tri_bvh::GpuTriBvhNode};
 use bytemuck::Zeroable;
 use egui::{ClippedPrimitive, TexturesDelta};
@@ -83,6 +86,7 @@ pub struct WgpuRenderer {
     sdfgi_mip_pipeline: ComputePipeline,
     sampler: Sampler,
     linear_sampler: Sampler,
+    shader_compiler: RaytraceShaderCompiler,
     compute_bind_group_layout: BindGroupLayout,
     compute_bind_group: BindGroup,
     compute_pipeline: ComputePipeline,
@@ -119,12 +123,14 @@ pub struct WgpuRenderer {
     bvh_buffer: Buffer,
     tri_bvh_buffer: Buffer,
     material_buffer: Buffer,
+    custom_material_buffer: Buffer,
     light_header_buffer: Buffer,
     light_index_buffer: Buffer,
     triangle_count: u32,
     bvh_node_count: u32,
     tri_bvh_node_count: u32,
     material_count: u32,
+    custom_material_count: u32,
     frame_number: i32,
     prev_cam_pos: [f32; 3],
     prev_cam_front: [f32; 3],

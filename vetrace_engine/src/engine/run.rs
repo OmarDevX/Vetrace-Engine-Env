@@ -523,6 +523,9 @@ impl Engine {
                 &bvh_nodes,
                 &tri_bvh_nodes,
                 &gpu_materials,
+                &[] as &[crate::scene::object::GpuCustomMaterial],
+                &[] as &[String],
+                &[] as &[(String, String)],
                 &tex_handles,
             );
             #[cfg(not(feature = "wgpu"))]

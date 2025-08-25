@@ -129,6 +129,12 @@ impl Engine {
             #[cfg(feature = "wgpu")]
             cached_tex_handles: Vec::new(),
             #[cfg(feature = "wgpu")]
+            cached_custom_materials: Vec::new(),
+            #[cfg(feature = "wgpu")]
+            cached_custom_names: Vec::new(),
+            #[cfg(feature = "wgpu")]
+            cached_shader_defs: Vec::new(),
+            #[cfg(feature = "wgpu")]
             materials_dirty: true,
         };
 

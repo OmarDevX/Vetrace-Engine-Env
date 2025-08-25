@@ -118,6 +118,36 @@ impl Default for GpuMaterial {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct GpuCustomMaterial {
+    pub color_tint: [f32; 4],
+    pub roughness: f32,
+    pub metallic: f32,
+    pub noise_scale: f32,
+    pub emission_strength: f32,
+    pub custom_float_1: f32,
+    pub custom_float_2: f32,
+    pub custom_float_3: f32,
+    pub custom_float_4: f32,
+}
+
+impl Default for GpuCustomMaterial {
+    fn default() -> Self {
+        Self {
+            color_tint: [1.0, 1.0, 1.0, 1.0],
+            roughness: 0.5,
+            metallic: 0.0,
+            noise_scale: 1.0,
+            emission_strength: 0.0,
+            custom_float_1: 0.0,
+            custom_float_2: 0.0,
+            custom_float_3: 0.0,
+            custom_float_4: 0.0,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, PartialEq)]
 pub struct GpuAtmosphere {
     pub center_radius: [f32; 4],

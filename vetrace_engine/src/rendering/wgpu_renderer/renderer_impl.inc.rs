@@ -123,9 +123,15 @@ impl WgpuRenderer {
         });
         let material_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("materials"),
-                                                   size: std::mem::size_of::<crate::scene::object::GpuMaterial>() as u64,
-                                                   usage: BufferUsages::STORAGE,
-                                                   mapped_at_creation: false,
+                                                  size: std::mem::size_of::<crate::scene::object::GpuMaterial>() as u64,
+                                                  usage: BufferUsages::STORAGE,
+                                                  mapped_at_creation: false,
+        });
+        let default_custom = crate::scene::object::GpuCustomMaterial::default();
+        let custom_material_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("custom_materials"),
+            contents: bytemuck::bytes_of(&default_custom),
+            usage: BufferUsages::STORAGE,
         });
         let light_header_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("light_header"),
@@ -225,15 +231,16 @@ impl WgpuRenderer {
         });
 
         let texture_array_limit = Self::texture_array_limit(&device);
-        let (compute_shader, compute_bind_group_layout) = (
-            device.create_shader_module(ShaderModuleDescriptor {
-                label: Some("raytrace"),
-                                        source: ShaderSource::Wgsl(
-                                            include_str!("../../../assets/shaders/wgpu/hybrid/raytrace.comp.wgsl",).into(),
-                                        ),
-            }),
-            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("compute_bgl"),
+        let mut shader_compiler = RaytraceShaderCompiler {
+            device: device.clone(),
+            base_shader_template: include_str!("../../../assets/shaders/wgpu/hybrid/raytrace.comp.wgsl").to_string(),
+            material_registry: std::collections::HashMap::new(),
+        };
+        let compute_shader = shader_compiler
+            .compile_shader(&[])
+            .expect("failed to compile base shader");
+        let compute_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("compute_bgl"),
                                             entries: &[
                                                 BindGroupLayoutEntry {
                                                     binding: 0,
@@ -457,6 +464,16 @@ impl WgpuRenderer {
                                                     visibility: ShaderStages::COMPUTE,
                                                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                                             count: None,
+                                                },
+                                                BindGroupLayoutEntry {
+                                                    binding: 23,
+                                                    visibility: ShaderStages::COMPUTE,
+                                                    ty: BindingType::Buffer {
+                                                        ty: BufferBindingType::Storage { read_only: true },
+                                                        has_dynamic_offset: false,
+                                                        min_binding_size: None,
+                                                    },
+                                                    count: None,
                                                 },
                                             ],
             }),
@@ -827,6 +844,10 @@ impl WgpuRenderer {
                                                               BindGroupEntry {
                                                                   binding: 22,
                                                                   resource: BindingResource::Sampler(&linear_sampler),
+                                                              },
+                                                              BindGroupEntry {
+                                                                  binding: 23,
+                                                                  resource: custom_material_buffer.as_entire_binding(),
                                                               },
                                                           ],
         });
@@ -1794,12 +1815,14 @@ impl WgpuRenderer {
             bvh_buffer,
             tri_bvh_buffer,
             material_buffer,
+            custom_material_buffer,
             light_header_buffer,
             light_index_buffer,
             triangle_count: 0,
             bvh_node_count: 0,
             tri_bvh_node_count: 0,
             material_count: 0,
+            custom_material_count: 0,
             params_buffer,
             blit_params_buffer,
             screen_texture: st,
@@ -1859,6 +1882,7 @@ impl WgpuRenderer {
             sdfgi_mip_pipeline,
             sampler,
             linear_sampler,
+            shader_compiler,
             compute_bind_group_layout,
             compute_bind_group,
             denoise_bind_group_layout,
@@ -2125,6 +2149,10 @@ impl WgpuRenderer {
                                                                         binding: 22,
                                                                         resource: BindingResource::Sampler(&self.linear_sampler),
                                                                     },
+                                                                    BindGroupEntry {
+                                                                        binding: 23,
+                                                                        resource: self.custom_material_buffer.as_entire_binding(),
+                                                                    },
                                                                 ],
         });
 
@@ -2373,6 +2401,9 @@ impl WgpuRenderer {
         bvh: &[GpuBvhNode],
         tri_bvh: &[GpuTriBvhNode],
         materials: &[crate::scene::object::GpuMaterial],
+        custom_materials: &[crate::scene::object::GpuCustomMaterial],
+        material_names: &[String],
+        shaders: &[(String, String)],
         textures: &[crate::gpu::TextureHandle],
     ) {
         // Avoid creating a zero-sized buffer when there are no objects in the scene.
@@ -2442,8 +2473,20 @@ impl WgpuRenderer {
         };
         self.material_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("materials"),
-                                                              contents: mat_bytes,
-                                                              usage: BufferUsages::STORAGE,
+            contents: mat_bytes,
+            usage: BufferUsages::STORAGE,
+        });
+        let default_custom;
+        let custom_bytes = if custom_materials.is_empty() {
+            default_custom = crate::scene::object::GpuCustomMaterial::default();
+            bytemuck::bytes_of(&default_custom)
+        } else {
+            bytemuck::cast_slice(custom_materials)
+        };
+        self.custom_material_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("custom_materials"),
+            contents: custom_bytes,
+            usage: BufferUsages::STORAGE,
         });
         let mut lights: Vec<u32> = Vec::new();
         for (i, obj) in objects.iter().enumerate() {
@@ -2468,13 +2511,14 @@ impl WgpuRenderer {
         };
         self.light_index_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("light_indices"),
-                                                                 contents: light_bytes,
-                                                                 usage: BufferUsages::STORAGE,
+            contents: light_bytes,
+            usage: BufferUsages::STORAGE,
         });
         self.triangle_count = triangles.len() as u32;
         self.bvh_node_count = bvh.len() as u32;
         self.tri_bvh_node_count = tri_bvh.len() as u32;
         self.material_count = clamped_mats.len() as u32;
+        self.custom_material_count = custom_materials.len() as u32;
         self.material_textures = Vec::with_capacity(tex_limit as usize);
         self.material_textures.push(self.white_texture.clone());
         self.material_textures
@@ -2487,101 +2531,126 @@ impl WgpuRenderer {
         self.material_textures.iter().map(|t| &t.0.view).collect();
         self.compute_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("compute_bg"),
-                                                                layout: &self.compute_bind_group_layout,
-                                                                entries: &[
-                                                                    BindGroupEntry {
-                                                                        binding: 0,
-                                                                        resource: self.object_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 1,
-                                                                        resource: self.triangle_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 2,
-                                                                        resource: self.bvh_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 3,
-                                                                        resource: self.tri_bvh_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 4,
-                                                                        resource: self.params_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 5,
-                                                                        resource: BindingResource::TextureView(&self.color_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 6,
-                                                                        resource: BindingResource::TextureView(&self.depth_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 7,
-                                                                        resource: BindingResource::TextureView(&self.normal_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 8,
-                                                                        resource: BindingResource::TextureView(&self.gbuf_albedo_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 9,
-                                                                        resource: BindingResource::TextureView(&self.gbuf_normal_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 10,
-                                                                        resource: BindingResource::TextureView(&self.gbuf_material_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 11,
-                                                                        resource: self.gi_params_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 12,
-                                                                        resource: BindingResource::TextureView(&self.gi_sdf_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 13,
-                                                                        resource: BindingResource::Sampler(&self.sampler),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 14,
-                                                                        resource: BindingResource::TextureView(&self.gi_history_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 15,
-                                                                        resource: BindingResource::TextureView(&self.gi_noisy_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 16,
-                                                                        resource: BindingResource::TextureView(&self.gi_radiance_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 17,
-                                                                        resource: self.material_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 18,
-                                                                        resource: BindingResource::TextureView(&self.lightmap_view),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 19,
-                                                                        resource: self.light_header_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 20,
-                                                                        resource: self.light_index_buffer.as_entire_binding(),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 21,
-                                                                        resource: BindingResource::TextureViewArray(&tex_views),
-                                                                    },
-                                                                    BindGroupEntry {
-                                                                        binding: 22,
-                                                                        resource: BindingResource::Sampler(&self.linear_sampler),
-                                                                    },
-                                                                ],
+            layout: &self.compute_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: self.object_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: self.triangle_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: self.bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: self.tri_bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.color_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&self.depth_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&self.normal_view),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: self.gi_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: BindingResource::TextureView(&self.gi_sdf_view),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: BindingResource::Sampler(&self.sampler),
+                },
+                BindGroupEntry {
+                    binding: 14,
+                    resource: BindingResource::TextureView(&self.gi_history_view),
+                },
+                BindGroupEntry {
+                    binding: 15,
+                    resource: BindingResource::TextureView(&self.gi_noisy_view),
+                },
+                BindGroupEntry {
+                    binding: 16,
+                    resource: BindingResource::TextureView(&self.gi_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 17,
+                    resource: self.material_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 18,
+                    resource: BindingResource::TextureView(&self.lightmap_view),
+                },
+                BindGroupEntry {
+                    binding: 19,
+                    resource: self.light_header_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 20,
+                    resource: self.light_index_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 21,
+                    resource: BindingResource::TextureViewArray(&tex_views),
+                },
+                BindGroupEntry {
+                    binding: 22,
+                    resource: BindingResource::Sampler(&self.linear_sampler),
+                },
+                BindGroupEntry {
+                    binding: 23,
+                    resource: self.custom_material_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        for (name, code) in shaders {
+            self.shader_compiler
+                .register_material(name.clone(), code.clone());
+        }
+        let compute_module = self
+            .shader_compiler
+            .compile_shader(material_names)
+            .expect("failed to compile shader");
+        let compute_pipeline_layout = self.device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("compute_pl"),
+            bind_group_layouts: &[&self.compute_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        self.compute_pipeline = self.device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("compute_pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_module,
+            entry_point: "main",
+            compilation_options: Default::default(),
         });
 
         self.denoise_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
