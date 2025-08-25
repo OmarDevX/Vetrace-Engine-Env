@@ -495,7 +495,7 @@ fn sphere_intersect(origin: vec3<f32>, dir: vec3<f32>, center: vec3<f32>, radius
     return NO_HIT;
 }
 
-struct BoxHit { t: f32, n: vec3<f32>, }
+struct BoxHit { t: f32, n: vec3<f32>, uv: vec2<f32>, }
 
 fn cube_hit(
     origin: vec3<f32>, dir: vec3<f32>,
@@ -529,7 +529,7 @@ fn cube_hit(
     let t_exit  = min(min(tmaxx, tmaxy), tmaxz);
 
     if (t_exit < max(t_enter, 0.0)) {
-        return BoxHit(1e20, vec3<f32>(0.0, 0.0, 1.0));
+        return BoxHit(1e20, vec3<f32>(0.0, 0.0, 1.0), vec2<f32>(0.0));
     }
 
     // inside: take exit distance
@@ -542,13 +542,24 @@ fn cube_hit(
     let az = abs(pL.z) - half.z;
 
     var nL = vec3<f32>(0.0);
-    if (ax >= ay && ax >= az)      { nL = vec3<f32>(sign(pL.x), 0.0, 0.0); }
-    else if (ay >= ax && ay >= az) { nL = vec3<f32>(0.0, sign(pL.y), 0.0); }
-    else                           { nL = vec3<f32>(0.0, 0.0, sign(pL.z)); }
+    var uv = vec2<f32>(0.0);
+    if (ax >= ay && ax >= az) {
+        nL = vec3<f32>(sign(pL.x), 0.0, 0.0);
+        uv = vec2<f32>(pL.z / (half.z * 2.0) + 0.5, pL.y / (half.y * 2.0) + 0.5);
+        if (nL.x > 0.0) { uv.x = 1.0 - uv.x; }
+    } else if (ay >= ax && ay >= az) {
+        nL = vec3<f32>(0.0, sign(pL.y), 0.0);
+        uv = vec2<f32>(pL.x / (half.x * 2.0) + 0.5, pL.z / (half.z * 2.0) + 0.5);
+        if (nL.y < 0.0) { uv.y = 1.0 - uv.y; }
+    } else {
+        nL = vec3<f32>(0.0, 0.0, sign(pL.z));
+        uv = vec2<f32>(pL.x / (half.x * 2.0) + 0.5, pL.y / (half.y * 2.0) + 0.5);
+        if (nL.z < 0.0) { uv.x = 1.0 - uv.x; }
+    }
 
     // fix for non-uniform scale
     let nW = normalize(quat_rotate(qn, nL / scale));
-    return BoxHit(t_hit, nW);
+    return BoxHit(t_hit, nW, uv);
 }
 
 // SDF helpers (GI)
@@ -794,10 +805,17 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
                         t = res.t; n = res.n; tri_idx = res.tri; uv = res.uv;
                     } else if (oref.is_cube > 0u) {
                         let bh = cube_hit(o, d, oref.position, oref.size, oref.orientation, oref.scale);
-                        t = bh.t; if (t < 1e20) { n = bh.n; }
+                        t = bh.t;
+                        if (t < 1e20) { n = bh.n; uv = bh.uv; }
                     } else {
                         t = sphere_intersect(o, d, oref.position, oref.radius);
-                        if (t < 1e20) { let hp = o + d * t; n = normalize(hp - oref.position); }
+                        if (t < 1e20) {
+                            let hp = o + d * t;
+                            n = normalize(hp - oref.position);
+                            let u = 0.5 + atan2(n.z, n.x) / TAU;
+                            let v = 0.5 - asin(n.y) / PI;
+                            uv = vec2<f32>(u, v);
+                        }
                     }
 
                     if (t < best.t) {
@@ -818,10 +836,17 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
                         t = res.t; n = res.n; tri_idx = res.tri; uv = res.uv;
                     } else if (oref.is_cube > 0u) {
                         let bh = cube_hit(o, d, oref.position, oref.size, oref.orientation, oref.scale);
-                        t = bh.t; if (t < 1e20) { n = bh.n; }
+                        t = bh.t;
+                        if (t < 1e20) { n = bh.n; uv = bh.uv; }
                     } else {
                         t = sphere_intersect(o, d, oref.position, oref.radius);
-                        if (t < 1e20) { let hp = o + d * t; n = normalize(hp - oref.position); }
+                        if (t < 1e20) {
+                            let hp = o + d * t;
+                            n = normalize(hp - oref.position);
+                            let u = 0.5 + atan2(n.z, n.x) / TAU;
+                            let v = 0.5 - asin(n.y) / PI;
+                            uv = vec2<f32>(u, v);
+                        }
                     }
 
                     if (t < best.t) {
