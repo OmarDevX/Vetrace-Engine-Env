@@ -219,6 +219,8 @@ impl Engine {
         self.core.object_entity_map.retain(|_, &mut e| e != entity);
         if let Some(index) = obj_index {
             self.scene.remove_object(index);
+            #[cfg(feature = "wgpu")]
+            self.invalidate_material_cache();
             let mut new_map = std::collections::HashMap::new();
             for (id, ent) in self.core.object_entity_map.iter_mut() {
                 let mut new_id = *id;

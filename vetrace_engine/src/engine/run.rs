@@ -140,7 +140,11 @@ impl Engine {
             }
 
             self.update_obj_meshes();
-            self.scene.rebuild_from_world(&mut self.world);
+            let materials_changed = self.scene.rebuild_from_world(&mut self.world);
+            #[cfg(feature = "wgpu")]
+            if materials_changed {
+                self.invalidate_material_cache();
+            }
             // Object simulation is now fully handled by Rapier, so we only
             // rebuild GPU data from the ECS world.
             self.scene

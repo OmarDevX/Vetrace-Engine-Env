@@ -390,7 +390,11 @@ impl Engine {
 
         // Complete scene update pipeline (from run.rs line 135-141)
         self.update_obj_meshes();
-        self.scene.rebuild_from_world(&mut self.world);
+        let materials_changed = self.scene.rebuild_from_world(&mut self.world);
+        #[cfg(feature = "wgpu")]
+        if materials_changed {
+            self.invalidate_material_cache();
+        }
         self.scene
             .sync_objects_to_world(&mut self.world, &self.core.object_entity_map);
         self.scene.ensure_bvh();

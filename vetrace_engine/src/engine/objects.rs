@@ -96,6 +96,8 @@ impl Engine {
             self.world.insert(entity, shape);
         }
         self.core.register_object_entity(object_id, entity);
+        #[cfg(feature = "wgpu")]
+        self.invalidate_material_cache();
     }
 
     /// Spawn an [`Object`] and return an [`Actor`] wrapper for the created entity.
