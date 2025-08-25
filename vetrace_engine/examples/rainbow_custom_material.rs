@@ -21,7 +21,7 @@ fn hsv_to_rgb(hsv: vec3<f32>) -> vec3<f32> {
     return rgb + m;
 }
 
-fn evaluate_rainbow_material(
+fn evaluate_rainbow(
     hit_point: vec3<f32>,
     normal: vec3<f32>,
     view_dir: vec3<f32>,
