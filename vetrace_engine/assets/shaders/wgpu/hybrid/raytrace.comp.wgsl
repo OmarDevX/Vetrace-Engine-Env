@@ -989,11 +989,19 @@ fn shade_base(
 ) -> vec3<f32> {
     var mat_idx: u32 = objects[obj_idx].material_index;
     if (tri_idx != 0xffffffffu) { let tri = triangles[tri_idx]; mat_idx = tri.material_index; }
-    let mat = materials[mat_idx];
+    var mat = materials[mat_idx];
 
     var material_result: MaterialResult;
     if (mat.has_custom_material != 0u) {
         material_result = evaluate_custom_material(hit, normal, -normalize(hit), uv, mat.custom_material_id);
+        // Adopt roughness/metallic/emissive output by the custom shader
+        mat.roughnessFactor = material_result.roughness;
+        mat.metallicFactor = material_result.metallic;
+        let e_strength = max(max(material_result.emission.r, material_result.emission.g), material_result.emission.b);
+        if (e_strength > 0.0) {
+            mat.emissiveStrength = e_strength;
+            mat.emissiveFactor = material_result.emission / e_strength;
+        }
     } else {
         material_result = evaluate_default_material(hit, normal, mat, tri_idx, uv);
     }
@@ -1008,7 +1016,8 @@ fn shade_base(
 
     col += gi * base * sky_mix;
 
-    col += material_result.emission;
+    // Add any emissive contribution after potential custom-material edits
+    col += mat.emissiveFactor * mat.emissiveStrength;
 
     let ao = ambient_occlusion(hit + surface_normal * 0.01, surface_normal, obj_idx, rng);
 
