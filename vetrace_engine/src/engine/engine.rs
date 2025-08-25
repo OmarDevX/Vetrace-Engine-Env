@@ -1344,7 +1344,7 @@ impl Engine {
         }
 
         // Process scene objects and create materials for them
-        let time = self.renderer.frame_number as f32 * (1.0 / 60.0);
+        let time = self.renderer.frame_number() as f32 * (1.0 / 60.0);
         for (i, obj) in self.scene.objects.iter_mut().enumerate() {
             // See if the object has a material component in the world
             let entity_mat = self

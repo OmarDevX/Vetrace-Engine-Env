@@ -3551,4 +3551,9 @@ impl WgpuRenderer {
     pub fn white_texture_handle(&self) -> crate::gpu::TextureHandle {
         self.white_texture.clone()
     }
+
+    /// Returns the current frame number used for temporal effects.
+    pub fn frame_number(&self) -> i32 {
+        self.frame_number
+    }
 }
