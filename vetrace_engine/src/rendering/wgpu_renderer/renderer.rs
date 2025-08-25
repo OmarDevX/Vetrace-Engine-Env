@@ -144,6 +144,8 @@ pub struct WgpuRenderer {
     prev_sprite_view_proj: Option<[f32; 16]>,
     prev_light_data: Option<LightUniform>,
     sprite_vertices_cache: Vec<[f32; 5]>,
+    prev_material_names: Vec<String>,
+    prev_shader_defs: Vec<(String, String)>,
 }
 
 include!("renderer_impl.inc.rs");

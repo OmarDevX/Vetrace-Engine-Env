@@ -1929,6 +1929,8 @@ impl WgpuRenderer {
             prev_sprite_view_proj: None,
             prev_light_data: None,
             sprite_vertices_cache: Vec::new(),
+            prev_material_names: Vec::new(),
+            prev_shader_defs: Vec::new(),
         }
     }
 
@@ -2632,26 +2634,32 @@ impl WgpuRenderer {
             ],
         });
 
-        for (name, code) in shaders {
-            self.shader_compiler
-                .register_material(name.clone(), code.clone());
+        let shader_changed =
+            self.prev_material_names != material_names || self.prev_shader_defs != shaders;
+        if shader_changed {
+            self.shader_compiler.material_registry.clear();
+            for (name, code) in shaders {
+                self.shader_compiler.register_material(name.clone(), code.clone());
+            }
+            let compute_module = self
+                .shader_compiler
+                .compile_shader(material_names)
+                .expect("failed to compile shader");
+            let compute_pipeline_layout = self.device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("compute_pl"),
+                bind_group_layouts: &[&self.compute_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+            self.compute_pipeline = self.device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("compute_pipeline"),
+                layout: Some(&compute_pipeline_layout),
+                module: &compute_module,
+                entry_point: "main",
+                compilation_options: Default::default(),
+            });
+            self.prev_material_names = material_names.to_vec();
+            self.prev_shader_defs = shaders.to_vec();
         }
-        let compute_module = self
-            .shader_compiler
-            .compile_shader(material_names)
-            .expect("failed to compile shader");
-        let compute_pipeline_layout = self.device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("compute_pl"),
-            bind_group_layouts: &[&self.compute_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        self.compute_pipeline = self.device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("compute_pipeline"),
-            layout: Some(&compute_pipeline_layout),
-            module: &compute_module,
-            entry_point: "main",
-            compilation_options: Default::default(),
-        });
 
         self.denoise_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("denoise_bg"),
