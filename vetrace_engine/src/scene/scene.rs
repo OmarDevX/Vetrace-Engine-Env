@@ -48,9 +48,10 @@ impl Scene {
         self.gpu_objects = self.objects.iter().map(|o| o.to_gpu()).collect();
     }
 
-    pub fn rebuild_from_world(&mut self, world: &mut crate::ecs::World) {
+    pub fn rebuild_from_world(&mut self, world: &mut crate::ecs::World) -> bool {
         crate::systems::hierarchy::update_global_transforms(world);
         let previous = self.objects.clone();
+        let mut materials_changed = false;
         self.gpu_objects.clear();
         self.atmospheres.clear();
         for &entity in world.entities().to_vec().iter() {
@@ -129,8 +130,21 @@ impl Scene {
                         {
                             self.bvh_dirty = true;
                         }
+                        if p.color != obj.color
+                            || p.roughness != obj.roughness
+                            || p.emission != obj.emission
+                            || p.is_glass != obj.is_glass
+                            || p.specular_f0 != obj.specular_f0
+                            || p.ior != obj.ior
+                            || p.is_mesh != obj.is_mesh
+                            || p.triangle_start_idx != obj.triangle_start_idx
+                            || p.triangle_count != obj.triangle_count
+                        {
+                            materials_changed = true;
+                        }
                     } else {
                         self.bvh_dirty = true;
+                        materials_changed = true;
                     }
 
                     obj_size = obj.size;
@@ -201,6 +215,7 @@ impl Scene {
                 pbr.specular_f0 = spec_f0;
             }
         }
+        materials_changed
     }
 
     pub fn get_gpu_buffers(&self) -> (&[GpuObject], &[GpuTriangle]) {

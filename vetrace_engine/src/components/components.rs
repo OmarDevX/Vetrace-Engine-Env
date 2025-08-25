@@ -400,28 +400,19 @@ impl Inspectable for Renderable {
         vec![
             ExportedField {
                 name: "color_r",
-                kind: ExportKind::Slider {
-                    min: 0.0,
-                    max: 255.0,
-                },
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
                 value: &mut self.color[0] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "color_g",
-                kind: ExportKind::Slider {
-                    min: 0.0,
-                    max: 255.0,
-                },
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
                 value: &mut self.color[1] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "color_b",
-                kind: ExportKind::Slider {
-                    min: 0.0,
-                    max: 255.0,
-                },
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
                 value: &mut self.color[2] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
