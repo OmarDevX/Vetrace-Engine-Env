@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use crate::gpu::TextureHandle;
 
 use crate::ecs::Component;
 use crate::inspector::Inspectable;
@@ -35,7 +36,7 @@ pub enum MaterialParameter {
     Float(f32),
     Vec3([f32; 3]),
     Vec4([f32; 4]),
-    Texture(u32),
+    Texture(TextureHandle),
     Bool(bool),
 }
 

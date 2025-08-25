@@ -1465,6 +1465,15 @@ impl Engine {
                                 gpu.custom_float_3 = *f
                             }
                             ("custom_float_4", MaterialParameter::Float(f)) => gpu.custom_float_4 = *f,
+                            ("texture", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.texture_index = tex_idx;
+                            }
                             _ => {}
                         }
                     }
