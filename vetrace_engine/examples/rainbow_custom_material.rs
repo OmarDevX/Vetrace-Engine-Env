@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use vetrace_engine::components::components::CameraAttachment;
 use vetrace_engine::app::{app, App};
 use vetrace_engine::scene::object::Object;
 use vetrace_engine::components::components::Transform;
 use vetrace_engine::{CustomMaterial, Engine, MaterialParameter};
+use vetrace_engine::gpu::{GpuTexture, TextureHandle};
 use vetrace_editor::EditorPlugin;
 use vetrace_engine::components::components::FreeFlightControls;
 const RAINBOW_WGSL: &str = r#"
@@ -36,7 +38,8 @@ fn evaluate_rainbow(
     let rainbow_factor = dot(hit_point, vec3<f32>(1.0, 0.0, 0.0)) * params.custom_float_1 + time * params.custom_float_2;
     let hue = fract(rainbow_factor);
     let rainbow_color = hsv_to_rgb(vec3<f32>(hue, 1.0, 1.0));
-    result.base_color = rainbow_color;
+    let tex_color = textureSampleLevel(textures[params.texture_index], tex_sampler, uv, 0.0).rgb;
+    result.base_color = tex_color * rainbow_color;
     result.roughness = params.roughness;
     result.metallic = params.metallic;
     result.emission = rainbow_color * params.custom_float_3;
@@ -58,6 +61,20 @@ impl App for RainbowExample {
             params.insert("rainbow_scale".to_string(), MaterialParameter::Float(1.0));
             params.insert("speed".to_string(), MaterialParameter::Float(1.0));
             params.insert("glow_strength".to_string(), MaterialParameter::Float(0.0));
+            let img = image::open("assets/textures/tree.jpg").unwrap().to_rgba8();
+            let (w, h) = img.dimensions();
+            let tex = GpuTexture::from_rgba8(
+                engine.renderer.device(),
+                engine.renderer.queue(),
+                img.as_raw(),
+                w,
+                h,
+                true,
+                "tree",
+            )
+            .unwrap();
+            let tex_handle = TextureHandle(Arc::new(tex));
+            params.insert("texture".to_string(), MaterialParameter::Texture(tex_handle));
             let custom = CustomMaterial {
                 material_type: "rainbow".to_string(),
                 shader_source: RAINBOW_WGSL.to_string(),

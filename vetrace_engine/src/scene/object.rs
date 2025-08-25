@@ -127,6 +127,8 @@ pub struct GpuCustomMaterial {
     pub custom_float_2: f32,
     pub custom_float_3: f32,
     pub custom_float_4: f32,
+    pub texture_index: u32,
+    pub _pad: [u32; 3],
 }
 
 impl Default for GpuCustomMaterial {
@@ -141,6 +143,8 @@ impl Default for GpuCustomMaterial {
             custom_float_2: 0.0,
             custom_float_3: 0.0,
             custom_float_4: 0.0,
+            texture_index: 0,
+            _pad: [0; 3],
         }
     }
 }

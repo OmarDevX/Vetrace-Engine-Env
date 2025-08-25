@@ -66,6 +66,8 @@ struct CustomMaterialParams {
     custom_float_2: f32,
     custom_float_3: f32,
     custom_float_4: f32,
+    texture_index: u32,
+    _pad: vec3<u32>,
 };
 
 struct MaterialResult {
