@@ -87,15 +87,14 @@ pub struct GpuMaterial {
     pub roughness_factor: f32,
     pub ior: f32,
     pub base_color_tex: u32,
-    /// Specular F0 value with padding to satisfy 16-byte alignment
+    /// Specular F0 value (vec3) aligned to 16 bytes by the following field
     pub f0: [f32; 3],
-    pub _pad_f0: f32,
     /// Flag indicating whether this material has an associated custom shader
     pub has_custom_material: u32,
     /// Index into the `custom_materials` storage buffer
     pub custom_material_id: u32,
     /// Extra padding to keep struct size 96 bytes, matching WGSL layout
-    pub _pad2: [u32; 6],
+    pub _pad2: [u32; 7],
 }
 
 impl Default for GpuMaterial {
@@ -109,10 +108,9 @@ impl Default for GpuMaterial {
             ior: 1.5,
             base_color_tex: 0,
             f0: [0.0, 0.0, 0.0],
-            _pad_f0: 0.0,
             has_custom_material: 0,
             custom_material_id: 0,
-            _pad2: [0; 6],
+            _pad2: [0; 7],
         }
     }
 }
