@@ -174,7 +174,6 @@ impl Default for GpuAtmosphere {
 /// Maximum number of atmospheres supported in the scene and shader.
 pub const MAX_ATMOSPHERES: usize = 8;
 
-
 #[derive(Clone, Debug, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Object {
     pub position: [f32; 3],
@@ -275,10 +274,10 @@ impl Object {
                     let s2 = other.shape();
                     if rapier3d::parry::query::intersection_test(&iso1, &*s1, &iso2, &*s2)
                         .unwrap_or(false)
-                        {
-                            self.resolve_collision(other);
-                            apply_gravity = false;
-                        }
+                    {
+                        self.resolve_collision(other);
+                        apply_gravity = false;
+                    }
                 }
             }
             if apply_gravity {
@@ -289,7 +288,7 @@ impl Object {
                 // Limit velocity to prevent excessive speed
                 let max_speed: f32 = 5.0; // Adjust as needed
                 let speed_squared =
-                self.velocity[0].powi(2) + self.velocity[1].powi(2) + self.velocity[2].powi(2);
+                    self.velocity[0].powi(2) + self.velocity[1].powi(2) + self.velocity[2].powi(2);
                 if speed_squared > max_speed.powi(2) {
                     let speed = speed_squared.sqrt();
                     self.velocity[0] = (self.velocity[0] / speed) * max_speed;
@@ -310,16 +309,16 @@ impl Object {
             // Limit angular velocity to prevent excessive rotation
             let max_angular_speed: f32 = 10.0; // Adjust as needed
             let angular_speed_squared = self.angular_velocity[0].powi(2)
-            + self.angular_velocity[1].powi(2)
-            + self.angular_velocity[2].powi(2);
+                + self.angular_velocity[1].powi(2)
+                + self.angular_velocity[2].powi(2);
             if angular_speed_squared > max_angular_speed.powi(2) {
                 let angular_speed = angular_speed_squared.sqrt();
                 self.angular_velocity[0] =
-                self.angular_velocity[0] / angular_speed * max_angular_speed;
+                    self.angular_velocity[0] / angular_speed * max_angular_speed;
                 self.angular_velocity[1] =
-                self.angular_velocity[1] / angular_speed * max_angular_speed;
+                    self.angular_velocity[1] / angular_speed * max_angular_speed;
                 self.angular_velocity[2] =
-                self.angular_velocity[2] / angular_speed * max_angular_speed;
+                    self.angular_velocity[2] / angular_speed * max_angular_speed;
             }
             let t_vec = Vec3::new(self.velocity[0], self.velocity[1], self.velocity[2]);
             if t_vec.length_squared() < 0.5 {
@@ -334,10 +333,10 @@ impl Object {
 
     fn update_orientation(&mut self, delta_time: f32) {
         let angle = (self.angular_velocity[0].powi(2)
-        + self.angular_velocity[1].powi(2)
-        + self.angular_velocity[2].powi(2))
+            + self.angular_velocity[1].powi(2)
+            + self.angular_velocity[2].powi(2))
         .sqrt()
-        * delta_time;
+            * delta_time;
         if angle != 0.0 {
             let axis = [
                 self.angular_velocity[0] / angle,
@@ -355,10 +354,10 @@ impl Object {
             ];
             self.orientation = Object::quaternion_multiply(self.orientation, delta_orientation);
             let n = (self.orientation[0] * self.orientation[0]
-            + self.orientation[1] * self.orientation[1]
-            + self.orientation[2] * self.orientation[2]
-            + self.orientation[3] * self.orientation[3])
-            .sqrt();
+                + self.orientation[1] * self.orientation[1]
+                + self.orientation[2] * self.orientation[2]
+                + self.orientation[3] * self.orientation[3])
+                .sqrt();
             self.orientation[0] /= n;
             self.orientation[1] /= n;
             self.orientation[2] /= n;
@@ -384,7 +383,7 @@ impl Object {
         ));
         Isometry::from_parts(
             Translation::new(self.position[0], self.position[1], self.position[2]),
-                             q,
+            q,
         )
     }
 
@@ -469,7 +468,8 @@ impl Default for Object {
             velocity: [0.0; 3],
             acceleration: [0.0; 3],
             radius: 1.0,
-            color: [120.0; 3],
+            // Default to mid-gray in 0-1 range
+            color: [0.47; 3],
             roughness: 1.0,
             emission: 0.0,
             is_static: true,

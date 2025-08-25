@@ -9,10 +9,10 @@ use crate::engine::component_io::apply_component_data;
 use crate::inspector::Inspectable;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::loader::ComponentFactory;
+use crate::AutoLod;
 use crate::Behaviour;
 use egui::{self, Slider, TextEdit};
 use std::rc::Rc;
-use crate::AutoLod;
 
 impl Engine {
     pub fn register_default_factories(&mut self) {
@@ -66,16 +66,8 @@ impl Engine {
         self.register_component::<Renderable>("Renderable", |rend, ui| {
             ui.horizontal(|ui| {
                 ui.label("Color");
-                let mut col = [
-                    rend.color[0] / 255.0,
-                    rend.color[1] / 255.0,
-                    rend.color[2] / 255.0,
-                ];
-                if ui.color_edit_button_rgb(&mut col).changed() {
-                    rend.color[0] = col[0] * 255.0;
-                    rend.color[1] = col[1] * 255.0;
-                    rend.color[2] = col[2] * 255.0;
-                }
+                // Colors are stored in 0-1 range
+                ui.color_edit_button_rgb(&mut rend.color);
             });
             ui.add(Slider::new(&mut rend.roughness, 0.0..=1.0).text("Roughness"));
             ui.add(Slider::new(&mut rend.emission, 0.0..=100.0).text("Emission"));
