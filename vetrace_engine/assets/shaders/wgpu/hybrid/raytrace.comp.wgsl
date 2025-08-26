@@ -67,7 +67,29 @@ struct CustomMaterialParams {
     custom_float_3: f32,
     custom_float_4: f32,
     texture_index: u32,
-    _pad: vec3<u32>,
+    alpha_cutoff: f32,           // threshold for alpha testing
+    double_sided: u32,           // flip normals for backfaces
+    normal_map_index: u32,       // separate normal map texture
+    roughness_map_index: u32,    // separate roughness map texture
+    metallic_map_index: u32,     // separate metallic map texture
+    emission_map_index: u32,     // separate emission map texture
+    // NEW TRANSPARENCY FIELDS
+    transparency: f32,          // 0.0 = opaque, 1.0 = fully transparent
+    transmission: f32,          // how much light passes through vs scatters
+    transmission_roughness: f32, // roughness for transmission rays
+    refraction_ior: f32,        // index of refraction for transmission
+    // NEW EXTENDED FIELDS
+    subsurface_strength: f32,   // subsurface scattering amount
+    subsurface_radius: vec3<f32>, // RGB subsurface radii
+    clearcoat_strength: f32,    // clearcoat layer strength
+    clearcoat_roughness: f32,   // clearcoat roughness
+    anisotropy: f32,           // anisotropic reflection (-1 to 1)
+    anisotropy_rotation: f32,   // rotation of anisotropy in radians
+    sheen_strength: f32,        // fabric-like sheen effect
+    sheen_tint: vec3<f32>,     // sheen color tint
+    normal_strength: f32,       // normal map intensity
+    displacement_strength: f32, // displacement/height strength
+    _pad: vec2<u32>,
 };
 
 struct MaterialResult {
@@ -76,6 +98,17 @@ struct MaterialResult {
     roughness: f32,
     metallic: f32,
     emission: vec3<f32>,
+    // NEW TRANSPARENCY OUTPUTS
+    transparency: f32,
+    transmission: f32,
+    transmission_roughness: f32,
+    ior: f32,
+    // NEW EXTENDED OUTPUTS
+    subsurface: vec4<f32>,     // strength + RGB radii
+    clearcoat: vec2<f32>,      // strength + roughness
+    anisotropy: vec2<f32>,     // strength + rotation
+    sheen: vec4<f32>,          // strength + RGB tint
+    displacement: f32,
 };
 
 // MATERIAL_FUNCTIONS_PLACEHOLDER
@@ -763,15 +796,31 @@ fn hit_alpha(obj_idx: u32, tri_idx: u32, uv: vec2<f32>) -> f32 {
     if (objects[obj_idx].is_glass > 0u) { return 1.0; }
     var mat_idx: u32 = objects[obj_idx].material_index;
     if (tri_idx != 0xffffffffu) {
-        let tri = triangles[tri_idx]; mat_idx = tri.material_index;
+        let tri = triangles[tri_idx];
+        mat_idx = tri.material_index;
     }
     let mat = materials[mat_idx];
-    var a = mat.baseColorFactor.w;
+    var alpha = mat.baseColorFactor.w;
+    var cutoff = 0.5;
+
+    // Check for custom material transparency
+    if (mat.has_custom_material != 0u) {
+        let dummy_point = vec3<f32>(0.0);
+        let dummy_normal = vec3<f32>(0.0, 0.0, 1.0);
+        let dummy_view = vec3<f32>(0.0, 0.0, -1.0);
+        let result = evaluate_custom_material(dummy_point, dummy_normal, dummy_view, uv, mat.custom_material_id);
+        alpha = 1.0 - result.transparency;
+        let custom = custom_materials[mat.custom_material_id];
+        cutoff = custom.alpha_cutoff;
+    }
+
+    // Apply texture alpha
     if (mat.baseColorTex != 0u && tri_idx != 0xffffffffu) {
         let tex = textureSampleLevel(textures[mat.baseColorTex], tex_sampler, uv, 0.0);
-        a = a * tex.a;
+        alpha *= tex.a;
     }
-    return select(0.0, 1.0, a >= 0.5);
+
+    return select(0.0, 1.0, alpha >= cutoff);
 }
 
 struct ObjHit { t: f32, n: vec3<f32>, idx: i32, tri: u32, uv: vec2<f32>, };
@@ -983,6 +1032,15 @@ fn default_material_result(hit_point: vec3<f32>, normal: vec3<f32>, _view_dir: v
     result.roughness = 1.0;
     result.metallic = 0.0;
     result.emission = vec3<f32>(0.0, 0.0, 0.0);
+    result.transparency = 0.0;
+    result.transmission = 0.0;
+    result.transmission_roughness = 0.0;
+    result.ior = 1.0;
+    result.subsurface = vec4<f32>(0.0);
+    result.clearcoat = vec2<f32>(0.0);
+    result.anisotropy = vec2<f32>(0.0);
+    result.sheen = vec4<f32>(0.0);
+    result.displacement = 0.0;
     return result;
 }
 
@@ -1008,6 +1066,15 @@ fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialPar
     result.roughness = mat.roughnessFactor;
     result.metallic = mat.metallicFactor;
     result.emission = mat.emissiveFactor * mat.emissiveStrength;
+    result.transparency = 0.0;
+    result.transmission = 0.0;
+    result.transmission_roughness = 0.0;
+    result.ior = mat.ior;
+    result.subsurface = vec4<f32>(0.0);
+    result.clearcoat = vec2<f32>(0.0);
+    result.anisotropy = vec2<f32>(0.0);
+    result.sheen = vec4<f32>(0.0);
+    result.displacement = 0.0;
     return result;
 }
 
@@ -1018,9 +1085,10 @@ fn shade_base(
     if (tri_idx != 0xffffffffu) { let tri = triangles[tri_idx]; mat_idx = tri.material_index; }
     var mat = materials[mat_idx];
 
+    let view = -normalize(hit);
     var material_result: MaterialResult;
     if (mat.has_custom_material != 0u) {
-        material_result = evaluate_custom_material(hit, normal, -normalize(hit), uv, mat.custom_material_id);
+        material_result = evaluate_custom_material(hit, normal, view, uv, mat.custom_material_id);
         // Adopt roughness/metallic/emissive output by the custom shader
         mat.roughnessFactor = material_result.roughness;
         mat.metallicFactor = material_result.metallic;
@@ -1035,6 +1103,12 @@ fn shade_base(
 
     let base = material_result.base_color;
     var surface_normal = material_result.normal;
+    if (mat.has_custom_material != 0u) {
+        let custom = custom_materials[mat.custom_material_id];
+        if (custom.double_sided != 0u && dot(surface_normal, view) > 0.0) {
+            surface_normal = -surface_normal;
+        }
+    }
 
     let sky_tint = params.skycolor.xyz;
     let sky = max(dot(surface_normal, vec3<f32>(0.0, 1.0, 0.0)), 0.0);
@@ -1097,12 +1171,89 @@ fn shade_base(
     return col;
 }
 
-fn shade(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec3<f32> {
-    let gi = sample_diffuse_gi(hit, normal, rng);
+fn shade_transparent_material(
+    hit: vec3<f32>,
+    normal: vec3<f32>,
+    view_dir: vec3<f32>,
+    obj_idx: u32,
+    tri_idx: u32,
+    uv: vec2<f32>,
+    depth: i32,
+    gi: vec3<f32>,
+    rng: ptr<function, u32>
+) -> vec3<f32> {
+    var mat_idx: u32 = objects[obj_idx].material_index;
+    if (tri_idx != 0xffffffffu) {
+        mat_idx = triangles[tri_idx].material_index;
+    }
+    let mat = materials[mat_idx];
+
+    if (mat.has_custom_material != 0u) {
+        let result = evaluate_custom_material(hit, normal, view_dir, uv, mat.custom_material_id);
+
+        // Handle transparency
+        if (result.transparency > 0.001) {
+            let transmission_dir = normalize(refract(view_dir, normal, 1.0 / result.ior));
+            var trans_color = vec3<f32>(0.0);
+
+            if (length(transmission_dir) > 0.0) {
+                let rough_dir = normalize(transmission_dir + random_in_unit_sphere(rng) * result.transmission_roughness);
+                let obj = objects[obj_idx];
+                let eps = surf_eps(obj);
+                trans_color = trace_ray_skip(hit - normal * eps, rough_dir, depth + 1, rng, i32(obj_idx)).color;
+            }
+
+            let surface_color = shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
+            return mix(surface_color, trans_color * result.base_color, result.transparency * result.transmission);
+        }
+
+        var final_color = shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
+
+        // Apply subsurface scattering approximation
+        if (result.subsurface.x > 0.0) {
+            let subsurface_offset = random_in_unit_sphere(rng) * result.subsurface.yzw;
+            let subsurface_pos = hit + subsurface_offset;
+            let subsurface_color = shade_base(subsurface_pos, normal, obj_idx, tri_idx, uv, gi, rng);
+            final_color = mix(final_color, subsurface_color, result.subsurface.x);
+        }
+
+        // Apply sheen effect
+        if (result.sheen.x > 0.0) {
+            let sheen_factor = pow(1.0 - abs(dot(view_dir, normal)), 5.0);
+            final_color += result.sheen.yzw * result.sheen.x * sheen_factor;
+        }
+
+        return final_color;
+    }
+
+    // Fallback to regular shading
     return shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
 }
-fn shade_no_gi(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec3<f32> {
-    return shade_base(hit, normal, obj_idx, tri_idx, uv, vec3<f32>(0.0), rng);
+
+fn shade(
+    hit: vec3<f32>,
+    normal: vec3<f32>,
+    view_dir: vec3<f32>,
+    obj_idx: u32,
+    tri_idx: u32,
+    uv: vec2<f32>,
+    depth: i32,
+    rng: ptr<function, u32>
+) -> vec3<f32> {
+    let gi = sample_diffuse_gi(hit, normal, rng);
+    return shade_transparent_material(hit, normal, view_dir, obj_idx, tri_idx, uv, depth, gi, rng);
+}
+fn shade_no_gi(
+    hit: vec3<f32>,
+    normal: vec3<f32>,
+    view_dir: vec3<f32>,
+    obj_idx: u32,
+    tri_idx: u32,
+    uv: vec2<f32>,
+    depth: i32,
+    rng: ptr<function, u32>
+) -> vec3<f32> {
+    return shade_transparent_material(hit, normal, view_dir, obj_idx, tri_idx, uv, depth, vec3<f32>(0.0), rng);
 }
 
 // -----------------------------
@@ -1123,7 +1274,7 @@ fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<funct
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        var col: vec3<f32> = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        var col: vec3<f32> = shade_no_gi(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
@@ -1144,7 +1295,7 @@ fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        var col: vec3<f32> = shade(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
@@ -1175,12 +1326,42 @@ fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        var col: vec3<f32> = shade(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
     let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
     return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+}
+
+// Volume scattering for transparent materials
+fn sample_volume_scattering(
+    ray_start: vec3<f32>,
+    ray_dir: vec3<f32>,
+    distance: f32,
+    absorption: vec3<f32>,
+    scattering: vec3<f32>,
+    rng: ptr<function, u32>
+) -> vec3<f32> {
+    let steps = 8;
+    let step_size = distance / f32(steps);
+    var accumulated_light = vec3<f32>(0.0);
+    var transmittance = vec3<f32>(1.0);
+
+    for (var i: i32 = 0; i < steps; i = i + 1) {
+        let t = f32(i) * step_size;
+        let pos = ray_start + ray_dir * t;
+
+        // Sample lighting at this point
+        let light_dir = normalize(-params.dir_light_dir.xyz);
+        let phase = 0.25; // Simple isotropic phase function
+        let inscattered = params.dir_light_color.xyz * scattering * phase;
+
+        accumulated_light += transmittance * inscattered * step_size;
+        transmittance *= exp(-(absorption + scattering) * step_size);
+    }
+
+    return accumulated_light;
 }
 
 // -----------------------------

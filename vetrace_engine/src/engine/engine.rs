@@ -1500,6 +1500,48 @@ impl Engine {
                                 });
                                 gpu.texture_index = tex_idx;
                             }
+                            ("alpha_cutoff", MaterialParameter::Float(f)) => {
+                                gpu.alpha_cutoff = *f;
+                            }
+                            ("double_sided", MaterialParameter::Bool(b)) => {
+                                gpu.double_sided = if *b { 1 } else { 0 };
+                            }
+                            ("normal_map", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.normal_map_index = tex_idx;
+                            }
+                            ("roughness_map", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.roughness_map_index = tex_idx;
+                            }
+                            ("metallic_map", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.metallic_map_index = tex_idx;
+                            }
+                            ("emission_map", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.emission_map_index = tex_idx;
+                            }
                             _ => {}
                         }
                     }
