@@ -317,6 +317,24 @@ impl AssetManager {
             }
         }
 
+        // Build a mapping from each node to its parent so we can include ancestors
+        let mut parent_map = vec![None; gltf.nodes().count()];
+        for scene in gltf.scenes() {
+            for node in scene.nodes() {
+                record_parent(node, None, &mut parent_map);
+            }
+        }
+
+        // Ensure all ancestors of needed nodes are included so joint hierarchies remain intact
+        let mut stack: Vec<usize> = needed_nodes.clone().into_iter().collect();
+        while let Some(idx) = stack.pop() {
+            if let Some(parent) = parent_map[idx] {
+                if needed_nodes.insert(parent) {
+                    stack.push(parent);
+                }
+            }
+        }
+
         let file_path_str = format!("{}", abs.display());
         let mut accum = MeshAccum::default();
         for scene in gltf.scenes() {
@@ -695,6 +713,14 @@ fn accumulate_gltf_node(
     }
 
     Ok(())
+}
+
+fn record_parent(node: gltf::Node, parent: Option<usize>, map: &mut Vec<Option<usize>>) {
+    let idx = node.index();
+    map[idx] = parent;
+    for child in node.children() {
+        record_parent(child, Some(idx), map);
+    }
 }
 
 fn spawn_needed_nodes(
