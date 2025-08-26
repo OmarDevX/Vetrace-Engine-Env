@@ -1172,15 +1172,16 @@ fn shade_base(
 }
 
 fn shade_transparent_material(
-    hit: vec3<f32>,
-    normal: vec3<f32>,
-    view_dir: vec3<f32>,
-    obj_idx: u32,
-    tri_idx: u32,
-    uv: vec2<f32>,
+    hit: vec3<f32>, 
+    normal: vec3<f32>, 
+    view_dir: vec3<f32>, 
+    obj_idx: u32, 
+    tri_idx: u32, 
+    uv: vec2<f32>, 
     depth: i32,
     gi: vec3<f32>,
-    rng: ptr<function, u32>
+    rng: ptr<function, u32>,
+    use_gi: bool
 ) -> vec3<f32> {
     var mat_idx: u32 = objects[obj_idx].material_index;
     if (tri_idx != 0xffffffffu) {
@@ -1200,7 +1201,7 @@ fn shade_transparent_material(
                 let rough_dir = normalize(transmission_dir + random_in_unit_sphere(rng) * result.transmission_roughness);
                 let obj = objects[obj_idx];
                 let eps = surf_eps(obj);
-                trans_color = trace_ray_skip(hit - normal * eps, rough_dir, depth + 1, rng, i32(obj_idx)).color;
+                trans_color = trace_ray_skip(hit - normal * eps, rough_dir, depth + 1, rng, i32(obj_idx), use_gi).color;
             }
 
             let surface_color = shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
@@ -1241,7 +1242,7 @@ fn shade(
     rng: ptr<function, u32>
 ) -> vec3<f32> {
     let gi = sample_diffuse_gi(hit, normal, rng);
-    return shade_transparent_material(hit, normal, view_dir, obj_idx, tri_idx, uv, depth, gi, rng);
+    return shade_transparent_material(hit, normal, view_dir, obj_idx, tri_idx, uv, depth, gi, rng, true);
 }
 fn shade_no_gi(
     hit: vec3<f32>,
@@ -1253,7 +1254,7 @@ fn shade_no_gi(
     depth: i32,
     rng: ptr<function, u32>
 ) -> vec3<f32> {
-    return shade_transparent_material(hit, normal, view_dir, obj_idx, tri_idx, uv, depth, vec3<f32>(0.0), rng);
+    return shade_transparent_material(hit, normal, view_dir, obj_idx, tri_idx, uv, depth, vec3<f32>(0.0), rng, false);
 }
 
 // -----------------------------
@@ -1313,7 +1314,7 @@ fn surf_eps(obj: Object) -> f32 {
 }
 
 // identical to trace_ray(...) but skips `skip` on the first TLAS hit
-fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
+fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32, use_gi: bool) -> RayResult {
     if (depth >= params.max_bounces) {
         let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
         return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
@@ -1326,7 +1327,12 @@ fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        var col: vec3<f32> = shade(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
+        var col: vec3<f32>;
+        if (use_gi) {
+            col = shade(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
+        } else {
+            col = shade_no_gi(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
+        }
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
