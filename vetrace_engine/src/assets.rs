@@ -342,6 +342,14 @@ impl AssetManager {
             v.pos[2] -= center[2];
         }
 
+        if let Some((ref mut inverse_bind_mats, _)) = skin_info {
+            let c = Mat4::from_translation(Vec3::new(center[0], center[1], center[2]));
+            for m in inverse_bind_mats.iter_mut() {
+                let mat = Mat4::from_cols_array_2d(m);
+                *m = (mat * c).to_cols_array_2d();
+            }
+        }
+
         // Spawn entities for joints and animated nodes
         let mut node_entities = vec![None; gltf.nodes().count()];
         let center_vec = Vec3::new(center[0], center[1], center[2]);
