@@ -16,12 +16,35 @@ use crate::materials::PbrMaterial;
 use crate::scene::object::{GpuTriangle, Object};
 use crate::Engine;
 
-#[derive(Default)]
 struct MeshAccum {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     triangles: Vec<GpuTriangle>,
     morph_targets: HashMap<String, MorphTargetSet>,
+    prim_ranges: Vec<PrimitiveRange>,
+    min: [f32; 3],
+    max: [f32; 3],
+}
+
+impl Default for MeshAccum {
+    fn default() -> Self {
+        Self {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            triangles: Vec::new(),
+            morph_targets: HashMap::new(),
+            prim_ranges: Vec::new(),
+            min: [f32::MAX; 3],
+            max: [f32::MIN; 3],
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+struct PrimitiveRange {
+    start: usize,
+    count: usize,
+    material_index: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -272,27 +295,107 @@ impl AssetManager {
         }
 
         let file_path_str = format!("{}", abs.display());
-        let mut first_id: Option<u32> = None;
+        let mut accum = MeshAccum::default();
         for scene in gltf.scenes() {
             for node in scene.nodes() {
-                let ids = spawn_gltf_node(
-                    self,
-                    engine,
+                accumulate_gltf_node(
+                    &mut accum,
                     node,
                     Mat4::IDENTITY,
                     &buffers_data,
-                    &materials,
                     material_base,
-                    first_clip.as_deref(),
-                    &file_path_str,
                 )?;
-                if first_id.is_none() {
-                    first_id = ids.first().copied();
-                }
             }
         }
 
-        Ok(first_id.unwrap_or(0))
+        let center = [
+            (accum.min[0] + accum.max[0]) * 0.5,
+            (accum.min[1] + accum.max[1]) * 0.5,
+            (accum.min[2] + accum.max[2]) * 0.5,
+        ];
+        for v in &mut accum.vertices {
+            v.pos[0] -= center[0];
+            v.pos[1] -= center[1];
+            v.pos[2] -= center[2];
+        }
+
+        for prim in &accum.prim_ranges {
+            let slice = &accum.indices[prim.start..prim.start + prim.count];
+            for idx in slice.chunks_exact(3) {
+                let i0 = idx[0] as usize;
+                let i1 = idx[1] as usize;
+                let i2 = idx[2] as usize;
+                let v0 = &accum.vertices[i0];
+                let v1 = &accum.vertices[i1];
+                let v2 = &accum.vertices[i2];
+                let e1 = [
+                    v1.pos[0] - v0.pos[0],
+                    v1.pos[1] - v0.pos[1],
+                    v1.pos[2] - v0.pos[2],
+                ];
+                let e2 = [
+                    v2.pos[0] - v0.pos[0],
+                    v2.pos[1] - v0.pos[1],
+                    v2.pos[2] - v0.pos[2],
+                ];
+                let duv1 = [v1.uv[0] - v0.uv[0], v1.uv[1] - v0.uv[1]];
+                let duv2 = [v2.uv[0] - v0.uv[0], v2.uv[1] - v0.uv[1]];
+                accum.triangles.push(GpuTriangle {
+                    v0: v0.pos,
+                    _pad0: 0.0,
+                    e1,
+                    _pad1: 0.0,
+                    e2,
+                    _pad2: 0.0,
+                    n0: v0.nrm,
+                    _pad3: 0.0,
+                    n1: v1.nrm,
+                    _pad4: 0.0,
+                    n2: v2.nrm,
+                    _pad5: 0.0,
+                    uv0: v0.uv,
+                    duv1,
+                    duv2,
+                    material_index: prim.material_index,
+                    _pad6: 0,
+                });
+            }
+        }
+
+        let gm = GpuMesh::from_cpu_with_morph_targets(
+            engine.renderer.device(),
+            &file_path_str,
+            &accum.vertices,
+            &accum.indices,
+            None,
+        )?;
+        let handle = MeshHandle(Arc::new(gm));
+        self.meshes
+            .write()
+            .insert(file_path_str.clone(), handle.clone());
+
+        let mut obj = Object::default();
+        obj.is_cube = false;
+        obj.material_index = 0;
+        obj.position = center;
+        obj.orientation = [0.0, 0.0, 0.0, 1.0];
+        obj.scale = [1.0, 1.0, 1.0];
+        engine.spawn_with_triangles(obj, accum.triangles.clone());
+        let id = (engine.scene.objects.len() - 1) as u32;
+        if let Some(entity) = engine.core.find_entity_by_object_id(id) {
+            engine.world.insert(entity, handle);
+            if let Some(anim_name) = first_clip.as_deref() {
+                engine.world.insert(
+                    entity,
+                    Animation {
+                        clip: anim_name.to_string(),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+
+        Ok(id)
     }
 }
 
@@ -316,45 +419,52 @@ impl AssetManager {
     }
 }
 
-fn spawn_gltf_node(
-    assets: &AssetManager,
-    engine: &mut Engine,
+fn accumulate_gltf_node(
+    accum: &mut MeshAccum,
     node: gltf::Node,
     parent: Mat4,
     buffers_data: &Vec<Vec<u8>>,
-    materials: &Vec<PbrMaterial>,
     material_base: u32,
-    first_clip: Option<&str>,
-    file_path: &str,
-) -> anyhow::Result<Vec<u32>> {
+) -> anyhow::Result<()> {
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
     let world = parent * local;
-    let (scale, rot, trans) = world.to_scale_rotation_translation();
-    let flip = (scale.x * scale.y * scale.z).is_sign_negative();
-    let mut ids = Vec::new();
+    let flip = world.determinant().is_sign_negative();
 
     if let Some(mesh) = node.mesh() {
+        let normal_matrix = world.inverse().transpose();
         for prim in mesh.primitives() {
             let reader = prim.reader(|b| buffers_data.get(b.index()).map(|v| v.as_slice()));
 
             let positions: Vec<[f32; 3]> = reader
                 .read_positions()
                 .context("positions")?
-                .map(|p| [p[0] * scale.x, p[1] * scale.y, p[2] * scale.z])
+                .map(|p| {
+                    let v = world.transform_point3(Vec3::new(p[0], p[1], p[2]));
+                    [v.x, v.y, v.z]
+                })
                 .collect();
+            for p in &positions {
+                for i in 0..3 {
+                    if p[i] < accum.min[i] {
+                        accum.min[i] = p[i];
+                    }
+                    if p[i] > accum.max[i] {
+                        accum.max[i] = p[i];
+                    }
+                }
+            }
             let normals: Vec<[f32; 3]> = if let Some(n) = reader.read_normals() {
                 n.map(|v| {
-                    let nx = v[0] / scale.x;
-                    let ny = v[1] / scale.y;
-                    let nz = v[2] / scale.z;
-                    let len = (nx * nx + ny * ny + nz * nz).sqrt();
-                    let mut nrm = [nx / len, ny / len, nz / len];
+                    let vec = normal_matrix
+                        .transform_vector3(Vec3::new(v[0], v[1], v[2]))
+                        .normalize();
+                    let mut arr = [vec.x, vec.y, vec.z];
                     if flip {
-                        nrm[0] = -nrm[0];
-                        nrm[1] = -nrm[1];
-                        nrm[2] = -nrm[2];
+                        arr[0] = -arr[0];
+                        arr[1] = -arr[1];
+                        arr[2] = -arr[2];
                     }
-                    nrm
+                    arr
                 })
                 .collect()
             } else {
@@ -367,163 +477,66 @@ fn spawn_gltf_node(
             };
             let tangents: Vec<[f32; 4]> = if let Some(t) = reader.read_tangents() {
                 t.map(|v| {
-                    let tx = v[0] / scale.x;
-                    let ty = v[1] / scale.y;
-                    let tz = v[2] / scale.z;
-                    let len = (tx * tx + ty * ty + tz * tz).sqrt();
-                    let mut tan = [tx / len, ty / len, tz / len, v[3]];
+                    let vec = normal_matrix
+                        .transform_vector3(Vec3::new(v[0], v[1], v[2]))
+                        .normalize();
+                    let mut arr = [vec.x, vec.y, vec.z, v[3]];
                     if flip {
-                        tan[0] = -tan[0];
-                        tan[1] = -tan[1];
-                        tan[2] = -tan[2];
-                        tan[3] = -tan[3];
+                        arr[0] = -arr[0];
+                        arr[1] = -arr[1];
+                        arr[2] = -arr[2];
+                        arr[3] = -arr[3];
                     }
-                    tan
+                    arr
                 })
                 .collect()
             } else {
                 vec![[1.0, 0.0, 0.0, 1.0]; positions.len()]
             };
-            let mut indices: Vec<u32> = if let Some(ind) = reader.read_indices() {
-                ind.into_u32().collect()
-            } else {
-                (0..positions.len() as u32).collect()
-            };
-            if flip {
-                for idx in indices.chunks_mut(3) {
-                    idx.swap(1, 2);
-                }
-            }
-
-            let mut min = [f32::MAX; 3];
-            let mut max = [f32::MIN; 3];
-            for p in &positions {
-                for i in 0..3 {
-                    if p[i] < min[i] {
-                        min[i] = p[i];
-                    }
-                    if p[i] > max[i] {
-                        max[i] = p[i];
-                    }
-                }
-            }
-            let center = [
-                (min[0] + max[0]) * 0.5,
-                (min[1] + max[1]) * 0.5,
-                (min[2] + max[2]) * 0.5,
-            ];
 
             let mut vertices = Vec::with_capacity(positions.len());
-            for (i, p) in positions.iter().enumerate() {
+            for i in 0..positions.len() {
                 vertices.push(Vertex {
-                    pos: [p[0] - center[0], p[1] - center[1], p[2] - center[2]],
+                    pos: positions[i],
                     nrm: normals[i],
                     tan: tangents[i],
                     uv: texcoords[i],
                 });
             }
 
-            let mut tris = Vec::new();
-            for idx in indices.chunks_exact(3) {
-                let i0 = idx[0] as usize;
-                let i1 = idx[1] as usize;
-                let i2 = idx[2] as usize;
-                let v0 = &vertices[i0];
-                let v1 = &vertices[i1];
-                let v2 = &vertices[i2];
-                let e1 = [
-                    v1.pos[0] - v0.pos[0],
-                    v1.pos[1] - v0.pos[1],
-                    v1.pos[2] - v0.pos[2],
-                ];
-                let e2 = [
-                    v2.pos[0] - v0.pos[0],
-                    v2.pos[1] - v0.pos[1],
-                    v2.pos[2] - v0.pos[2],
-                ];
-                let duv1 = [v1.uv[0] - v0.uv[0], v1.uv[1] - v0.uv[1]];
-                let duv2 = [v2.uv[0] - v0.uv[0], v2.uv[1] - v0.uv[1]];
-                tris.push(GpuTriangle {
-                    v0: v0.pos,
-                    _pad0: 0.0,
-                    e1,
-                    _pad1: 0.0,
-                    e2,
-                    _pad2: 0.0,
-                    n0: v0.nrm,
-                    _pad3: 0.0,
-                    n1: v1.nrm,
-                    _pad4: 0.0,
-                    n2: v2.nrm,
-                    _pad5: 0.0,
-                    uv0: v0.uv,
-                    duv1,
-                    duv2,
-                    material_index: u32::MAX,
-                    _pad6: 0,
-                });
+            let base = accum.vertices.len() as u32;
+            accum.vertices.extend(vertices);
+            let mut indices: Vec<u32> = if let Some(ind) = reader.read_indices() {
+                ind.into_u32().map(|i| i + base).collect()
+            } else {
+                (0..positions.len() as u32).map(|i| i + base).collect()
+            };
+            if flip {
+                for idx in indices.chunks_mut(3) {
+                    idx.swap(1, 2);
+                }
             }
-
-            let name = format!("{}#node{}#prim{}", file_path, node.index(), prim.index());
-            let gm = GpuMesh::from_cpu_with_morph_targets(
-                engine.renderer.device(),
-                &name,
-                &vertices,
-                &indices,
-                None,
-            )?;
-            let handle = MeshHandle(Arc::new(gm));
-            assets.meshes.write().insert(name, handle.clone());
-
+            let start = accum.indices.len();
+            let count = indices.len();
+            accum.indices.extend(indices);
             let mat_idx = prim
                 .material()
                 .index()
                 .map(|i| material_base + i as u32)
                 .unwrap_or(0);
-
-            let mut obj = Object::default();
-            obj.is_cube = false;
-            obj.material_index = mat_idx;
-            let wc = rot * Vec3::from(center) + trans;
-            obj.position = [wc.x, wc.y, wc.z];
-            obj.orientation = [rot.x, rot.y, rot.z, rot.w];
-            obj.scale = [1.0, 1.0, 1.0];
-            engine.spawn_with_triangles(obj, tris.clone());
-            let id = (engine.scene.objects.len() - 1) as u32;
-            if let Some(entity) = engine.core.find_entity_by_object_id(id) {
-                engine.world.insert(entity, handle);
-                if let Some(mi) = prim.material().index().and_then(|i| materials.get(i)) {
-                    engine.world.insert(entity, mi.clone());
-                }
-                if let Some(anim_name) = first_clip {
-                    engine.world.insert(
-                        entity,
-                        Animation {
-                            clip: anim_name.to_string(),
-                            ..Default::default()
-                        },
-                    );
-                }
-            }
-            ids.push(id);
+            accum.prim_ranges.push(PrimitiveRange {
+                start,
+                count,
+                material_index: mat_idx,
+            });
         }
     }
 
     for child in node.children() {
-        ids.extend(spawn_gltf_node(
-            assets,
-            engine,
-            child,
-            world,
-            buffers_data,
-            materials,
-            material_base,
-            first_clip,
-            file_path,
-        )?);
+        accumulate_gltf_node(accum, child, world, buffers_data, material_base)?;
     }
 
-    Ok(ids)
+    Ok(())
 }
 
 fn srgb_to_linear(x: f32) -> f32 {
