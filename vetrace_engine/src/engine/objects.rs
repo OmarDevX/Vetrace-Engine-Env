@@ -121,7 +121,7 @@ impl Engine {
             obj.position = node.position;
             obj.color = node.color;
             obj.size = node.size;
-            obj.scale = [1.0; 3];
+            obj.scale = node.scale;
             obj.is_cube = node.is_cube;
             obj.is_static = true;
             obj.orientation = [0.0, 0.0, 0.0, 1.0];
@@ -239,7 +239,7 @@ impl Engine {
             obj.position = node.position;
             obj.color = node.color;
             obj.size = node.size;
-            obj.scale = [1.0; 3];
+            obj.scale = node.scale;
             obj.is_cube = node.is_cube;
             obj.is_static = true;
             obj.orientation = [0.0, 0.0, 0.0, 1.0];
@@ -353,6 +353,7 @@ impl Engine {
                 position: obj.position,
                 color: obj.color,
                 size: obj.size,
+                scale: obj.scale,
                 is_cube: obj.is_cube,
                 components,
             });

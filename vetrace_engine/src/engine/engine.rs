@@ -1180,6 +1180,7 @@ impl Engine {
                 position: obj.position,
                 color: obj.color,
                 size: obj.size,
+                scale: obj.scale,
                 is_cube: obj.is_cube,
                 components,
             });
