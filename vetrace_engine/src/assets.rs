@@ -20,7 +20,7 @@ struct MeshAccum {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     triangles: Vec<GpuTriangle>,
-    morph_targets: HashMap<String, MorphTargetSet>,
+    morph_targets: Option<MorphTargetSet>,
     prim_ranges: Vec<PrimitiveRange>,
     min: [f32; 3],
     max: [f32; 3],
@@ -32,7 +32,7 @@ impl Default for MeshAccum {
             vertices: Vec::new(),
             indices: Vec::new(),
             triangles: Vec::new(),
-            morph_targets: HashMap::new(),
+            morph_targets: None,
             prim_ranges: Vec::new(),
             min: [f32::MAX; 3],
             max: [f32::MIN; 3],
@@ -362,17 +362,28 @@ impl AssetManager {
             }
         }
 
+        if let Some(ref mut set) = accum.morph_targets {
+            set.base_vertex_count = accum.vertices.len();
+        }
+        let morph_key = accum
+            .morph_targets
+            .as_ref()
+            .map(|_| format!("morph:{}", file_path_str));
+
         let gm = GpuMesh::from_cpu_with_morph_targets(
             engine.renderer.device(),
             &file_path_str,
             &accum.vertices,
             &accum.indices,
-            None,
+            accum.morph_targets.as_ref(),
         )?;
         let handle = MeshHandle(Arc::new(gm));
         self.meshes
             .write()
             .insert(file_path_str.clone(), handle.clone());
+        if let (Some(key), Some(set)) = (morph_key.as_ref(), accum.morph_targets.clone()) {
+            self.morph_targets.write().insert(key.clone(), set);
+        }
 
         let mut obj = Object::default();
         obj.is_cube = false;
@@ -392,6 +403,17 @@ impl AssetManager {
                         ..Default::default()
                     },
                 );
+            }
+            if let Some(key) = morph_key {
+                let count = accum
+                    .morph_targets
+                    .as_ref()
+                    .map(|set| set.targets.len())
+                    .unwrap_or(0);
+                engine.world.insert(entity, MorphTargets { morph_key: key });
+                engine
+                    .world
+                    .insert(entity, MorphWeights { weights: vec![0.0; count] });
             }
         }
 
@@ -504,8 +526,61 @@ fn accumulate_gltf_node(
                 });
             }
 
-            let base = accum.vertices.len() as u32;
+            let base = accum.vertices.len() as usize;
             accum.vertices.extend(vertices);
+
+            // Handle morph targets for this primitive
+            let target_count = prim.morph_targets().count();
+            if target_count > 0 {
+                let set = accum
+                    .morph_targets
+                    .get_or_insert_with(|| MorphTargetSet { targets: Vec::new(), base_vertex_count: 0 });
+
+                // Ensure we have enough targets
+                if set.targets.len() < target_count {
+                    for i in set.targets.len()..target_count {
+                        set.targets.push(MorphTarget {
+                            name: format!("morph{i}"),
+                            vertex_positions: vec![[0.0; 3]; accum.vertices.len()],
+                            vertex_normals: None,
+                        });
+                    }
+                } else {
+                    for tgt in &mut set.targets {
+                        tgt.vertex_positions.resize(accum.vertices.len(), [0.0; 3]);
+                        if let Some(n) = &mut tgt.vertex_normals {
+                            n.resize(accum.vertices.len(), [0.0; 3]);
+                        }
+                    }
+                }
+
+                for i in 0..target_count {
+                    if let Some(iter) = reader.read_morph_positions(i) {
+                        for (j, p) in iter.enumerate() {
+                            let vec = world.transform_vector3(Vec3::new(p[0], p[1], p[2]));
+                            set.targets[i].vertex_positions[base + j] = [vec.x, vec.y, vec.z];
+                        }
+                    }
+                    if let Some(iter) = reader.read_morph_normals(i) {
+                        if set.targets[i].vertex_normals.is_none() {
+                            set.targets[i].vertex_normals = Some(vec![[0.0; 3]; accum.vertices.len()]);
+                        }
+                        let normals = set.targets[i].vertex_normals.as_mut().unwrap();
+                        for (j, n) in iter.enumerate() {
+                            let vec = normal_matrix.transform_vector3(Vec3::new(n[0], n[1], n[2]));
+                            let mut arr = [vec.x, vec.y, vec.z];
+                            if flip {
+                                arr[0] = -arr[0];
+                                arr[1] = -arr[1];
+                                arr[2] = -arr[2];
+                            }
+                            normals[base + j] = arr;
+                        }
+                    }
+                }
+            }
+
+            let base = base as u32;
             let mut indices: Vec<u32> = if let Some(ind) = reader.read_indices() {
                 ind.into_u32().map(|i| i + base).collect()
             } else {
