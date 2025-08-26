@@ -1402,7 +1402,7 @@ fn trace_ray_skip_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        let col = shade_no_gi(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
+        let col = shade_base(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, vec3<f32>(0.0), rng);
         let col_atm = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col_atm, t_total, hit.n, hit.idx, hit.tri);
     }
