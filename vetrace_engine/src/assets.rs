@@ -330,6 +330,7 @@ fn spawn_gltf_node(
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
     let world = parent * local;
     let (scale, rot, trans) = world.to_scale_rotation_translation();
+    let flip = (scale.x * scale.y * scale.z).is_sign_negative();
     let mut ids = Vec::new();
 
     if let Some(mesh) = node.mesh() {
@@ -347,7 +348,13 @@ fn spawn_gltf_node(
                     let ny = v[1] / scale.y;
                     let nz = v[2] / scale.z;
                     let len = (nx * nx + ny * ny + nz * nz).sqrt();
-                    [nx / len, ny / len, nz / len]
+                    let mut nrm = [nx / len, ny / len, nz / len];
+                    if flip {
+                        nrm[0] = -nrm[0];
+                        nrm[1] = -nrm[1];
+                        nrm[2] = -nrm[2];
+                    }
+                    nrm
                 })
                 .collect()
             } else {
@@ -364,17 +371,29 @@ fn spawn_gltf_node(
                     let ty = v[1] / scale.y;
                     let tz = v[2] / scale.z;
                     let len = (tx * tx + ty * ty + tz * tz).sqrt();
-                    [tx / len, ty / len, tz / len, v[3]]
+                    let mut tan = [tx / len, ty / len, tz / len, v[3]];
+                    if flip {
+                        tan[0] = -tan[0];
+                        tan[1] = -tan[1];
+                        tan[2] = -tan[2];
+                        tan[3] = -tan[3];
+                    }
+                    tan
                 })
                 .collect()
             } else {
                 vec![[1.0, 0.0, 0.0, 1.0]; positions.len()]
             };
-            let indices: Vec<u32> = if let Some(ind) = reader.read_indices() {
+            let mut indices: Vec<u32> = if let Some(ind) = reader.read_indices() {
                 ind.into_u32().collect()
             } else {
                 (0..positions.len() as u32).collect()
             };
+            if flip {
+                for idx in indices.chunks_mut(3) {
+                    idx.swap(1, 2);
+                }
+            }
 
             let mut min = [f32::MAX; 3];
             let mut max = [f32::MIN; 3];
