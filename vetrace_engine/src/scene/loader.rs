@@ -23,8 +23,14 @@ pub struct NodeFile {
     pub position: [f32; 3],
     pub color: [f32; 3],
     pub size: [f32; 3],
+    #[serde(default = "default_scale")]
+    pub scale: [f32; 3],
     pub is_cube: bool,
     pub components: Vec<ComponentFile>,
+}
+
+fn default_scale() -> [f32; 3] {
+    [1.0; 3]
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

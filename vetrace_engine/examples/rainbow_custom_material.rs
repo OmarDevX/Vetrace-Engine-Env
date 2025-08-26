@@ -54,13 +54,17 @@ impl App for RainbowExample {
         engine.auto_register_component::<CustomMaterial>("Custom Material");
         let mut obj = Object::new([0.0, 0.0, 0.0], 1.0, [1.0, 1.0, 1.0], 0.5, 0.0, false);
         obj.is_cube = true;
-        if let Some(mut actor) = engine.spawn_object_as_actor(obj) {
+        if let Some(actor) = engine.spawn_object_as_actor(obj) {
+            let e = actor.entity();
+            drop(actor);
+
             let mut params = HashMap::new();
             params.insert("roughness".to_string(), MaterialParameter::Float(0.2));
             params.insert("metallic".to_string(), MaterialParameter::Float(0.0));
             params.insert("rainbow_scale".to_string(), MaterialParameter::Float(1.0));
             params.insert("speed".to_string(), MaterialParameter::Float(1.0));
             params.insert("glow_strength".to_string(), MaterialParameter::Float(0.0));
+
             let img = image::open("assets/textures/tree.jpg").unwrap().to_rgba8();
             let (w, h) = img.dimensions();
             let tex = GpuTexture::from_rgba8(
@@ -75,15 +79,16 @@ impl App for RainbowExample {
             .unwrap();
             let tex_handle = TextureHandle(Arc::new(tex));
             params.insert("texture".to_string(), MaterialParameter::Texture(tex_handle));
+
             let custom = CustomMaterial {
                 material_type: "rainbow".to_string(),
                 shader_source: RAINBOW_WGSL.to_string(),
                 parameters: params,
             };
-            let e = actor.entity();
+
             engine.insert_custom_material(e, custom);
         }
-            // Independent camera entity with FreeFlightControls (RMB to move/rotate)
+        // Independent camera entity with FreeFlightControls (RMB to move/rotate)
         let cam = engine.spawn_empty("camera");
         engine.world.insert(cam, Transform { position: [0.0, 0.0, 0.0], ..Default::default() });
         engine.world.insert(cam, CameraAttachment::default());

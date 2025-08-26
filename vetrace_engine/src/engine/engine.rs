@@ -12,7 +12,7 @@ use crate::behaviour::script::ScriptBehaviour;
 use crate::components::components::CameraAttachment;
 use crate::components::components::{
     AngularVelocity, Collider, GlobalTransform, LookAt, Material, ObjectRef, Player, Renderable,
-    Rotate, ScriptComponent, Shape, Transform, Velocity,
+    Rotate, ScriptComponent, Shape, Skin, Transform, Velocity,
 };
 use crate::components::generated::{
     FieldType, GeneratedComponent, GeneratedSpec, GeneratedStorage,
@@ -723,7 +723,7 @@ impl Engine {
             use glam::{Mat4, Quat, Vec3};
 
             let mut pbr_meshes = Vec::new();
-            for (_e, transform, mesh, mat) in
+            for (e, transform, mesh, mat) in
                 self.world.query3::<Transform, MeshHandle, PbrMaterial>()
             {
                 let model = Mat4::from_scale_rotation_translation(
@@ -737,11 +737,35 @@ impl Engine {
                     Vec3::from(transform.position) - cam_pos,
                 );
                 let mvp = (proj_mat * view_mat * model).to_cols_array_2d();
+                let joint_mats = if let Some(skin) = self.world.get::<Skin>(e) {
+                    let mut mats = Vec::new();
+                    for (joint_ent, ibm) in skin.joints.iter().zip(&skin.inverse_bind_mats) {
+                        if let Some(jt) = self.world.get::<GlobalTransform>(*joint_ent) {
+                            let jmat = Mat4::from_scale_rotation_translation(
+                                Vec3::from(jt.size),
+                                Quat::from_array([
+                                    jt.orientation[0],
+                                    jt.orientation[1],
+                                    jt.orientation[2],
+                                    jt.orientation[3],
+                                ]),
+                                Vec3::from(jt.position),
+                            );
+                            let ibm_mat = Mat4::from_cols_array_2d(ibm);
+                            let final_mat = jmat * ibm_mat;
+                            mats.push(final_mat.to_cols_array_2d());
+                        }
+                    }
+                    Some(mats)
+                } else {
+                    None
+                };
                 pbr_meshes.push(PbrRenderData {
                     mesh: mesh.clone(),
                     material: mat.clone(),
                     mvp,
                     model: model.to_cols_array_2d(),
+                    joint_mats,
                 });
             }
 
@@ -1180,6 +1204,7 @@ impl Engine {
                 position: obj.position,
                 color: obj.color,
                 size: obj.size,
+                scale: obj.scale,
                 is_cube: obj.is_cube,
                 components,
             });
@@ -1295,7 +1320,8 @@ impl Engine {
         let mut gpu_materials: Vec<GpuMaterial> = Vec::new();
         let mut custom_materials: Vec<crate::scene::object::GpuCustomMaterial> = Vec::new();
         let mut material_names: Vec<String> = Vec::new();
-        let mut shader_defs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut shader_defs: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         let mut mat_map: HashMap<String, u32> = HashMap::new();
         let mut tex_map: HashMap<*const crate::gpu::GpuTexture, u32> = HashMap::new();
         let mut tex_handles: Vec<TextureHandle> = Vec::new();
@@ -1457,14 +1483,14 @@ impl Engine {
                                 gpu.custom_float_1 = *f
                             }
                             ("custom_float_2", MaterialParameter::Float(f))
-                            | ("speed", MaterialParameter::Float(f)) => {
-                                gpu.custom_float_2 = *f
-                            }
+                            | ("speed", MaterialParameter::Float(f)) => gpu.custom_float_2 = *f,
                             ("custom_float_3", MaterialParameter::Float(f))
                             | ("glow_strength", MaterialParameter::Float(f)) => {
                                 gpu.custom_float_3 = *f
                             }
-                            ("custom_float_4", MaterialParameter::Float(f)) => gpu.custom_float_4 = *f,
+                            ("custom_float_4", MaterialParameter::Float(f)) => {
+                                gpu.custom_float_4 = *f
+                            }
                             ("texture", MaterialParameter::Texture(tex)) => {
                                 let ptr = std::sync::Arc::as_ptr(&tex.0);
                                 let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
@@ -1480,7 +1506,9 @@ impl Engine {
                     gpu.custom_float_4 = time;
                     custom_materials.push(gpu);
                     material_names.push(custom.material_type.clone());
-                    shader_defs.entry(custom.material_type.clone()).or_insert(custom.shader_source.clone());
+                    shader_defs
+                        .entry(custom.material_type.clone())
+                        .or_insert(custom.shader_source.clone());
                 }
             }
         }
@@ -1492,6 +1520,12 @@ impl Engine {
         let shader_defs_vec: Vec<(String, String)> = shader_defs.into_iter().collect();
         self.cached_shader_defs = shader_defs_vec.clone();
         self.materials_dirty = false;
-        (gpu_materials, tex_handles, custom_materials, material_names, shader_defs_vec)
+        (
+            gpu_materials,
+            tex_handles,
+            custom_materials,
+            material_names,
+            shader_defs_vec,
+        )
     }
 }

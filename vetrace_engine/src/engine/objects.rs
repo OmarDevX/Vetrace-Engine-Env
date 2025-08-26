@@ -121,7 +121,7 @@ impl Engine {
             obj.position = node.position;
             obj.color = node.color;
             obj.size = node.size;
-            obj.scale = [1.0; 3];
+            obj.scale = node.scale;
             obj.is_cube = node.is_cube;
             obj.is_static = true;
             obj.orientation = [0.0, 0.0, 0.0, 1.0];
@@ -239,7 +239,7 @@ impl Engine {
             obj.position = node.position;
             obj.color = node.color;
             obj.size = node.size;
-            obj.scale = [1.0; 3];
+            obj.scale = node.scale;
             obj.is_cube = node.is_cube;
             obj.is_static = true;
             obj.orientation = [0.0, 0.0, 0.0, 1.0];
@@ -304,6 +304,9 @@ impl Engine {
     }
 
     pub fn save_scene_to_file(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Ensure scene object data reflects the latest world transforms so
+        // saved files capture edits made through the editor.
+        self.scene.rebuild_from_world(&mut self.world);
         let mut nodes = Vec::new();
         let mut entities = Vec::new();
         for idx in 0..self.scene.objects.len() {
@@ -353,6 +356,7 @@ impl Engine {
                 position: obj.position,
                 color: obj.color,
                 size: obj.size,
+                scale: obj.scale,
                 is_cube: obj.is_cube,
                 components,
             });
