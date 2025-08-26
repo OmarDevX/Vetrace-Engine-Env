@@ -536,7 +536,7 @@ impl Engine {
             );
             #[cfg(feature = "wgpu")]
             {
-                use crate::components::components::{Skin, Transform};
+                use crate::components::components::{GlobalTransform, Skin, Transform};
 
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
@@ -561,7 +561,7 @@ impl Engine {
                     let joint_mats = if let Some(skin) = self.world.get::<Skin>(e) {
                         let mut mats = Vec::new();
                         for (joint_ent, ibm) in skin.joints.iter().zip(&skin.inverse_bind_mats) {
-                            if let Some(jt) = self.world.get::<Transform>(*joint_ent) {
+                            if let Some(jt) = self.world.get::<GlobalTransform>(*joint_ent) {
                                 let jmat = Mat4::from_scale_rotation_translation(
                                     Vec3::from(jt.size),
                                     Quat::from_xyzw(

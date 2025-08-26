@@ -12,7 +12,7 @@ use gltf::animation::util::ReadOutputs;
 use std::collections::HashSet;
 
 use crate::Engine;
-use crate::components::components::{Animation, MorphTargets, MorphWeights, Skin, Transform};
+use crate::components::components::{Animation, MorphTargets, MorphWeights, Parent, Skin, Transform};
 use crate::gpu::{GpuMesh, GpuTexture, MeshHandle, TextureHandle, Vertex};
 use crate::materials::PbrMaterial;
 use crate::scene::object::{GpuTriangle, Object};
@@ -354,6 +354,7 @@ impl AssetManager {
                     Mat4::IDENTITY,
                     &needed_nodes,
                     center_vec,
+                    None,
                 );
             }
         }
@@ -692,16 +693,21 @@ fn spawn_needed_nodes(
     engine: &mut Engine,
     entities: &mut Vec<Option<crate::ecs::Entity>>,
     node: gltf::Node,
-    parent: Mat4,
+    parent_mat: Mat4,
     needed: &HashSet<usize>,
     center: Vec3,
+    parent_ent: Option<crate::ecs::Entity>,
 ) {
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
-    let world = parent * local;
+    let world = parent_mat * local;
+
+    let mut current_parent = parent_ent;
 
     if needed.contains(&node.index()) {
-        let (scale, rot, mut trans) = world.to_scale_rotation_translation();
-        trans -= center;
+        let (scale, rot, mut trans) = local.to_scale_rotation_translation();
+        if parent_ent.is_none() {
+            trans -= center;
+        }
         let e = engine.spawn_empty(&format!("node{}", node.index()));
         engine.world.insert(
             e,
@@ -711,11 +717,15 @@ fn spawn_needed_nodes(
                 size: [scale.x, scale.y, scale.z],
             },
         );
+        if let Some(p) = parent_ent {
+            engine.world.insert(e, Parent { entity: p });
+        }
         entities[node.index()] = Some(e);
+        current_parent = Some(e);
     }
 
     for child in node.children() {
-        spawn_needed_nodes(engine, entities, child, world, needed, center);
+        spawn_needed_nodes(engine, entities, child, world, needed, center, current_parent);
     }
 }
 

@@ -4,6 +4,7 @@ use crate::{
     assets::{AssetManager, AnimationChannel},
     components::components::{Animation, Transform, MorphWeights},
     engine::engine::Engine,
+    systems::hierarchy::update_global_transforms,
     Behaviour,
 };
 
@@ -81,6 +82,9 @@ impl Behaviour for AnimationSystem {
                 }
             }
         }
+
+        // Recompute global transforms after applying animations
+        update_global_transforms(&mut engine.world);
     }
 }
 
