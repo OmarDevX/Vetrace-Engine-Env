@@ -317,7 +317,13 @@ impl Scene {
                     {
                         t.position = obj.position;
                         t.orientation = obj.orientation;
-                        t.size = obj.scale;
+                        // Combine intrinsic size with per-axis scale so
+                        // transforms match rendered geometry.
+                        let mut final_size = obj.size;
+                        for i in 0..3 {
+                            final_size[i] *= obj.scale[i];
+                        }
+                        t.size = final_size;
                     }
                 }
                 if let Some(v) = world.get_mut::<crate::components::components::Velocity>(*entity) {

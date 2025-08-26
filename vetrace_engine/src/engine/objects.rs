@@ -304,6 +304,9 @@ impl Engine {
     }
 
     pub fn save_scene_to_file(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Ensure scene object data reflects the latest world transforms so
+        // saved files capture edits made through the editor.
+        self.scene.rebuild_from_world(&mut self.world);
         let mut nodes = Vec::new();
         let mut entities = Vec::new();
         for idx in 0..self.scene.objects.len() {
