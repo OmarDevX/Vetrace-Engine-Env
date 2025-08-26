@@ -554,18 +554,19 @@ fn accumulate_gltf_node(
                     }
                 }
 
-                for i in 0..target_count {
-                    if let Some(iter) = reader.read_morph_positions(i) {
+                for (i, target) in reader.read_morph_targets().enumerate() {
+                    let (positions, normals, _tangents) = target;
+                    if let Some(iter) = positions {
                         for (j, p) in iter.enumerate() {
                             let vec = world.transform_vector3(Vec3::new(p[0], p[1], p[2]));
                             set.targets[i].vertex_positions[base + j] = [vec.x, vec.y, vec.z];
                         }
                     }
-                    if let Some(iter) = reader.read_morph_normals(i) {
+                    if let Some(iter) = normals {
                         if set.targets[i].vertex_normals.is_none() {
                             set.targets[i].vertex_normals = Some(vec![[0.0; 3]; accum.vertices.len()]);
                         }
-                        let normals = set.targets[i].vertex_normals.as_mut().unwrap();
+                        let normals_vec = set.targets[i].vertex_normals.as_mut().unwrap();
                         for (j, n) in iter.enumerate() {
                             let vec = normal_matrix.transform_vector3(Vec3::new(n[0], n[1], n[2]));
                             let mut arr = [vec.x, vec.y, vec.z];
@@ -574,7 +575,7 @@ fn accumulate_gltf_node(
                                 arr[1] = -arr[1];
                                 arr[2] = -arr[2];
                             }
-                            normals[base + j] = arr;
+                            normals_vec[base + j] = arr;
                         }
                     }
                 }
