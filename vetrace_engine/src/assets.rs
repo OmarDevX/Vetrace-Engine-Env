@@ -7,7 +7,7 @@ use ahash::HashMap;
 use anyhow::Context;
 use parking_lot::RwLock;
 
-use glam::{Mat4, Vec4};
+use glam::{Mat4, Vec3, Vec4};
 use gltf::animation::util::ReadOutputs;
 
 use crate::components::components::{Animation, MorphTargets, MorphWeights};
@@ -238,7 +238,7 @@ impl AssetManager {
                                 clip.channels.push(AnimationChannel::Scale(keyframes));
                             }
                         }
-                     gltf::animation::Property::MorphTargetWeights => {
+                        gltf::animation::Property::MorphTargetWeights => {
                             if let ReadOutputs::MorphTargetWeights(weights) = outputs {
                                 let frame_count = times.len().max(1);
                                 let total_weights = weights.clone().into_f32().count();
@@ -329,16 +329,27 @@ fn spawn_gltf_node(
 ) -> anyhow::Result<Vec<u32>> {
     let local = Mat4::from_cols_array_2d(&node.transform().matrix());
     let world = parent * local;
-    let (scale, rot, _trans) = world.to_scale_rotation_translation();
+    let (scale, rot, trans) = world.to_scale_rotation_translation();
     let mut ids = Vec::new();
 
     if let Some(mesh) = node.mesh() {
         for prim in mesh.primitives() {
             let reader = prim.reader(|b| buffers_data.get(b.index()).map(|v| v.as_slice()));
 
-            let positions: Vec<[f32; 3]> = reader.read_positions().context("positions")?.collect();
+            let positions: Vec<[f32; 3]> = reader
+                .read_positions()
+                .context("positions")?
+                .map(|p| [p[0] * scale.x, p[1] * scale.y, p[2] * scale.z])
+                .collect();
             let normals: Vec<[f32; 3]> = if let Some(n) = reader.read_normals() {
-                n.collect()
+                n.map(|v| {
+                    let nx = v[0] / scale.x;
+                    let ny = v[1] / scale.y;
+                    let nz = v[2] / scale.z;
+                    let len = (nx * nx + ny * ny + nz * nz).sqrt();
+                    [nx / len, ny / len, nz / len]
+                })
+                .collect()
             } else {
                 vec![[0.0, 1.0, 0.0]; positions.len()]
             };
@@ -348,7 +359,14 @@ fn spawn_gltf_node(
                 vec![[0.0, 0.0]; positions.len()]
             };
             let tangents: Vec<[f32; 4]> = if let Some(t) = reader.read_tangents() {
-                t.map(|v| [v[0], v[1], v[2], v[3]]).collect()
+                t.map(|v| {
+                    let tx = v[0] / scale.x;
+                    let ty = v[1] / scale.y;
+                    let tz = v[2] / scale.z;
+                    let len = (tx * tx + ty * ty + tz * tz).sqrt();
+                    [tx / len, ty / len, tz / len, v[3]]
+                })
+                .collect()
             } else {
                 vec![[1.0, 0.0, 0.0, 1.0]; positions.len()]
             };
@@ -447,10 +465,10 @@ fn spawn_gltf_node(
             let mut obj = Object::default();
             obj.is_cube = false;
             obj.material_index = mat_idx;
-            let wc = world * Vec4::new(center[0], center[1], center[2], 1.0);
+            let wc = rot * Vec3::from(center) + trans;
             obj.position = [wc.x, wc.y, wc.z];
             obj.orientation = [rot.x, rot.y, rot.z, rot.w];
-            obj.scale = [scale.x, scale.y, scale.z];
+            obj.scale = [1.0, 1.0, 1.0];
             engine.spawn_with_triangles(obj, tris.clone());
             let id = (engine.scene.objects.len() - 1) as u32;
             if let Some(entity) = engine.core.find_entity_by_object_id(id) {
