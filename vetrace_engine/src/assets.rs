@@ -7,14 +7,15 @@ use ahash::HashMap;
 use anyhow::Context;
 use parking_lot::RwLock;
 
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec3, Vec4};
 use gltf::animation::util::ReadOutputs;
+use std::collections::HashSet;
 
-use crate::components::components::{Animation, MorphTargets, MorphWeights, Skin};
+use crate::Engine;
+use crate::components::components::{Animation, MorphTargets, MorphWeights, Skin, Transform};
 use crate::gpu::{GpuMesh, GpuTexture, MeshHandle, TextureHandle, Vertex};
 use crate::materials::PbrMaterial;
 use crate::scene::object::{GpuTriangle, Object};
-use crate::Engine;
 
 struct MeshAccum {
     vertices: Vec<Vertex>,
@@ -224,19 +225,37 @@ impl AssetManager {
             }
         }
 
-        let mut first_clip: Option<String> = None;
+        let mut first_clip_for_node: HashMap<usize, String> = HashMap::default();
+        let mut needed_nodes: HashSet<usize> = HashSet::new();
+
+        // Preload skin information and mark joint nodes as needed
+        let mut skin_info: Option<(Vec<[[f32; 4]; 4]>, Vec<usize>)> = None;
+        if let Some(skin) = gltf.skins().next() {
+            let reader = skin.reader(|b| buffers_data.get(b.index()).map(|v| v.as_slice()));
+            let inverse_bind_mats: Vec<[[f32; 4]; 4]> = reader
+                .read_inverse_bind_matrices()
+                .map(|iter| iter.map(|m| m.into()).collect())
+                .unwrap_or_default();
+            let joint_indices: Vec<usize> = skin.joints().map(|j| j.index()).collect();
+            needed_nodes.extend(joint_indices.iter().copied());
+            skin_info = Some((inverse_bind_mats, joint_indices));
+        }
+
+        // Load animations per node
         for anim in gltf.animations() {
             let name = anim
                 .name()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("{}#anim{}", abs.display(), anim.index()));
-            let mut clip = AnimationClip::default();
+            let mut node_clips: HashMap<usize, AnimationClip> = HashMap::default();
 
             for channel in anim.channels() {
                 let reader = channel.reader(|b| buffers_data.get(b.index()).map(|v| v.as_slice()));
                 if let (Some(inputs), Some(outputs)) = (reader.read_inputs(), reader.read_outputs())
                 {
                     let times: Vec<f32> = inputs.collect();
+                    let node_idx = channel.target().node().index();
+                    let clip = node_clips.entry(node_idx).or_default();
                     clip.duration = times.iter().copied().fold(clip.duration, f32::max);
 
                     match channel.target().property() {
@@ -286,11 +305,15 @@ impl AssetManager {
                 }
             }
 
-            if !clip.channels.is_empty() {
-                if first_clip.is_none() {
-                    first_clip = Some(name.clone());
+            for (node_idx, clip) in node_clips {
+                if !clip.channels.is_empty() {
+                    let clip_name = format!("{}#node{}", name, node_idx);
+                    self.animations.write().insert(clip_name.clone(), clip);
+                    needed_nodes.insert(node_idx);
+                    first_clip_for_node
+                        .entry(node_idx)
+                        .or_insert_with(|| clip_name.clone());
                 }
-                self.animations.write().insert(name, clip);
             }
         }
 
@@ -317,6 +340,22 @@ impl AssetManager {
             v.pos[0] -= center[0];
             v.pos[1] -= center[1];
             v.pos[2] -= center[2];
+        }
+
+        // Spawn entities for joints and animated nodes
+        let mut node_entities = vec![None; gltf.nodes().count()];
+        let center_vec = Vec3::new(center[0], center[1], center[2]);
+        for scene in gltf.scenes() {
+            for node in scene.nodes() {
+                spawn_needed_nodes(
+                    engine,
+                    &mut node_entities,
+                    node,
+                    Mat4::IDENTITY,
+                    &needed_nodes,
+                    center_vec,
+                );
+            }
         }
 
         for prim in &accum.prim_ranges {
@@ -395,15 +434,6 @@ impl AssetManager {
         let id = (engine.scene.objects.len() - 1) as u32;
         if let Some(entity) = engine.core.find_entity_by_object_id(id) {
             engine.world.insert(entity, handle);
-            if let Some(anim_name) = first_clip.as_deref() {
-                engine.world.insert(
-                    entity,
-                    Animation {
-                        clip: anim_name.to_string(),
-                        ..Default::default()
-                    },
-                );
-            }
             if let Some(key) = morph_key {
                 let count = accum
                     .morph_targets
@@ -411,20 +441,38 @@ impl AssetManager {
                     .map(|set| set.targets.len())
                     .unwrap_or(0);
                 engine.world.insert(entity, MorphTargets { morph_key: key });
-                engine
-                    .world
-                    .insert(entity, MorphWeights { weights: vec![0.0; count] });
+                engine.world.insert(
+                    entity,
+                    MorphWeights {
+                        weights: vec![0.0; count],
+                    },
+                );
             }
-            if let Some(skin) = gltf.skins().next() {
-                let reader = skin.reader(|b| buffers_data.get(b.index()).map(|v| v.as_slice()));
-                let inverse_bind_mats: Vec<[[f32; 4]; 4]> = reader
-                    .read_inverse_bind_matrices()
-                    .map(|iter| iter.map(|m| m.into()).collect())
-                    .unwrap_or_default();
-                let joints = skin.joints().map(|_| crate::ecs::Entity(0)).collect();
-                engine
-                    .world
-                    .insert(entity, Skin { inverse_bind_mats, joints });
+            if let Some((inverse_bind_mats, joint_indices)) = skin_info {
+                let joints: Vec<crate::ecs::Entity> = joint_indices
+                    .into_iter()
+                    .map(|i| node_entities[i].unwrap_or(crate::ecs::Entity(0)))
+                    .collect();
+                engine.world.insert(
+                    entity,
+                    Skin {
+                        inverse_bind_mats,
+                        joints,
+                    },
+                );
+            }
+        }
+
+        // Attach animations to their corresponding nodes
+        for (idx, clip_name) in first_clip_for_node {
+            if let Some(ent) = node_entities.get(idx).copied().flatten() {
+                engine.world.insert(
+                    ent,
+                    Animation {
+                        clip: clip_name,
+                        ..Default::default()
+                    },
+                );
             }
         }
 
@@ -555,9 +603,10 @@ fn accumulate_gltf_node(
             // Handle morph targets for this primitive
             let target_count = prim.morph_targets().count();
             if target_count > 0 {
-                let set = accum
-                    .morph_targets
-                    .get_or_insert_with(|| MorphTargetSet { targets: Vec::new(), base_vertex_count: 0 });
+                let set = accum.morph_targets.get_or_insert_with(|| MorphTargetSet {
+                    targets: Vec::new(),
+                    base_vertex_count: 0,
+                });
 
                 // Ensure we have enough targets
                 if set.targets.len() < target_count {
@@ -587,7 +636,8 @@ fn accumulate_gltf_node(
                     }
                     if let Some(iter) = normals {
                         if set.targets[i].vertex_normals.is_none() {
-                            set.targets[i].vertex_normals = Some(vec![[0.0; 3]; accum.vertices.len()]);
+                            set.targets[i].vertex_normals =
+                                Some(vec![[0.0; 3]; accum.vertices.len()]);
                         }
                         let normals_vec = set.targets[i].vertex_normals.as_mut().unwrap();
                         for (j, n) in iter.enumerate() {
@@ -636,6 +686,37 @@ fn accumulate_gltf_node(
     }
 
     Ok(())
+}
+
+fn spawn_needed_nodes(
+    engine: &mut Engine,
+    entities: &mut Vec<Option<crate::ecs::Entity>>,
+    node: gltf::Node,
+    parent: Mat4,
+    needed: &HashSet<usize>,
+    center: Vec3,
+) {
+    let local = Mat4::from_cols_array_2d(&node.transform().matrix());
+    let world = parent * local;
+
+    if needed.contains(&node.index()) {
+        let (scale, rot, mut trans) = world.to_scale_rotation_translation();
+        trans -= center;
+        let e = engine.spawn_empty(&format!("node{}", node.index()));
+        engine.world.insert(
+            e,
+            Transform {
+                position: [trans.x, trans.y, trans.z],
+                orientation: [rot.x, rot.y, rot.z, rot.w],
+                size: [scale.x, scale.y, scale.z],
+            },
+        );
+        entities[node.index()] = Some(e);
+    }
+
+    for child in node.children() {
+        spawn_needed_nodes(engine, entities, child, world, needed, center);
+    }
 }
 
 fn srgb_to_linear(x: f32) -> f32 {
