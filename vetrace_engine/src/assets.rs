@@ -10,7 +10,7 @@ use parking_lot::RwLock;
 use glam::{Mat4, Vec3, Vec4};
 use gltf::animation::util::ReadOutputs;
 
-use crate::components::components::{Animation, MorphTargets, MorphWeights};
+use crate::components::components::{Animation, MorphTargets, MorphWeights, Skin};
 use crate::gpu::{GpuMesh, GpuTexture, MeshHandle, TextureHandle, Vertex};
 use crate::materials::PbrMaterial;
 use crate::scene::object::{GpuTriangle, Object};
@@ -415,6 +415,17 @@ impl AssetManager {
                     .world
                     .insert(entity, MorphWeights { weights: vec![0.0; count] });
             }
+            if let Some(skin) = gltf.skins().next() {
+                let reader = skin.reader(|b| buffers_data.get(b.index()).map(|v| v.as_slice()));
+                let inverse_bind_mats: Vec<[[f32; 4]; 4]> = reader
+                    .read_inverse_bind_matrices()
+                    .map(|iter| iter.map(|m| m.into()).collect())
+                    .unwrap_or_default();
+                let joints = skin.joints().map(|_| crate::ecs::Entity(0)).collect();
+                engine
+                    .world
+                    .insert(entity, Skin { inverse_bind_mats, joints });
+            }
         }
 
         Ok(id)
@@ -515,6 +526,16 @@ fn accumulate_gltf_node(
             } else {
                 vec![[1.0, 0.0, 0.0, 1.0]; positions.len()]
             };
+            let joints: Vec<[u16; 4]> = if let Some(j) = reader.read_joints(0) {
+                j.into_u16().collect()
+            } else {
+                vec![[0; 4]; positions.len()]
+            };
+            let weights: Vec<[f32; 4]> = if let Some(w) = reader.read_weights(0) {
+                w.into_f32().collect()
+            } else {
+                vec![[0.0; 4]; positions.len()]
+            };
 
             let mut vertices = Vec::with_capacity(positions.len());
             for i in 0..positions.len() {
@@ -523,6 +544,8 @@ fn accumulate_gltf_node(
                     nrm: normals[i],
                     tan: tangents[i],
                     uv: texcoords[i],
+                    joints: joints[i],
+                    weights: weights[i],
                 });
             }
 

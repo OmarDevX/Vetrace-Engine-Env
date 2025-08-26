@@ -25,6 +25,7 @@ struct MorphWeights {
 @group(0) @binding(2) var base_color_sampler: sampler;
 @group(0) @binding(3) var<uniform> mat: MaterialUniforms;
 @group(0) @binding(4) var<uniform> morph_weights: MorphWeights;
+@group(0) @binding(5) var<uniform> joint_mats: array<mat4x4<f32>, 64>;
 
 // Morph target data - positions and normals for each target
 @group(1) @binding(0) var<storage, read> morph_positions_0: array<vec3<f32>>;
@@ -41,10 +42,12 @@ fn vs_main(
     @location(0) position: vec3<f32>, 
     @location(1) normal: vec3<f32>, 
     @location(3) uv: vec2<f32>,
+    @location(4) joints: vec4<u32>,
+    @location(5) weights: vec4<f32>,
     @builtin(vertex_index) vertex_index: u32
 ) -> VsOut {
     var out: VsOut;
-    
+
     // Start with base position and normal
     var morphed_position = position;
     var morphed_normal = normal;
@@ -73,8 +76,18 @@ fn vs_main(
         morphed_normal += morph_normals_3[vertex_index] * morph_weights.weights[3];
     }
     
-    out.pos = uni.mvp * vec4<f32>(morphed_position, 1.0);
-    out.normal = normalize(morphed_normal);
+    // Apply skinning
+    var p = vec4<f32>(morphed_position, 1.0);
+    var n = vec4<f32>(morphed_normal, 0.0);
+    var skinned_p = vec4<f32>(0.0);
+    var skinned_n = vec4<f32>(0.0);
+    for (var i: i32 = 0; i < 4; i = i + 1) {
+        let j = joints[i];
+        skinned_p = skinned_p + (joint_mats[j] * p) * weights[i];
+        skinned_n = skinned_n + (joint_mats[j] * n) * weights[i];
+    }
+    out.pos = uni.mvp * skinned_p;
+    out.normal = normalize(skinned_n.xyz);
     out.uv = uv;
     return out;
 }

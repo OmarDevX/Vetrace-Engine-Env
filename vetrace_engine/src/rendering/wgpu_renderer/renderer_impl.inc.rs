@@ -1718,6 +1718,16 @@ impl WgpuRenderer {
                                                                             },
                                                                             count: None,
                                                                         },
+                                                                        BindGroupLayoutEntry {
+                                                                            binding: 4,
+                                                                            visibility: ShaderStages::VERTEX,
+                                                                            ty: BindingType::Buffer {
+                                                                                ty: BufferBindingType::Uniform,
+                                                                                has_dynamic_offset: false,
+                                                                                min_binding_size: None,
+                                                                            },
+                                                                            count: None,
+                                                                        },
                                                                     ],
         });
         let pbr_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -1743,6 +1753,16 @@ impl WgpuRenderer {
                     offset: 40,
                     shader_location: 3,
                     format: VertexFormat::Float32x2,
+                },
+                VertexAttribute {
+                    offset: 48,
+                    shader_location: 4,
+                    format: VertexFormat::Uint16x4,
+                },
+                VertexAttribute {
+                    offset: 56,
+                    shader_location: 5,
+                    format: VertexFormat::Float32x4,
                 },
             ],
         };
@@ -2947,25 +2967,40 @@ impl WgpuRenderer {
                 .as_ref()
                 .map(|t| &t.0)
                 .unwrap_or(&self.white_texture.0);
+                let joint_data: Vec<[[f32;4];4]> = inst
+                    .joint_mats
+                    .clone()
+                    .unwrap_or_else(|| vec![[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]]);
+                let joint_buf = self
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("pbr_joints"),
+                        contents: bytemuck::cast_slice(&joint_data),
+                        usage: BufferUsages::UNIFORM,
+                    });
                 let bg = self.device.create_bind_group(&BindGroupDescriptor {
                     label: Some("pbr_bg"),
                                                        layout: &self.pbr_bind_group_layout,
                                                        entries: &[
-                                                           BindGroupEntry {
-                                                               binding: 0,
-                                                               resource: uni_buf.as_entire_binding(),
+                                                            BindGroupEntry {
+                                                                binding: 0,
+                                                                resource: uni_buf.as_entire_binding(),
+                                                            },
+                                                            BindGroupEntry {
+                                                                binding: 1,
+                                                                resource: BindingResource::TextureView(&tex.view),
+                                                            },
+                                                            BindGroupEntry {
+                                                                binding: 2,
+                                                                resource: BindingResource::Sampler(&tex.sampler),
+                                                            },
+                                                            BindGroupEntry {
+                                                                binding: 3,
+                                                                resource: mat_buf.as_entire_binding(),
                                                            },
                                                            BindGroupEntry {
-                                                               binding: 1,
-                                                               resource: BindingResource::TextureView(&tex.view),
-                                                           },
-                                                           BindGroupEntry {
-                                                               binding: 2,
-                                                               resource: BindingResource::Sampler(&tex.sampler),
-                                                           },
-                                                           BindGroupEntry {
-                                                               binding: 3,
-                                                               resource: mat_buf.as_entire_binding(),
+                                                               binding: 4,
+                                                               resource: joint_buf.as_entire_binding(),
                                                            },
                                                        ],
                 });

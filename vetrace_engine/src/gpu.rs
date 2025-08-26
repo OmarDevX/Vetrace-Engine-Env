@@ -96,6 +96,8 @@ pub struct Vertex {
     pub nrm: [f32; 3],
     pub tan: [f32; 4],
     pub uv: [f32; 2],
+    pub joints: [u16; 4],
+    pub weights: [f32; 4],
 }
 
 impl GpuMesh {

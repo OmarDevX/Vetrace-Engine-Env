@@ -12,7 +12,7 @@ use crate::behaviour::script::ScriptBehaviour;
 use crate::components::components::CameraAttachment;
 use crate::components::components::{
     AngularVelocity, Collider, GlobalTransform, LookAt, Material, ObjectRef, Player, Renderable,
-    Rotate, ScriptComponent, Shape, Transform, Velocity,
+    Rotate, ScriptComponent, Shape, Skin, Transform, Velocity,
 };
 use crate::components::generated::{
     FieldType, GeneratedComponent, GeneratedSpec, GeneratedStorage,
@@ -723,7 +723,7 @@ impl Engine {
             use glam::{Mat4, Quat, Vec3};
 
             let mut pbr_meshes = Vec::new();
-            for (_e, transform, mesh, mat) in
+            for (e, transform, mesh, mat) in
                 self.world.query3::<Transform, MeshHandle, PbrMaterial>()
             {
                 let model = Mat4::from_scale_rotation_translation(
@@ -737,11 +737,35 @@ impl Engine {
                     Vec3::from(transform.position) - cam_pos,
                 );
                 let mvp = (proj_mat * view_mat * model).to_cols_array_2d();
+                let joint_mats = if let Ok(skin) = self.world.get::<Skin>(e) {
+                    let mut mats = Vec::new();
+                    for (joint_ent, ibm) in skin.joints.iter().zip(&skin.inverse_bind_mats) {
+                        if let Ok(jt) = self.world.get::<Transform>(*joint_ent) {
+                            let jmat = Mat4::from_scale_rotation_translation(
+                                Vec3::from(jt.size),
+                                Quat::from_array([
+                                    jt.orientation[0],
+                                    jt.orientation[1],
+                                    jt.orientation[2],
+                                    jt.orientation[3],
+                                ]),
+                                Vec3::from(jt.position),
+                            );
+                            let ibm_mat = Mat4::from_cols_array_2d(ibm);
+                            let final_mat = jmat * ibm_mat;
+                            mats.push(final_mat.to_cols_array_2d());
+                        }
+                    }
+                    Some(mats)
+                } else {
+                    None
+                };
                 pbr_meshes.push(PbrRenderData {
                     mesh: mesh.clone(),
                     material: mat.clone(),
                     mvp,
                     model: model.to_cols_array_2d(),
+                    joint_mats,
                 });
             }
 

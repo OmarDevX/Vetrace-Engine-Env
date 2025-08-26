@@ -2885,6 +2885,20 @@ impl Inspectable for MorphWeights {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Skin {
+    pub inverse_bind_mats: Vec<[[f32; 4]; 4]>,
+    pub joints: Vec<crate::ecs::Entity>,
+}
+
+impl Component for Skin {}
+
+impl Inspectable for Skin {
+    fn exported_fields_mut(&mut self) -> Vec<ExportedField> {
+        vec![]
+    }
+}
+
 #[derive(Debug)]
 pub struct Timer {
     pub autostart: bool,
