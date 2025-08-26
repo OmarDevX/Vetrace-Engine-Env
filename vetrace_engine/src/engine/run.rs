@@ -4,7 +4,6 @@ use crate::components::components::ObjectRef;
 use crate::components::components::Sprite3D;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
-use crate::CustomMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::{PbrRenderData, SpriteRenderData};
@@ -13,6 +12,7 @@ use crate::scene::object::GpuMaterial;
 #[cfg(not(feature = "wgpu"))]
 use crate::systems::sprite_render::SpriteRenderSystem;
 use crate::Behaviour;
+use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -265,12 +265,7 @@ impl Engine {
                         let f = (obj.ior - 1.0) / (obj.ior + 1.0);
                         f0 = [f * f; 3];
                     }
-                    let base_color_factor = [
-                        obj.color[0],
-                        obj.color[1],
-                        obj.color[2],
-                        1.0,
-                    ];
+                    let base_color_factor = [obj.color[0], obj.color[1], obj.color[2], 1.0];
                     let emissive_strength = obj.emission;
                     let emissive_factor = if emissive_strength > 0.0 {
                         [
@@ -484,8 +479,8 @@ impl Engine {
                     let aspect = w as f32 / h as f32;
                     let vp = (perspective(cam.fov, aspect, 0.1, 1000.0)
                         * look_at(&Vec3::ZERO, &cam_front, &cam_up))
-                        .inverse()
-                        .to_cols_array();
+                    .inverse()
+                    .to_cols_array();
                     [
                         [vp[0], vp[1], vp[2], vp[3]],
                         [vp[4], vp[5], vp[6], vp[7]],
@@ -533,8 +528,12 @@ impl Engine {
                 &tex_handles,
             );
             #[cfg(not(feature = "wgpu"))]
-            self.renderer
-                .update_scene_data(&gpu_objects, &gpu_triangles, &bvh_nodes, &tri_bvh_nodes);
+            self.renderer.update_scene_data(
+                &gpu_objects,
+                &gpu_triangles,
+                &bvh_nodes,
+                &tri_bvh_nodes,
+            );
             #[cfg(feature = "wgpu")]
             {
                 use crate::components::components::{Skin, Transform};
@@ -559,10 +558,10 @@ impl Engine {
                         Vec3::from(transform.position) - cam_pos,
                     );
                     let mvp = (proj_mat * view_mat * model).to_cols_array_2d();
-                    let joint_mats = if let Ok(skin) = self.world.get::<Skin>(e) {
+                    let joint_mats = if let Some(skin) = self.world.get::<Skin>(e) {
                         let mut mats = Vec::new();
                         for (joint_ent, ibm) in skin.joints.iter().zip(&skin.inverse_bind_mats) {
-                            if let Ok(jt) = self.world.get::<Transform>(*joint_ent) {
+                            if let Some(jt) = self.world.get::<Transform>(*joint_ent) {
                                 let jmat = Mat4::from_scale_rotation_translation(
                                     Vec3::from(jt.size),
                                     Quat::from_xyzw(
