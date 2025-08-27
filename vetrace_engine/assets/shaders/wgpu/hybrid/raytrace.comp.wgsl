@@ -71,23 +71,24 @@ struct CustomMaterialParams {
     texture_index: u32,
     alpha_cutoff: f32,           // threshold for alpha testing
     double_sided: u32,           // flip normals for backfaces
-    // NEW TRANSPARENCY FIELDS
+    normal_map_index: u32,
+    roughness_map_index: u32,
+    metallic_map_index: u32,
+    emission_map_index: u32,
     transparency: f32,          // 0.0 = opaque, 1.0 = fully transparent
     transmission: f32,          // how much light passes through vs scatters
     transmission_roughness: f32, // roughness for transmission rays
     refraction_ior: f32,        // index of refraction for transmission
-    // NEW EXTENDED FIELDS
-    subsurface_strength: f32,   // subsurface scattering amount
-    subsurface_radius: vec3<f32>, // RGB subsurface radii
-    clearcoat_strength: f32,    // clearcoat layer strength
-    clearcoat_roughness: f32,   // clearcoat roughness
-    anisotropy: f32,           // anisotropic reflection (-1 to 1)
-    anisotropy_rotation: f32,   // rotation of anisotropy in radians
-    sheen_strength: f32,        // fabric-like sheen effect
-    sheen_tint: vec3<f32>,     // sheen color tint
     normal_strength: f32,       // normal map intensity
     displacement_strength: f32, // displacement/height strength
-    _pad: vec2<u32>,
+    extras_index: u32,
+};
+
+struct CustomMaterialExtras {
+    subsurface: vec4<f32>,     // strength + RGB radii
+    clearcoat: vec2<f32>,      // strength + roughness
+    anisotropy: vec2<f32>,     // strength + rotation
+    sheen: vec4<f32>,          // strength + RGB tint
 };
 
 struct MaterialResult {
@@ -194,6 +195,7 @@ struct Params {
 @group(0) @binding(21) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(22) var tex_sampler: sampler;
 @group(0) @binding(23) var<storage, read> custom_materials: array<CustomMaterialParams>;
+@group(0) @binding(24) var<storage, read> custom_material_extras: array<CustomMaterialExtras>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };

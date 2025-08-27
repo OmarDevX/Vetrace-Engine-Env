@@ -158,6 +158,8 @@ pub struct Engine {
     #[cfg(feature = "wgpu")]
     pub cached_custom_materials: Vec<crate::scene::object::GpuCustomMaterial>,
     #[cfg(feature = "wgpu")]
+    pub cached_custom_material_extras: Vec<crate::scene::object::GpuCustomMaterialExtras>,
+    #[cfg(feature = "wgpu")]
     pub cached_custom_names: Vec<String>,
     #[cfg(feature = "wgpu")]
     pub cached_shader_defs: Vec<(String, String)>,
@@ -458,7 +460,7 @@ impl Engine {
 
         // Build GPU materials and texture handles first (to avoid borrowing conflicts)
         #[cfg(feature = "wgpu")]
-        let (gpu_materials, tex_handles, custom_mats, mat_names, shader_defs) =
+        let (gpu_materials, tex_handles, custom_mats, custom_extras, mat_names, shader_defs) =
             self.build_gpu_materials_and_textures();
 
         // PBR meshes will be built in the render section where view/proj matrices are available
@@ -696,6 +698,7 @@ impl Engine {
                 &tri_bvh_nodes,
                 &gpu_materials,
                 &custom_mats,
+                &custom_extras,
                 &mat_names,
                 &shader_defs,
                 &tex_handles,
@@ -1297,6 +1300,7 @@ impl Engine {
         Vec<crate::scene::object::GpuMaterial>,
         Vec<crate::gpu::TextureHandle>,
         Vec<crate::scene::object::GpuCustomMaterial>,
+        Vec<crate::scene::object::GpuCustomMaterialExtras>,
         Vec<String>,
         Vec<(String, String)>,
     ) {
@@ -1305,6 +1309,7 @@ impl Engine {
                 self.cached_gpu_materials.clone(),
                 self.cached_tex_handles.clone(),
                 self.cached_custom_materials.clone(),
+                self.cached_custom_material_extras.clone(),
                 self.cached_custom_names.clone(),
                 self.cached_shader_defs.clone(),
             );
@@ -1319,6 +1324,7 @@ impl Engine {
         // defaults for primitives that lack an explicit `PbrMaterial`
         let mut gpu_materials: Vec<GpuMaterial> = Vec::new();
         let mut custom_materials: Vec<crate::scene::object::GpuCustomMaterial> = Vec::new();
+        let mut custom_material_extras: Vec<crate::scene::object::GpuCustomMaterialExtras> = Vec::new();
         let mut material_names: Vec<String> = Vec::new();
         let mut shader_defs: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
@@ -1467,6 +1473,8 @@ impl Engine {
                         m.custom_material_id = id;
                     }
                     let mut gpu = crate::scene::object::GpuCustomMaterial::default();
+                    let mut extras = crate::scene::object::GpuCustomMaterialExtras::default();
+                    let mut use_extras = false;
                     for (k, v) in &custom.parameters {
                         match (k.as_str(), v) {
                             ("color_tint", MaterialParameter::Vec3(v)) => {
@@ -1500,6 +1508,46 @@ impl Engine {
                                 });
                                 gpu.texture_index = tex_idx;
                             }
+                            ("normal_map", MaterialParameter::Texture(tex))
+                            | ("normal_map_index", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.normal_map_index = tex_idx;
+                            }
+                            ("roughness_map", MaterialParameter::Texture(tex))
+                            | ("roughness_map_index", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.roughness_map_index = tex_idx;
+                            }
+                            ("metallic_map", MaterialParameter::Texture(tex))
+                            | ("metallic_map_index", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.metallic_map_index = tex_idx;
+                            }
+                            ("emission_map", MaterialParameter::Texture(tex))
+                            | ("emission_map_index", MaterialParameter::Texture(tex)) => {
+                                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
+                                    let idx = tex_handles.len() as u32 + 1;
+                                    tex_handles.push(tex.clone());
+                                    idx
+                                });
+                                gpu.emission_map_index = tex_idx;
+                            }
                             ("material_texture_atlas_uv", MaterialParameter::Vec4(v)) => {
                                 gpu.material_texture_atlas_uv = [v[0], v[1], v[2], v[3]];
                             }
@@ -1512,10 +1560,68 @@ impl Engine {
                             ("double_sided", MaterialParameter::Bool(b)) => {
                                 gpu.double_sided = if *b { 1 } else { 0 };
                             }
+                            ("transparency", MaterialParameter::Float(f)) => {
+                                gpu.transparency = *f;
+                            }
+                            ("transmission", MaterialParameter::Float(f)) => {
+                                gpu.transmission = *f;
+                            }
+                            ("transmission_roughness", MaterialParameter::Float(f)) => {
+                                gpu.transmission_roughness = *f;
+                            }
+                            ("refraction_ior", MaterialParameter::Float(f)) => {
+                                gpu.refraction_ior = *f;
+                            }
+                            ("normal_strength", MaterialParameter::Float(f)) => {
+                                gpu.normal_strength = *f;
+                            }
+                            ("displacement_strength", MaterialParameter::Float(f)) => {
+                                gpu.displacement_strength = *f;
+                            }
+                            ("subsurface_strength", MaterialParameter::Float(f)) => {
+                                extras.subsurface[3] = *f;
+                                use_extras = true;
+                            }
+                            ("subsurface_radius", MaterialParameter::Vec3(v)) => {
+                                extras.subsurface[0] = v[0];
+                                extras.subsurface[1] = v[1];
+                                extras.subsurface[2] = v[2];
+                                use_extras = true;
+                            }
+                            ("clearcoat_strength", MaterialParameter::Float(f)) => {
+                                extras.clearcoat[0] = *f;
+                                use_extras = true;
+                            }
+                            ("clearcoat_roughness", MaterialParameter::Float(f)) => {
+                                extras.clearcoat[1] = *f;
+                                use_extras = true;
+                            }
+                            ("anisotropy", MaterialParameter::Float(f)) => {
+                                extras.anisotropy[0] = *f;
+                                use_extras = true;
+                            }
+                            ("anisotropy_rotation", MaterialParameter::Float(f)) => {
+                                extras.anisotropy[1] = *f;
+                                use_extras = true;
+                            }
+                            ("sheen_strength", MaterialParameter::Float(f)) => {
+                                extras.sheen[3] = *f;
+                                use_extras = true;
+                            }
+                            ("sheen_tint", MaterialParameter::Vec3(v)) => {
+                                extras.sheen[0] = v[0];
+                                extras.sheen[1] = v[1];
+                                extras.sheen[2] = v[2];
+                                use_extras = true;
+                            }
                             _ => {}
                         }
                     }
                     gpu.custom_float_4 = time;
+                    if use_extras {
+                        gpu.extras_index = custom_material_extras.len() as u32;
+                        custom_material_extras.push(extras);
+                    }
                     custom_materials.push(gpu);
                     material_names.push(custom.material_type.clone());
                     shader_defs
@@ -1528,6 +1634,7 @@ impl Engine {
         self.cached_gpu_materials = gpu_materials.clone();
         self.cached_tex_handles = tex_handles.clone();
         self.cached_custom_materials = custom_materials.clone();
+        self.cached_custom_material_extras = custom_material_extras.clone();
         self.cached_custom_names = material_names.clone();
         let shader_defs_vec: Vec<(String, String)> = shader_defs.into_iter().collect();
         self.cached_shader_defs = shader_defs_vec.clone();
@@ -1536,6 +1643,7 @@ impl Engine {
             gpu_materials,
             tex_handles,
             custom_materials,
+            custom_material_extras,
             material_names,
             shader_defs_vec,
         )

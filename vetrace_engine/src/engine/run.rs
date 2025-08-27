@@ -523,6 +523,7 @@ impl Engine {
                 &tri_bvh_nodes,
                 &gpu_materials,
                 &[] as &[crate::scene::object::GpuCustomMaterial],
+                &[] as &[crate::scene::object::GpuCustomMaterialExtras],
                 &[] as &[String],
                 &[] as &[(String, String)],
                 &tex_handles,
