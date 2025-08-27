@@ -1186,6 +1186,13 @@ fn shade_transparent_material(
     gi: vec3<f32>,
     rng: ptr<function, u32>
 ) -> vec3<f32> {
+    // Prevent runaway recursion from transparency chains by bailing out when we
+    // are about to exceed the global bounce limit. Treat the surface as opaque
+    // in this case to keep the call stack shallow.
+    if (depth >= params.max_bounces - 1) {
+        return shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
+    }
+
     var mat_idx: u32 = objects[obj_idx].material_index;
     if (tri_idx != 0xffffffffu) {
         mat_idx = triangles[tri_idx].material_index;
@@ -1247,6 +1254,13 @@ fn shade_transparent_material_no_gi(
     depth: i32,
     rng: ptr<function, u32>
 ) -> vec3<f32> {
+    // Guard against deep call stacks from repeated transparent bounces when
+    // global illumination is disabled. Once the bounce limit is reached, fall
+    // back to opaque shading.
+    if (depth >= params.max_bounces - 1) {
+        return shade_base(hit, normal, obj_idx, tri_idx, uv, vec3<f32>(0.0), rng);
+    }
+
     var mat_idx: u32 = objects[obj_idx].material_index;
     if (tri_idx != 0xffffffffu) {
         mat_idx = triangles[tri_idx].material_index;
