@@ -58,34 +58,14 @@ struct MaterialParams {
 
 struct CustomMaterialParams {
     color_tint: vec4<f32>,
-    material_texture_atlas_uv: vec4<f32>, // xy = offset, zw = scale for atlas lookup
-    texture_layers: vec4<u32>,            // pack texture types into array layers
     roughness: f32,
     metallic: f32,
-    noise_scale: f32,
     emission_strength: f32,
-    custom_float_1: f32,
-    custom_float_2: f32,
-    custom_float_3: f32,
-    custom_float_4: f32,
+    transparency: f32,
+    transmission: f32,
+    transmission_roughness: f32,
+    refraction_ior: f32,
     texture_index: u32,
-    alpha_cutoff: f32,           // threshold for alpha testing
-    double_sided: u32,           // flip normals for backfaces
-    normal_map_index: u32,
-    roughness_map_index: u32,
-    metallic_map_index: u32,
-    emission_map_index: u32,
-    transparency: f32,          // 0.0 = opaque, 1.0 fully transparent
-    transmission: f32,          // fraction of light that transmits
-    transmission_roughness: f32,// roughness for transmission rays
-    refraction_ior: f32,        // index of refraction
-    normal_strength: f32,       // normal map intensity
-    displacement_strength: f32, // displacement/height strength
-    subsurface: vec4<f32>,      // strength + RGB radii
-    clearcoat: vec2<f32>,       // strength + roughness
-    anisotropy: vec2<f32>,      // strength + rotation
-    sheen: vec4<f32>,           // strength + RGB tint
-    _pad: vec3<u32>,
 };
 
 struct MaterialResult {
@@ -94,17 +74,10 @@ struct MaterialResult {
     roughness: f32,
     metallic: f32,
     emission: vec3<f32>,
-    // NEW TRANSPARENCY OUTPUTS
     transparency: f32,
     transmission: f32,
     transmission_roughness: f32,
     ior: f32,
-    // NEW EXTENDED OUTPUTS
-    subsurface: vec4<f32>,     // strength + RGB radii
-    clearcoat: vec2<f32>,      // strength + roughness
-    anisotropy: vec2<f32>,     // strength + rotation
-    sheen: vec4<f32>,          // strength + RGB tint
-    displacement: f32,
 };
 
 // MATERIAL_FUNCTIONS_PLACEHOLDER
@@ -800,26 +773,13 @@ fn hit_alpha(obj_idx: u32, tri_idx: u32, uv: vec2<f32>) -> f32 {
     }
     let mat = materials[mat_idx];
     var alpha = mat.baseColorFactor.w;
-    var cutoff = 0.5;
 
-    // Check for custom material transparency
-    if (mat.has_custom_material != 0u) {
-        let dummy_point = vec3<f32>(0.0);
-        let dummy_normal = vec3<f32>(0.0, 0.0, 1.0);
-        let dummy_view = vec3<f32>(0.0, 0.0, -1.0);
-        let result = evaluate_custom_material(dummy_point, dummy_normal, dummy_view, uv, mat.custom_material_id);
-        alpha = 1.0 - result.transparency;
-        let custom = custom_materials[mat.custom_material_id];
-        cutoff = custom.alpha_cutoff;
-    }
-
-    // Apply texture alpha
     if (mat.baseColorTex != 0u && tri_idx != 0xffffffffu) {
         let tex = textureSampleLevel(textures[mat.baseColorTex], tex_sampler, uv, 0.0);
         alpha *= tex.a;
     }
 
-    return select(0.0, 1.0, alpha >= cutoff);
+    return select(0.0, 1.0, alpha >= 0.5);
 }
 
 struct ObjHit { t: f32, n: vec3<f32>, idx: i32, tri: u32, uv: vec2<f32>, };
@@ -1035,11 +995,7 @@ fn default_material_result(hit_point: vec3<f32>, normal: vec3<f32>, _view_dir: v
     result.transmission = 0.0;
     result.transmission_roughness = 0.0;
     result.ior = 1.0;
-    result.subsurface = vec4<f32>(0.0);
-    result.clearcoat = vec2<f32>(0.0);
-    result.anisotropy = vec2<f32>(0.0);
-    result.sheen = vec4<f32>(0.0);
-    result.displacement = 0.0;
+    // Removed extended material features for compilation simplicity
     return result;
 }
 
@@ -1069,11 +1025,7 @@ fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialPar
     result.transmission = 0.0;
     result.transmission_roughness = 0.0;
     result.ior = mat.ior;
-    result.subsurface = vec4<f32>(0.0);
-    result.clearcoat = vec2<f32>(0.0);
-    result.anisotropy = vec2<f32>(0.0);
-    result.sheen = vec4<f32>(0.0);
-    result.displacement = 0.0;
+    // Removed extended material features for compilation simplicity
     return result;
 }
 
@@ -1102,12 +1054,6 @@ fn shade_base(
 
     let base = material_result.base_color;
     var surface_normal = material_result.normal;
-    if (mat.has_custom_material != 0u) {
-        let custom = custom_materials[mat.custom_material_id];
-        if (custom.double_sided != 0u && dot(surface_normal, view) > 0.0) {
-            surface_normal = -surface_normal;
-        }
-    }
 
     let sky_tint = params.skycolor.xyz;
     let sky = max(dot(surface_normal, vec3<f32>(0.0, 1.0, 0.0)), 0.0);
@@ -1218,20 +1164,8 @@ fn shade_transparent_material(
 
         var final_color = shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
 
-        // Apply subsurface scattering approximation
-        if (result.subsurface.x > 0.0) {
-            let subsurface_offset = random_in_unit_sphere(rng) * result.subsurface.yzw;
-            let subsurface_pos = hit + subsurface_offset;
-            let subsurface_color = shade_base(subsurface_pos, normal, obj_idx, tri_idx, uv, gi, rng);
-            final_color = mix(final_color, subsurface_color, result.subsurface.x);
-        }
-
-        // Apply sheen effect
-        if (result.sheen.x > 0.0) {
-            let sheen_factor = pow(1.0 - abs(dot(view_dir, normal)), 5.0);
-            final_color += result.sheen.yzw * result.sheen.x * sheen_factor;
-        }
-
+        // Extended effects removed
+        
         return final_color;
     }
 
@@ -1282,17 +1216,7 @@ fn shade_transparent_material_no_gi(
 
         var final_color = shade_base(hit, normal, obj_idx, tri_idx, uv, vec3<f32>(0.0), rng);
 
-        if (result.subsurface.x > 0.0) {
-            let subsurface_offset = random_in_unit_sphere(rng) * result.subsurface.yzw;
-            let subsurface_pos = hit + subsurface_offset;
-            let subsurface_color = shade_base(subsurface_pos, normal, obj_idx, tri_idx, uv, vec3<f32>(0.0), rng);
-            final_color = mix(final_color, subsurface_color, result.subsurface.x);
-        }
-
-        if (result.sheen.x > 0.0) {
-            let sheen_factor = pow(1.0 - abs(dot(view_dir, normal)), 5.0);
-            final_color += result.sheen.yzw * result.sheen.x * sheen_factor;
-        }
+        // Extended effects removed
 
         return final_color;
     }

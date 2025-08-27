@@ -119,67 +119,27 @@ impl Default for GpuMaterial {
 #[derive(Copy, Clone, Pod, Zeroable, PartialEq)]
 pub struct GpuCustomMaterial {
     pub color_tint: [f32; 4],
-    pub material_texture_atlas_uv: [f32; 4],
-    pub texture_layers: [u32; 4],
     pub roughness: f32,
     pub metallic: f32,
-    pub noise_scale: f32,
     pub emission_strength: f32,
-    pub custom_float_1: f32,
-    pub custom_float_2: f32,
-    pub custom_float_3: f32,
-    pub custom_float_4: f32,
-    pub texture_index: u32,
-    pub alpha_cutoff: f32,
-    pub double_sided: u32,
-    pub normal_map_index: u32,
-    pub roughness_map_index: u32,
-    pub metallic_map_index: u32,
-    pub emission_map_index: u32,
     pub transparency: f32,
     pub transmission: f32,
     pub transmission_roughness: f32,
     pub refraction_ior: f32,
-    pub normal_strength: f32,
-    pub displacement_strength: f32,
-    pub subsurface: [f32; 4], // w = strength
-    pub clearcoat: [f32; 2],  // x = strength, y = roughness
-    pub anisotropy: [f32; 2], // x = strength, y = rotation
-    pub sheen: [f32; 4],      // w = strength
-    pub _pad: [u32; 3],
+    pub texture_index: u32,
 }
 impl Default for GpuCustomMaterial {
     fn default() -> Self {
         Self {
             color_tint: [1.0, 1.0, 1.0, 1.0],
-            material_texture_atlas_uv: [0.0, 0.0, 1.0, 1.0],
-            texture_layers: [0; 4],
             roughness: 0.5,
             metallic: 0.0,
-            noise_scale: 1.0,
             emission_strength: 0.0,
-            custom_float_1: 0.0,
-            custom_float_2: 0.0,
-            custom_float_3: 0.0,
-            custom_float_4: 0.0,
-            texture_index: 0,
-            alpha_cutoff: 0.5,
-            double_sided: 0,
-            normal_map_index: 0,
-            roughness_map_index: 0,
-            metallic_map_index: 0,
-            emission_map_index: 0,
             transparency: 0.0,
             transmission: 0.0,
             transmission_roughness: 0.0,
             refraction_ior: 1.0,
-            normal_strength: 0.0,
-            displacement_strength: 0.0,
-            subsurface: [0.0; 4],
-            clearcoat: [0.0; 2],
-            anisotropy: [0.0; 2],
-            sheen: [0.0; 4],
-            _pad: [0; 3],
+            texture_index: 0,
         }
     }
 }

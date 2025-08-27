@@ -1474,22 +1474,8 @@ impl Engine {
                             }
                             ("roughness", MaterialParameter::Float(f)) => gpu.roughness = *f,
                             ("metallic", MaterialParameter::Float(f)) => gpu.metallic = *f,
-                            ("noise_scale", MaterialParameter::Float(f)) => gpu.noise_scale = *f,
                             ("emission_strength", MaterialParameter::Float(f)) => {
-                                gpu.emission_strength = *f
-                            }
-                            ("custom_float_1", MaterialParameter::Float(f))
-                            | ("rainbow_scale", MaterialParameter::Float(f)) => {
-                                gpu.custom_float_1 = *f
-                            }
-                            ("custom_float_2", MaterialParameter::Float(f))
-                            | ("speed", MaterialParameter::Float(f)) => gpu.custom_float_2 = *f,
-                            ("custom_float_3", MaterialParameter::Float(f))
-                            | ("glow_strength", MaterialParameter::Float(f)) => {
-                                gpu.custom_float_3 = *f
-                            }
-                            ("custom_float_4", MaterialParameter::Float(f)) => {
-                                gpu.custom_float_4 = *f
+                                gpu.emission_strength = *f;
                             }
                             ("texture", MaterialParameter::Texture(tex)) => {
                                 let ptr = std::sync::Arc::as_ptr(&tex.0);
@@ -1499,59 +1485,6 @@ impl Engine {
                                     idx
                                 });
                                 gpu.texture_index = tex_idx;
-                            }
-                            ("normal_map", MaterialParameter::Texture(tex))
-                            | ("normal_map_index", MaterialParameter::Texture(tex)) => {
-                                let ptr = std::sync::Arc::as_ptr(&tex.0);
-                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
-                                    let idx = tex_handles.len() as u32 + 1;
-                                    tex_handles.push(tex.clone());
-                                    idx
-                                });
-                                gpu.normal_map_index = tex_idx;
-                            }
-                            ("roughness_map", MaterialParameter::Texture(tex))
-                            | ("roughness_map_index", MaterialParameter::Texture(tex)) => {
-                                let ptr = std::sync::Arc::as_ptr(&tex.0);
-                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
-                                    let idx = tex_handles.len() as u32 + 1;
-                                    tex_handles.push(tex.clone());
-                                    idx
-                                });
-                                gpu.roughness_map_index = tex_idx;
-                            }
-                            ("metallic_map", MaterialParameter::Texture(tex))
-                            | ("metallic_map_index", MaterialParameter::Texture(tex)) => {
-                                let ptr = std::sync::Arc::as_ptr(&tex.0);
-                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
-                                    let idx = tex_handles.len() as u32 + 1;
-                                    tex_handles.push(tex.clone());
-                                    idx
-                                });
-                                gpu.metallic_map_index = tex_idx;
-                            }
-                            ("emission_map", MaterialParameter::Texture(tex))
-                            | ("emission_map_index", MaterialParameter::Texture(tex)) => {
-                                let ptr = std::sync::Arc::as_ptr(&tex.0);
-                                let tex_idx = *tex_map.entry(ptr).or_insert_with(|| {
-                                    let idx = tex_handles.len() as u32 + 1;
-                                    tex_handles.push(tex.clone());
-                                    idx
-                                });
-                                gpu.emission_map_index = tex_idx;
-                            }
-                            ("material_texture_atlas_uv", MaterialParameter::Vec4(v)) => {
-                                gpu.material_texture_atlas_uv = [v[0], v[1], v[2], v[3]];
-                            }
-                            ("texture_layers", MaterialParameter::Vec4(v)) => {
-                                gpu.texture_layers =
-                                    [v[0] as u32, v[1] as u32, v[2] as u32, v[3] as u32];
-                            }
-                            ("alpha_cutoff", MaterialParameter::Float(f)) => {
-                                gpu.alpha_cutoff = *f;
-                            }
-                            ("double_sided", MaterialParameter::Bool(b)) => {
-                                gpu.double_sided = if *b { 1 } else { 0 };
                             }
                             ("transparency", MaterialParameter::Float(f)) => {
                                 gpu.transparency = *f;
@@ -1565,44 +1498,9 @@ impl Engine {
                             ("refraction_ior", MaterialParameter::Float(f)) => {
                                 gpu.refraction_ior = *f;
                             }
-                            ("normal_strength", MaterialParameter::Float(f)) => {
-                                gpu.normal_strength = *f;
-                            }
-                            ("displacement_strength", MaterialParameter::Float(f)) => {
-                                gpu.displacement_strength = *f;
-                            }
-                            ("subsurface_strength", MaterialParameter::Float(f)) => {
-                                gpu.subsurface[3] = *f;
-                            }
-                            ("subsurface_radius", MaterialParameter::Vec3(v)) => {
-                                gpu.subsurface[0] = v[0];
-                                gpu.subsurface[1] = v[1];
-                                gpu.subsurface[2] = v[2];
-                            }
-                            ("clearcoat_strength", MaterialParameter::Float(f)) => {
-                                gpu.clearcoat[0] = *f;
-                            }
-                            ("clearcoat_roughness", MaterialParameter::Float(f)) => {
-                                gpu.clearcoat[1] = *f;
-                            }
-                            ("anisotropy", MaterialParameter::Float(f)) => {
-                                gpu.anisotropy[0] = *f;
-                            }
-                            ("anisotropy_rotation", MaterialParameter::Float(f)) => {
-                                gpu.anisotropy[1] = *f;
-                            }
-                            ("sheen_strength", MaterialParameter::Float(f)) => {
-                                gpu.sheen[3] = *f;
-                            }
-                            ("sheen_tint", MaterialParameter::Vec3(v)) => {
-                                gpu.sheen[0] = v[0];
-                                gpu.sheen[1] = v[1];
-                                gpu.sheen[2] = v[2];
-                            }
                             _ => {}
                         }
                     }
-                    gpu.custom_float_4 = time;
                     custom_materials.push(gpu);
                     material_names.push(custom.material_type.clone());
                     shader_defs

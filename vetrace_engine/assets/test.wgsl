@@ -23,23 +23,17 @@ fn evaluate_rainbow_material(
     params: CustomMaterialParams
 ) -> MaterialResult {
     var result: MaterialResult;
-    let time = params.custom_float_4;
-    let rainbow_factor = dot(hit_point, vec3<f32>(1.0, 0.0, 0.0)) * params.custom_float_1 + time * params.custom_float_2;
+    let rainbow_factor = hit_point.x;
     let hue = fract(rainbow_factor);
     let rainbow_color = hsv_to_rgb(vec3<f32>(hue, 1.0, 1.0));
-    result.base_color = rainbow_color;
+    result.base_color = rainbow_color * params.color_tint.rgb;
     result.normal = normal;
     result.roughness = params.roughness;
     result.metallic = params.metallic;
-    result.emission = rainbow_color * params.custom_float_3;
-    result.transparency = 0.0;
-    result.transmission = 0.0;
-    result.transmission_roughness = 0.0;
-    result.ior = 1.0;
-    result.subsurface = vec4<f32>(0.0);
-    result.clearcoat = vec2<f32>(0.0);
-    result.anisotropy = vec2<f32>(0.0);
-    result.sheen = vec4<f32>(0.0);
-    result.displacement = 0.0;
+    result.emission = rainbow_color * params.emission_strength;
+    result.transparency = params.transparency;
+    result.transmission = params.transmission;
+    result.transmission_roughness = params.transmission_roughness;
+    result.ior = params.refraction_ior;
     return result;
 }
