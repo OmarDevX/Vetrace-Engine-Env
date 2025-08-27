@@ -1409,7 +1409,7 @@ fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        let col = shade(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
+        var col: vec3<f32> = shade(hit_pos, hit.n, dir, u32(hit.idx), hit.tri, hit.uv, depth, rng);
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
