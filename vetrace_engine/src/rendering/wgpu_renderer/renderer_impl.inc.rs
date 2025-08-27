@@ -133,13 +133,6 @@ impl WgpuRenderer {
             contents: bytemuck::bytes_of(&default_custom),
             usage: BufferUsages::STORAGE,
         });
-        let default_extra = crate::scene::object::GpuCustomMaterialExtras::default();
-        let custom_material_extras_buffer =
-            device.create_buffer_init(&util::BufferInitDescriptor {
-                label: Some("custom_material_extras"),
-                contents: bytemuck::bytes_of(&default_extra),
-                usage: BufferUsages::STORAGE,
-            });
         let light_header_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("light_header"),
                                                        size: std::mem::size_of::<LightListHeader>() as u64,
@@ -482,18 +475,8 @@ impl WgpuRenderer {
                                                     },
                                                     count: None,
                                                 },
-                                                BindGroupLayoutEntry {
-                                                    binding: 24,
-                                                    visibility: ShaderStages::COMPUTE,
-                                                    ty: BindingType::Buffer {
-                                                        ty: BufferBindingType::Storage { read_only: true },
-                                                        has_dynamic_offset: false,
-                                                        min_binding_size: None,
-                                                    },
-                                                    count: None,
-                                                },
                                             ],
-            });
+                                        });
         
         let compute_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("compute_pl"),
@@ -865,10 +848,6 @@ impl WgpuRenderer {
                                                               BindGroupEntry {
                                                                   binding: 23,
                                                                   resource: custom_material_buffer.as_entire_binding(),
-                                                              },
-                                                              BindGroupEntry {
-                                                                  binding: 24,
-                                                                  resource: custom_material_extras_buffer.as_entire_binding(),
                                                               },
                                                           ],
         });
@@ -1857,7 +1836,6 @@ impl WgpuRenderer {
             tri_bvh_buffer,
             material_buffer,
             custom_material_buffer,
-            custom_material_extras_buffer,
             light_header_buffer,
             light_index_buffer,
             triangle_count: 0,
@@ -1865,7 +1843,6 @@ impl WgpuRenderer {
             tri_bvh_node_count: 0,
             material_count: 0,
             custom_material_count: 0,
-            custom_material_extras_count: 0,
             params_buffer,
             blit_params_buffer,
             screen_texture: st,
@@ -2198,12 +2175,6 @@ impl WgpuRenderer {
                                                                         binding: 23,
                                                                         resource: self.custom_material_buffer.as_entire_binding(),
                                                                     },
-                                                                    BindGroupEntry {
-                                                                        binding: 24,
-                                                                        resource: self
-                                                                            .custom_material_extras_buffer
-                                                                            .as_entire_binding(),
-                                                                    },
                                                                 ],
         });
 
@@ -2453,7 +2424,6 @@ impl WgpuRenderer {
         tri_bvh: &[GpuTriBvhNode],
         materials: &[crate::scene::object::GpuMaterial],
         custom_materials: &[crate::scene::object::GpuCustomMaterial],
-        custom_material_extras: &[crate::scene::object::GpuCustomMaterialExtras],
         material_names: &[String],
         shaders: &[(String, String)],
         textures: &[crate::gpu::TextureHandle],
@@ -2540,18 +2510,6 @@ impl WgpuRenderer {
             contents: custom_bytes,
             usage: BufferUsages::STORAGE,
         });
-        let default_extra;
-        let extra_bytes = if custom_material_extras.is_empty() {
-            default_extra = crate::scene::object::GpuCustomMaterialExtras::default();
-            bytemuck::bytes_of(&default_extra)
-        } else {
-            bytemuck::cast_slice(custom_material_extras)
-        };
-        self.custom_material_extras_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("custom_material_extras"),
-            contents: extra_bytes,
-            usage: BufferUsages::STORAGE,
-        });
         let mut lights: Vec<u32> = Vec::new();
         for (i, obj) in objects.iter().enumerate() {
             let mi = obj.material_index as usize;
@@ -2583,7 +2541,6 @@ impl WgpuRenderer {
         self.tri_bvh_node_count = tri_bvh.len() as u32;
         self.material_count = clamped_mats.len() as u32;
         self.custom_material_count = custom_materials.len() as u32;
-        self.custom_material_extras_count = custom_material_extras.len() as u32;
         self.material_textures = Vec::with_capacity(tex_limit as usize);
         self.material_textures.push(self.white_texture.clone());
         self.material_textures
@@ -2693,10 +2650,6 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 23,
                     resource: self.custom_material_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 24,
-                    resource: self.custom_material_extras_buffer.as_entire_binding(),
                 },
             ],
         });

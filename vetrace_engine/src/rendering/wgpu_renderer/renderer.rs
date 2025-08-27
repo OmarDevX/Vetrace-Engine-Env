@@ -2,7 +2,7 @@ use crate::math::*;
 use crate::rendering::renderer::RenderParams;
 use crate::rendering::texture::set_wgpu_device_queue;
 use crate::scene::object::{
-    GpuAtmosphere, GpuCustomMaterial, GpuCustomMaterialExtras, GpuMaterial, GpuObject,
+    GpuAtmosphere, GpuCustomMaterial, GpuMaterial, GpuObject,
     GpuTriangle, MAX_ATMOSPHERES,
 };
 use crate::custom_material::RaytraceShaderCompiler;
@@ -125,7 +125,6 @@ pub struct WgpuRenderer {
     tri_bvh_buffer: Buffer,
     material_buffer: Buffer,
     custom_material_buffer: Buffer,
-    custom_material_extras_buffer: Buffer,
     light_header_buffer: Buffer,
     light_index_buffer: Buffer,
     triangle_count: u32,
@@ -133,7 +132,6 @@ pub struct WgpuRenderer {
     tri_bvh_node_count: u32,
     material_count: u32,
     custom_material_count: u32,
-    custom_material_extras_count: u32,
     pub frame_number: i32,
     prev_cam_pos: [f32; 3],
     prev_cam_front: [f32; 3],

@@ -75,21 +75,17 @@ struct CustomMaterialParams {
     roughness_map_index: u32,
     metallic_map_index: u32,
     emission_map_index: u32,
-    extras_index: u32,          // index into optional extras
-};
-
-struct CustomMaterialExtras {
     transparency: f32,          // 0.0 = opaque, 1.0 fully transparent
     transmission: f32,          // fraction of light that transmits
     transmission_roughness: f32,// roughness for transmission rays
     refraction_ior: f32,        // index of refraction
     normal_strength: f32,       // normal map intensity
     displacement_strength: f32, // displacement/height strength
-    _pad: vec2<f32>,
     subsurface: vec4<f32>,      // strength + RGB radii
     clearcoat: vec2<f32>,       // strength + roughness
     anisotropy: vec2<f32>,      // strength + rotation
     sheen: vec4<f32>,           // strength + RGB tint
+    _pad: vec3<u32>,
 };
 
 struct MaterialResult {
@@ -197,7 +193,6 @@ struct Params {
 @group(0) @binding(21) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(22) var tex_sampler: sampler;
 @group(0) @binding(23) var<storage, read> custom_materials: array<CustomMaterialParams>;
-@group(0) @binding(24) var<storage, read> custom_material_extras: array<CustomMaterialExtras>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
