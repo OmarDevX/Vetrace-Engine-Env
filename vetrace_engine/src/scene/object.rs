@@ -119,6 +119,8 @@ impl Default for GpuMaterial {
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GpuCustomMaterial {
     pub color_tint: [f32; 4],
+    pub material_texture_atlas_uv: [f32; 4],
+    pub texture_layers: [u32; 4],
     pub roughness: f32,
     pub metallic: f32,
     pub noise_scale: f32,
@@ -130,10 +132,6 @@ pub struct GpuCustomMaterial {
     pub texture_index: u32,
     pub alpha_cutoff: f32,
     pub double_sided: u32,
-    pub normal_map_index: u32,
-    pub roughness_map_index: u32,
-    pub metallic_map_index: u32,
-    pub emission_map_index: u32,
     // NEW TRANSPARENCY FIELDS
     pub transparency: f32,
     pub transmission: f32,
@@ -159,6 +157,8 @@ impl Default for GpuCustomMaterial {
     fn default() -> Self {
         Self {
             color_tint: [1.0, 1.0, 1.0, 1.0],
+            material_texture_atlas_uv: [0.0, 0.0, 1.0, 1.0],
+            texture_layers: [0; 4],
             roughness: 0.5,
             metallic: 0.0,
             noise_scale: 1.0,
@@ -170,10 +170,6 @@ impl Default for GpuCustomMaterial {
             texture_index: 0,
             alpha_cutoff: 0.5,
             double_sided: 0,
-            normal_map_index: 0,
-            roughness_map_index: 0,
-            metallic_map_index: 0,
-            emission_map_index: 0,
             transparency: 0.0,
             transmission: 0.0,
             transmission_roughness: 0.0,

@@ -58,6 +58,8 @@ struct MaterialParams {
 
 struct CustomMaterialParams {
     color_tint: vec4<f32>,
+    material_texture_atlas_uv: vec4<f32>, // xy = offset, zw = scale for atlas lookup
+    texture_layers: vec4<u32>,            // pack texture types into array layers
     roughness: f32,
     metallic: f32,
     noise_scale: f32,
@@ -69,10 +71,6 @@ struct CustomMaterialParams {
     texture_index: u32,
     alpha_cutoff: f32,           // threshold for alpha testing
     double_sided: u32,           // flip normals for backfaces
-    normal_map_index: u32,       // separate normal map texture
-    roughness_map_index: u32,    // separate roughness map texture
-    metallic_map_index: u32,     // separate metallic map texture
-    emission_map_index: u32,     // separate emission map texture
     // NEW TRANSPARENCY FIELDS
     transparency: f32,          // 0.0 = opaque, 1.0 = fully transparent
     transmission: f32,          // how much light passes through vs scatters
