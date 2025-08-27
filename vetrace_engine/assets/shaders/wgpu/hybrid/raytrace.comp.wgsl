@@ -1256,14 +1256,8 @@ fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<funct
         if (hit.tri != 0xffffffffu) {
             mat_idx = triangles[hit.tri].material_index;
         }
-        let mat = materials[mat_idx];
-        var col: vec3<f32>;
         let gi = vec3<f32>(0.0);
-        if (mat.has_custom_material != 0u) {
-            col = shade_transparent_material(hit_pos, hit.n, -dir, u32(hit.idx), hit.tri, hit.uv, depth, gi, rng);
-        } else {
-            col = shade_base(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, gi, rng);
-        }
+        let col = shade_base(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, gi, rng);
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
@@ -1330,14 +1324,8 @@ fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
         if (hit.tri != 0xffffffffu) {
             mat_idx = triangles[hit.tri].material_index;
         }
-        let mat = materials[mat_idx];
-        var col: vec3<f32>;
-        let gi = sample_diffuse_gi(hit_pos, hit.n, rng);
-        if (mat.has_custom_material != 0u) {
-            col = shade_transparent_material(hit_pos, hit.n, -dir, u32(hit.idx), hit.tri, hit.uv, depth, gi, rng);
-        } else {
-            col = shade_base(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, gi, rng);
-        }
+        let gi = vec3<f32>(0.0);
+        let col = shade_base(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, gi, rng);
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
