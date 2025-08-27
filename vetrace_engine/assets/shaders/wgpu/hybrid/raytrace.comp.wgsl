@@ -75,20 +75,21 @@ struct CustomMaterialParams {
     roughness_map_index: u32,
     metallic_map_index: u32,
     emission_map_index: u32,
-    transparency: f32,          // 0.0 = opaque, 1.0 = fully transparent
-    transmission: f32,          // how much light passes through vs scatters
-    transmission_roughness: f32, // roughness for transmission rays
-    refraction_ior: f32,        // index of refraction for transmission
-    normal_strength: f32,       // normal map intensity
-    displacement_strength: f32, // displacement/height strength
-    extras_index: u32,
+    extras_index: u32,          // index into optional extras
 };
 
 struct CustomMaterialExtras {
-    subsurface: vec4<f32>,     // strength + RGB radii
-    clearcoat: vec2<f32>,      // strength + roughness
-    anisotropy: vec2<f32>,     // strength + rotation
-    sheen: vec4<f32>,          // strength + RGB tint
+    transparency: f32,          // 0.0 = opaque, 1.0 fully transparent
+    transmission: f32,          // fraction of light that transmits
+    transmission_roughness: f32,// roughness for transmission rays
+    refraction_ior: f32,        // index of refraction
+    normal_strength: f32,       // normal map intensity
+    displacement_strength: f32, // displacement/height strength
+    _pad: vec2<f32>,
+    subsurface: vec4<f32>,      // strength + RGB radii
+    clearcoat: vec2<f32>,       // strength + roughness
+    anisotropy: vec2<f32>,      // strength + rotation
+    sheen: vec4<f32>,           // strength + RGB tint
 };
 
 struct MaterialResult {
@@ -131,10 +132,11 @@ const MAX_ATMOSPHERES: u32 = 8u;
 
 // --- runtime safety caps ---
 const MAX_TLAS_ITERS          : u32 = 8u;
-const MAX_TRI_BVH_ITERS       : u32 = 512u;
-const MAX_OBJ_BVH_ITERS       : u32 = 512u;
-const MAX_SCATTER_STEPS       : i32 = 24;
-const MAX_LIGHT_STEPS         : i32 = 6;
+// Reduced iteration caps to prevent long-running loops on lower-end GPUs
+const MAX_TRI_BVH_ITERS       : u32 = 128u;
+const MAX_OBJ_BVH_ITERS       : u32 = 128u;
+const MAX_SCATTER_STEPS       : i32 = 12;
+const MAX_LIGHT_STEPS         : i32 = 4;
 const MAX_ATMO_LIGHTS         : u32 = 2u;
 const MAX_LIGHT_SAMPLES       : u32 = 8u;
 const MAX_DIR_SHADOW_SAMPLES  : u32 = 8u;
@@ -1449,7 +1451,8 @@ fn sample_volume_scattering(
     scattering: vec3<f32>,
     rng: ptr<function, u32>
 ) -> vec3<f32> {
-    let steps = 8;
+    // Fewer steps to reduce compile and runtime cost
+    let steps = 4;
     let step_size = distance / f32(steps);
     var accumulated_light = vec3<f32>(0.0);
     var transmittance = vec3<f32>(1.0);

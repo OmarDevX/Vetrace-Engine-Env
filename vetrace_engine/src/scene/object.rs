@@ -136,12 +136,6 @@ pub struct GpuCustomMaterial {
     pub roughness_map_index: u32,
     pub metallic_map_index: u32,
     pub emission_map_index: u32,
-    pub transparency: f32,
-    pub transmission: f32,
-    pub transmission_roughness: f32,
-    pub refraction_ior: f32,
-    pub normal_strength: f32,
-    pub displacement_strength: f32,
     pub extras_index: u32,
     pub _pad: [u32; 2],
 }
@@ -149,6 +143,13 @@ pub struct GpuCustomMaterial {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, PartialEq)]
 pub struct GpuCustomMaterialExtras {
+    pub transparency: f32,
+    pub transmission: f32,
+    pub transmission_roughness: f32,
+    pub refraction_ior: f32,
+    pub normal_strength: f32,
+    pub displacement_strength: f32,
+    pub _pad: [f32; 2],
     pub subsurface: [f32; 4], // w = strength
     pub clearcoat: [f32; 2],  // x = strength, y = roughness
     pub anisotropy: [f32; 2], // x = strength, y = rotation
@@ -176,12 +177,6 @@ impl Default for GpuCustomMaterial {
             roughness_map_index: 0,
             metallic_map_index: 0,
             emission_map_index: 0,
-            transparency: 0.0,
-            transmission: 0.0,
-            transmission_roughness: 0.0,
-            refraction_ior: 1.0,
-            normal_strength: 0.0,
-            displacement_strength: 0.0,
             extras_index: u32::MAX,
             _pad: [0; 2],
         }
@@ -191,6 +186,13 @@ impl Default for GpuCustomMaterial {
 impl Default for GpuCustomMaterialExtras {
     fn default() -> Self {
         Self {
+            transparency: 0.0,
+            transmission: 0.0,
+            transmission_roughness: 0.0,
+            refraction_ior: 1.0,
+            normal_strength: 0.0,
+            displacement_strength: 0.0,
+            _pad: [0.0; 2],
             subsurface: [0.0; 4],
             clearcoat: [0.0; 2],
             anisotropy: [0.0; 2],

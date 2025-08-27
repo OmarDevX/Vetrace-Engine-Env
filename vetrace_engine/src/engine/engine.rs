@@ -1324,7 +1324,8 @@ impl Engine {
         // defaults for primitives that lack an explicit `PbrMaterial`
         let mut gpu_materials: Vec<GpuMaterial> = Vec::new();
         let mut custom_materials: Vec<crate::scene::object::GpuCustomMaterial> = Vec::new();
-        let mut custom_material_extras: Vec<crate::scene::object::GpuCustomMaterialExtras> = Vec::new();
+        let mut custom_material_extras: Vec<crate::scene::object::GpuCustomMaterialExtras> =
+            Vec::new();
         let mut material_names: Vec<String> = Vec::new();
         let mut shader_defs: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
@@ -1552,7 +1553,8 @@ impl Engine {
                                 gpu.material_texture_atlas_uv = [v[0], v[1], v[2], v[3]];
                             }
                             ("texture_layers", MaterialParameter::Vec4(v)) => {
-                                gpu.texture_layers = [v[0] as u32, v[1] as u32, v[2] as u32, v[3] as u32];
+                                gpu.texture_layers =
+                                    [v[0] as u32, v[1] as u32, v[2] as u32, v[3] as u32];
                             }
                             ("alpha_cutoff", MaterialParameter::Float(f)) => {
                                 gpu.alpha_cutoff = *f;
@@ -1561,22 +1563,28 @@ impl Engine {
                                 gpu.double_sided = if *b { 1 } else { 0 };
                             }
                             ("transparency", MaterialParameter::Float(f)) => {
-                                gpu.transparency = *f;
+                                extras.transparency = *f;
+                                use_extras = true;
                             }
                             ("transmission", MaterialParameter::Float(f)) => {
-                                gpu.transmission = *f;
+                                extras.transmission = *f;
+                                use_extras = true;
                             }
                             ("transmission_roughness", MaterialParameter::Float(f)) => {
-                                gpu.transmission_roughness = *f;
+                                extras.transmission_roughness = *f;
+                                use_extras = true;
                             }
                             ("refraction_ior", MaterialParameter::Float(f)) => {
-                                gpu.refraction_ior = *f;
+                                extras.refraction_ior = *f;
+                                use_extras = true;
                             }
                             ("normal_strength", MaterialParameter::Float(f)) => {
-                                gpu.normal_strength = *f;
+                                extras.normal_strength = *f;
+                                use_extras = true;
                             }
                             ("displacement_strength", MaterialParameter::Float(f)) => {
-                                gpu.displacement_strength = *f;
+                                extras.displacement_strength = *f;
+                                use_extras = true;
                             }
                             ("subsurface_strength", MaterialParameter::Float(f)) => {
                                 extras.subsurface[3] = *f;
