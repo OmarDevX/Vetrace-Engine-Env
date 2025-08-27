@@ -48,11 +48,6 @@ fn evaluate_rainbow(
     result.transmission = 0.0;
     result.transmission_roughness = 0.0;
     result.ior = 1.0;
-    result.subsurface = vec4<f32>(0.0);
-    result.clearcoat = vec2<f32>(0.0);
-    result.anisotropy = vec2<f32>(0.0);
-    result.sheen = vec4<f32>(0.0);
-    result.displacement = 0.0;
     return result;
 }
 "#;

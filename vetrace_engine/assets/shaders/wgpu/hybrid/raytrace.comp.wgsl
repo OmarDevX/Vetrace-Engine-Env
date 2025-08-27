@@ -67,23 +67,11 @@ struct CustomMaterialParams {
     custom_float_3: f32,
     custom_float_4: f32,
     texture_index: u32,
-    // NEW TRANSPARENCY FIELDS
     transparency: f32,
     transmission: f32,
     transmission_roughness: f32,
     refraction_ior: f32,
-    // NEW EXTENDED FIELDS
-    subsurface_strength: f32,
-    subsurface_radius: vec3<f32>,
-    clearcoat_strength: f32,
-    clearcoat_roughness: f32,
-    anisotropy: f32,
-    anisotropy_rotation: f32,
-    sheen_strength: f32,
-    sheen_tint: vec3<f32>,
-    normal_strength: f32,
-    displacement_strength: f32,
-    _pad: vec2<u32>,
+    _pad: vec3<u32>,
 };
 
 struct MaterialResult {
@@ -92,17 +80,10 @@ struct MaterialResult {
     roughness: f32,
     metallic: f32,
     emission: vec3<f32>,
-    // NEW TRANSPARENCY OUTPUTS
     transparency: f32,
     transmission: f32,
     transmission_roughness: f32,
     ior: f32,
-    // NEW EXTENDED OUTPUTS
-    subsurface: vec4<f32>,     // strength + RGB radii
-    clearcoat: vec2<f32>,      // strength + roughness
-    anisotropy: vec2<f32>,     // strength + rotation
-    sheen: vec4<f32>,          // strength + RGB tint
-    displacement: f32,
 };
 
 // MATERIAL_FUNCTIONS_PLACEHOLDER
@@ -1026,11 +1007,6 @@ fn default_material_result(hit_point: vec3<f32>, normal: vec3<f32>, _view_dir: v
     result.transmission = 0.0;
     result.transmission_roughness = 0.0;
     result.ior = 1.0;
-    result.subsurface = vec4<f32>(0.0);
-    result.clearcoat = vec2<f32>(0.0);
-    result.anisotropy = vec2<f32>(0.0);
-    result.sheen = vec4<f32>(0.0);
-    result.displacement = 0.0;
     return result;
 }
 
@@ -1060,11 +1036,6 @@ fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialPar
     result.transmission = 0.0;
     result.transmission_roughness = 0.0;
     result.ior = mat.ior;
-    result.subsurface = vec4<f32>(0.0);
-    result.clearcoat = vec2<f32>(0.0);
-    result.anisotropy = vec2<f32>(0.0);
-    result.sheen = vec4<f32>(0.0);
-    result.displacement = 0.0;
     return result;
 }
 
@@ -1173,7 +1144,6 @@ fn shade_transparent_material(
     let mat = materials[mat_idx];
     let result = evaluate_custom_material(hit, normal, view_dir, uv, mat.custom_material_id);
 
-    // Handle transparency
     if (result.transparency > 0.001) {
         let transmission_dir = normalize(refract(view_dir, normal, 1.0 / result.ior));
         var trans_color = vec3<f32>(0.0);
@@ -1187,51 +1157,7 @@ fn shade_transparent_material(
         return mix(surface_color, trans_color * result.base_color, result.transparency * result.transmission);
     }
 
-    // Handle other custom material features
-    var final_color = shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
-
-    // Subsurface scattering approximation
-    if (result.subsurface.x > 0.0) {
-        let subsurface_offset = random_in_unit_sphere(rng) * result.subsurface.yzw;
-        let subsurface_pos = hit + subsurface_offset;
-        let subsurface_color = shade_base(subsurface_pos, normal, obj_idx, tri_idx, uv, gi, rng);
-        final_color = mix(final_color, subsurface_color, result.subsurface.x);
-    }
-
-    // Sheen effect
-    if (result.sheen.x > 0.0) {
-        let sheen_factor = pow(1.0 - abs(dot(view_dir, normal)), 5.0);
-        final_color += result.sheen.yzw * result.sheen.x * sheen_factor;
-    }
-
-    return final_color;
-}
-
-// Volume scattering for transparent materials
-fn sample_volume_scattering(
-    ray_start: vec3<f32>,
-    ray_dir: vec3<f32>,
-    distance: f32,
-    absorption: vec3<f32>,
-    scattering: vec3<f32>,
-    rng: ptr<function, u32>
-) -> vec3<f32> {
-    let steps = 8;
-    let step_size = distance / f32(steps);
-    var accumulated_light = vec3<f32>(0.0);
-    var transmittance = vec3<f32>(1.0);
-
-    for (var i: i32 = 0; i < steps; i = i + 1) {
-        let t = f32(i) * step_size;
-        let pos = ray_start + ray_dir * t;
-        let light_dir = normalize(-params.dir_light_dir.xyz);
-        let phase = 0.25;
-        let inscattered = params.dir_light_color.xyz * scattering * phase;
-        accumulated_light += transmittance * inscattered * step_size;
-        transmittance *= exp(-(absorption + scattering) * step_size);
-    }
-
-    return accumulated_light;
+    return shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
 }
 
 // -----------------------------
