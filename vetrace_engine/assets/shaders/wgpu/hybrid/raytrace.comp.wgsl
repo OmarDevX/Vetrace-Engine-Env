@@ -132,6 +132,8 @@ const MAX_ATMOSPHERES: u32 = 8u;
 
 // --- runtime safety caps ---
 const MAX_TLAS_ITERS          : u32 = 8u;
+const MAX_TRI_BVH_ITERS       : u32 = 512u;
+const MAX_OBJ_BVH_ITERS       : u32 = 512u;
 const MAX_SCATTER_STEPS       : i32 = 24;
 const MAX_LIGHT_STEPS         : i32 = 6;
 const MAX_ATMO_LIGHTS         : u32 = 2u;
@@ -737,7 +739,7 @@ fn mesh_intersect(origin: vec3<f32>, dir: vec3<f32>, obj: Object) -> MeshHit {
     }
     stack[sp] = root; sp = sp + 1;
 
-    loop {
+    for (var iter: u32 = 0u; iter < MAX_TRI_BVH_ITERS; iter = iter + 1u) {
         if (sp == 0) { break; }
         sp = sp - 1;
         let ni = u32(stack[sp]);
@@ -831,7 +833,7 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
     var stack: array<i32, 256>; var sp: i32 = 0;
     let root: i32 = 0; stack[sp] = root; sp = sp + 1;
 
-    loop {
+    for (var iter: u32 = 0u; iter < MAX_OBJ_BVH_ITERS; iter = iter + 1u) {
         if (sp == 0) { break; }
         sp = sp - 1;
         let ni = u32(stack[sp]);
@@ -917,7 +919,7 @@ fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip
     var stack: array<i32, 256>; var sp: i32 = 0;
     let root: i32 = 0; stack[sp] = root; sp = sp + 1;
 
-    loop {
+    for (var iter: u32 = 0u; iter < MAX_OBJ_BVH_ITERS; iter = iter + 1u) {
         if (sp == 0) { break; }
         sp = sp - 1;
         let ni = u32(stack[sp]);
