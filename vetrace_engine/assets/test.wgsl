@@ -28,8 +28,18 @@ fn evaluate_rainbow_material(
     let hue = fract(rainbow_factor);
     let rainbow_color = hsv_to_rgb(vec3<f32>(hue, 1.0, 1.0));
     result.base_color = rainbow_color;
+    result.normal = normal;
     result.roughness = params.roughness;
     result.metallic = params.metallic;
     result.emission = rainbow_color * params.custom_float_3;
+    result.transparency = 0.0;
+    result.transmission = 0.0;
+    result.transmission_roughness = 0.0;
+    result.ior = 1.0;
+    result.subsurface = vec4<f32>(0.0);
+    result.clearcoat = vec2<f32>(0.0);
+    result.anisotropy = vec2<f32>(0.0);
+    result.sheen = vec4<f32>(0.0);
+    result.displacement = 0.0;
     return result;
 }
