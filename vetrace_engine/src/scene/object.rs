@@ -115,44 +115,24 @@ impl Default for GpuMaterial {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GpuCustomMaterial {
     pub color_tint: [f32; 4],
-    pub roughness: f32,
-    pub metallic: f32,
-    pub noise_scale: f32,
-    pub emission_strength: f32,
-    pub custom_float_1: f32,
-    pub custom_float_2: f32,
-    pub custom_float_3: f32,
-    pub custom_float_4: f32,
-    pub texture_index: u32,
-    pub transparency: f32,
-    pub transmission: f32,
-    pub transmission_roughness: f32,
-    pub refraction_ior: f32,
-    pub _pad: [u32; 3],
+    pub pbr: [f32; 4],       // roughness, metallic, noise_scale, emission_strength
+    pub custom1: [f32; 4],   // custom_float_1..4 (w used as time)
+    pub custom2: [f32; 4],   // texture_index, transparency, transmission, transmission_roughness
+    pub misc: [f32; 4],      // refraction_ior, padding
 }
 
 impl Default for GpuCustomMaterial {
     fn default() -> Self {
         Self {
             color_tint: [1.0, 1.0, 1.0, 1.0],
-            roughness: 0.5,
-            metallic: 0.0,
-            noise_scale: 1.0,
-            emission_strength: 0.0,
-            custom_float_1: 0.0,
-            custom_float_2: 0.0,
-            custom_float_3: 0.0,
-            custom_float_4: 0.0,
-            texture_index: 0,
-            transparency: 0.0,
-            transmission: 0.0,
-            transmission_roughness: 0.0,
-            refraction_ior: 1.0,
-            _pad: [0; 3],
+            pbr: [0.5, 0.0, 1.0, 0.0],
+            custom1: [0.0; 4],
+            custom2: [0.0; 4],
+            misc: [1.0, 0.0, 0.0, 0.0],
         }
     }
 }

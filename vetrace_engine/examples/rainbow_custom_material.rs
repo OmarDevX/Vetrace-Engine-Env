@@ -34,16 +34,16 @@ fn evaluate_rainbow(
     params: CustomMaterialParams
 ) -> MaterialResult {
     var result: MaterialResult;
-    let time = params.custom_float_4;
-    let rainbow_factor = dot(hit_point, vec3<f32>(1.0, 0.0, 0.0)) * params.custom_float_1 + time * params.custom_float_2;
+    let time = params.custom1.w;
+    let rainbow_factor = dot(hit_point, vec3<f32>(1.0, 0.0, 0.0)) * params.custom1.x + time * params.custom1.y;
     let hue = fract(rainbow_factor);
     let rainbow_color = hsv_to_rgb(vec3<f32>(hue, 1.0, 1.0));
-    let tex_color = textureSampleLevel(textures[params.texture_index], tex_sampler, uv, 0.0).rgb;
+    let tex_color = textureSampleLevel(textures[u32(params.custom2.x)], tex_sampler, uv, 0.0).rgb;
     result.base_color = tex_color * rainbow_color;
     result.normal = normal;
-    result.roughness = params.roughness;
-    result.metallic = params.metallic;
-    result.emission = rainbow_color * params.custom_float_3;
+    result.roughness = params.pbr.x;
+    result.metallic = params.pbr.y;
+    result.emission = rainbow_color * params.custom1.z;
     result.transparency = 0.0;
     result.transmission = 0.0;
     result.transmission_roughness = 0.0;

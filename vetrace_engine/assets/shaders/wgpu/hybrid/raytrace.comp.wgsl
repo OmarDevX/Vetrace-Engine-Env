@@ -58,20 +58,10 @@ struct MaterialParams {
 
 struct CustomMaterialParams {
     color_tint: vec4<f32>,
-    roughness: f32,
-    metallic: f32,
-    noise_scale: f32,
-    emission_strength: f32,
-    custom_float_1: f32,
-    custom_float_2: f32,
-    custom_float_3: f32,
-    custom_float_4: f32,
-    texture_index: u32,
-    transparency: f32,
-    transmission: f32,
-    transmission_roughness: f32,
-    refraction_ior: f32,
-    _pad: vec3<u32>,
+    pbr: vec4<f32>,        // roughness, metallic, noise_scale, emission_strength
+    custom1: vec4<f32>,    // custom_float_1..4 (w often used as time)
+    custom2: vec4<f32>,    // texture_index, transparency, transmission, transmission_roughness
+    misc: vec4<f32>,       // refraction_ior, padding
 };
 
 struct MaterialResult {
@@ -1127,22 +1117,27 @@ fn shade_base(
 
 // Enhanced shading for materials with transparency and extended features
 fn shade_transparent_material(
-    hit: vec3<f32>,
-    normal: vec3<f32>,
+    hit: vec3<f32>, 
+    normal: vec3<f32>, 
     view_dir: vec3<f32>,
-    obj_idx: u32,
-    tri_idx: u32,
-    uv: vec2<f32>,
+    obj_idx: u32, 
+    tri_idx: u32, 
+    uv: vec2<f32>, 
     depth: i32,
     gi: vec3<f32>,
     rng: ptr<function, u32>
 ) -> vec3<f32> {
     var mat_idx: u32 = objects[obj_idx].material_index;
-    if (tri_idx != 0xffffffffu) {
-        mat_idx = triangles[tri_idx].material_index;
+    if (tri_idx != 0xffffffffu) { 
+        mat_idx = triangles[tri_idx].material_index; 
     }
     let mat = materials[mat_idx];
     let result = evaluate_custom_material(hit, normal, view_dir, uv, mat.custom_material_id);
+
+    // Prevent unbounded recursion from transparent materials
+    if (depth + 1 >= params.max_bounces) {
+        return shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
+    }
 
     if (result.transparency > 0.001) {
         let transmission_dir = normalize(refract(view_dir, normal, 1.0 / result.ior));
