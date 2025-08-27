@@ -133,13 +133,13 @@ const MAX_ATMOSPHERES: u32 = 8u;
 // --- runtime safety caps ---
 const MAX_TLAS_ITERS          : u32 = 8u;
 // Reduced iteration caps to prevent long-running loops on lower-end GPUs
-const MAX_TRI_BVH_ITERS       : u32 = 128u;
-const MAX_OBJ_BVH_ITERS       : u32 = 128u;
-const MAX_SCATTER_STEPS       : i32 = 12;
-const MAX_LIGHT_STEPS         : i32 = 4;
+const MAX_TRI_BVH_ITERS       : u32 = 64u;
+const MAX_OBJ_BVH_ITERS       : u32 = 64u;
+const MAX_SCATTER_STEPS       : i32 = 8;
+const MAX_LIGHT_STEPS         : i32 = 2;
 const MAX_ATMO_LIGHTS         : u32 = 2u;
-const MAX_LIGHT_SAMPLES       : u32 = 8u;
-const MAX_DIR_SHADOW_SAMPLES  : u32 = 8u;
+const MAX_LIGHT_SAMPLES       : u32 = 4u;
+const MAX_DIR_SHADOW_SAMPLES  : u32 = 4u;
 const T_EARLY_OUT             : f32 = 1e-3;
 
 struct Params {
@@ -629,7 +629,7 @@ fn sample_radiance_cone(origin: vec3<f32>, dir: vec3<f32>, step: f32) -> vec3<f3
     let voxel_size = max(voxel.x, max(voxel.y, voxel.z));
     let max_mip = f32(textureNumLevels(gi_sdf) - 1u);
     let half_angle = 0.261799f; // 15 deg
-    for (var i: u32 = 0u; i < 8u; i = i + 1u) {
+    for (var i: u32 = 0u; i < 4u; i = i + 1u) {
         let pos = origin + dir * t;
         let uv = sdf_uv(pos);
         let cone_r = t * tan(half_angle);
@@ -641,7 +641,7 @@ fn sample_radiance_cone(origin: vec3<f32>, dir: vec3<f32>, step: f32) -> vec3<f3
         col += rad * exp(-d * d * 5.0);
         t += step * 1.5;
     }
-    return col / 8.0;
+    return col / 4.0;
 }
 fn random_cone_offset(state: ptr<function, u32>) -> vec3<f32> { return random_in_unit_sphere(state); }
 
