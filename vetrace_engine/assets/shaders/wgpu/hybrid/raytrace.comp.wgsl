@@ -1200,7 +1200,10 @@ fn shade_transparent_material(
                 let rough_dir = normalize(transmission_dir + random_in_unit_sphere(rng) * result.transmission_roughness);
                 let obj = objects[obj_idx];
                 let eps = surf_eps(obj);
-                trans_color = trace_ray_skip(hit - normal * eps, rough_dir, depth + 1, rng, i32(obj_idx)).color;
+                // Use a minimal skip-trace variant that shades without calling
+                // `shade`, keeping the call graph acyclic when invoked from
+                // transparent-material shading.
+                trans_color = trace_ray_skip_base(hit - normal * eps, rough_dir, depth + 1, rng, i32(obj_idx)).color;
             }
 
             let surface_color = shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
@@ -1365,6 +1368,31 @@ fn object_extent(obj: Object) -> f32 {
 }
 fn surf_eps(obj: Object) -> f32 {
     return max(1e-4, object_extent(obj) * 1e-4);
+}
+
+// Minimal skip-trace used for secondary transmission rays. It shades hits with
+// `shade_base` to avoid calling back into `shade` and keeps the call graph
+// acyclic.
+fn trace_ray_skip_base(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
+    if (depth >= params.max_bounces) {
+        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
+        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+    }
+    var o = origin; var t_total = 0.0;
+    for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
+        let hit = object_tlas_intersect(o, dir, skip);
+        if (hit.idx < 0) { break; }
+        let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
+        t_total = t_total + hit.t;
+        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
+        let hit_pos = origin + dir * t_total;
+        let gi = sample_diffuse_gi(hit_pos, hit.n, rng);
+        let col = shade_base(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, gi, rng);
+        let col_atm = apply_atmosphere(origin, dir, t_total, col);
+        return RayResult(col_atm, t_total, hit.n, hit.idx, hit.tri);
+    }
+    let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
+    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
 }
 
 // identical to trace_ray(...) but skips `skip` on the first TLAS hit
