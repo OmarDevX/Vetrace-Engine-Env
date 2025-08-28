@@ -96,12 +96,13 @@ struct Scattering {
 const MAX_ATMOSPHERES: u32 = 8u;
 
 // --- runtime safety caps ---
-const MAX_TLAS_ITERS          : u32 = 8u;
-const MAX_SCATTER_STEPS       : i32 = 24;
-const MAX_LIGHT_STEPS         : i32 = 6;
+// Reduced default iteration counts to keep low-end GPUs responsive.
+const MAX_TLAS_ITERS          : u32 = 4u;
+const MAX_SCATTER_STEPS       : i32 = 12;
+const MAX_LIGHT_STEPS         : i32 = 3;
 const MAX_ATMO_LIGHTS         : u32 = 2u;
-const MAX_LIGHT_SAMPLES       : u32 = 8u;
-const MAX_DIR_SHADOW_SAMPLES  : u32 = 8u;
+const MAX_LIGHT_SAMPLES       : u32 = 4u;
+const MAX_DIR_SHADOW_SAMPLES  : u32 = 4u;
 const T_EARLY_OUT             : f32 = 1e-3;
 
 struct Params {
