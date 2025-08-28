@@ -104,6 +104,7 @@ const MAX_ATMO_LIGHTS         : u32 = 2u;
 const MAX_LIGHT_SAMPLES       : u32 = 4u;
 const MAX_DIR_SHADOW_SAMPLES  : u32 = 4u;
 const T_EARLY_OUT             : f32 = 1e-3;
+const MAX_BVH_STACK_ITERS     : u32 = 512u;
 
 struct Params {
     camera_pos: vec4<f32>,
@@ -705,8 +706,10 @@ fn mesh_intersect(origin: vec3<f32>, dir: vec3<f32>, obj: Object) -> MeshHit {
     }
     stack[sp] = root; sp = sp + 1;
 
+    var iters: u32 = 0u;
     loop {
-        if (sp == 0) { break; }
+        if (sp == 0 || iters >= MAX_BVH_STACK_ITERS) { break; }
+        iters = iters + 1u;
         sp = sp - 1;
         let ni = u32(stack[sp]);
         if (!in_bounds_tri_node(ni)) { continue; }
@@ -794,9 +797,11 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
     if (params.total_bvh_nodes == 0u) { return best; }
     var stack: array<i32, 256>; var sp: i32 = 0;
     let root: i32 = 0; stack[sp] = root; sp = sp + 1;
+    var iters: u32 = 0u;
 
     loop {
-        if (sp == 0) { break; }
+        if (sp == 0 || iters >= MAX_BVH_STACK_ITERS) { break; }
+        iters = iters + 1u;
         sp = sp - 1;
         let ni = u32(stack[sp]);
         if (!in_bounds_tlas(ni)) { continue; }
@@ -880,9 +885,11 @@ fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip
     if (params.total_bvh_nodes == 0u) { return false; }
     var stack: array<i32, 256>; var sp: i32 = 0;
     let root: i32 = 0; stack[sp] = root; sp = sp + 1;
+    var iters: u32 = 0u;
 
     loop {
-        if (sp == 0) { break; }
+        if (sp == 0 || iters >= MAX_BVH_STACK_ITERS) { break; }
+        iters = iters + 1u;
         sp = sp - 1;
         let ni = u32(stack[sp]);
         if (!in_bounds_tlas(ni)) { continue; }
@@ -958,7 +965,7 @@ fn soft_shadow(origin: vec3<f32>, normal: vec3<f32>, light: Object, light_idx: u
     let lm = materials[light.material_index];
     if (lm.emissiveStrength <= 0.0) { return 1.0; }
     var vis: f32 = 0.0;
-    let samples: u32 = max(1u, u32(params.light_samples));
+    let samples: u32 = clamp(u32(max(params.light_samples, 1)), 1u, MAX_LIGHT_SAMPLES);
     for (var s: u32 = 0u; s < samples; s = s + 1u) {
         var offset = vec3<f32>(0.0);
         if (light.is_cube > 0u) {
@@ -976,7 +983,7 @@ fn soft_shadow(origin: vec3<f32>, normal: vec3<f32>, light: Object, light_idx: u
 const DIR_SHADOW_RADIUS: f32 = 0.05;
 fn dir_soft_shadow(origin: vec3<f32>, dir: vec3<f32>, rng: ptr<function, u32>) -> f32 {
     var vis: f32 = 0.0;
-    let samples: u32 = max(1u, u32(params.dir_shadow_samples));
+    let samples: u32 = clamp(u32(max(params.dir_shadow_samples, 1)), 1u, MAX_DIR_SHADOW_SAMPLES);
     for (var s: u32 = 0u; s < samples; s = s + 1u) {
         let jitter = random_in_unit_sphere(rng) * DIR_SHADOW_RADIUS;
         let sdir = normalize(dir + jitter);
