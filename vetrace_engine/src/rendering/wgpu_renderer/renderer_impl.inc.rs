@@ -1822,6 +1822,12 @@ impl WgpuRenderer {
                                                         mapped_at_creation: false,
         });
 
+        // Ensure all queued GPU work like shader compilation is finished
+        // before returning the renderer. This prevents the application from
+        // appearing frozen on startup while the device completes asynchronous
+        // initialization tasks.
+        device.poll(Maintain::Wait);
+
         Self {
             surface,
             device,
