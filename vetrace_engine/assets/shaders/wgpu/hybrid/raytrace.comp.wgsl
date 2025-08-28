@@ -631,6 +631,8 @@ fn path_trace_gi(p: vec3<f32>, n: vec3<f32>, rng: ptr<function, u32>) -> vec3<f3
     return trace_ray_no_gi(origin, dir, 0, rng).color;
 }
 fn sample_diffuse_gi(p: vec3<f32>, n: vec3<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+    // Skip expensive GI sampling entirely when the quality setting disables it.
+    if (gi_params.quality == 3u /*OFF*/) { return vec3<f32>(0.0); }
     if (gi_params.mode == 1u) { return path_trace_gi(p, n, rng); }
     return trace_gi(p, n, rng);
 }
