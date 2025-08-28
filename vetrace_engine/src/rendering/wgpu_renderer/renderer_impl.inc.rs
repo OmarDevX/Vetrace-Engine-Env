@@ -48,6 +48,11 @@ impl WgpuRenderer {
         let (device, queue, surface, config) =
         pollster::block_on(init_wgpu(window, width as u32, height as u32));
         let device = std::sync::Arc::new(device);
+        // Log any GPU errors rather than silently hanging on startup
+        device.on_uncaptured_error(|e| {
+            eprintln!("wgpu error: {:?}", e);
+        });
+
         let queue = std::sync::Arc::new(queue);
         set_wgpu_device_queue(device.clone(), queue.clone());
         let (
@@ -1822,11 +1827,10 @@ impl WgpuRenderer {
                                                         mapped_at_creation: false,
         });
 
-        // Ensure all queued GPU work like shader compilation is finished
-        // before returning the renderer. This prevents the application from
-        // appearing frozen on startup while the device completes asynchronous
-        // initialization tasks.
-        device.poll(Maintain::Wait);
+        // Kick off any pending GPU work like shader compilation but avoid
+        // blocking the main thread so the application can continue starting
+        // up even if drivers take a long time to compile shaders.
+        device.poll(Maintain::Poll);
 
         Self {
             surface,
