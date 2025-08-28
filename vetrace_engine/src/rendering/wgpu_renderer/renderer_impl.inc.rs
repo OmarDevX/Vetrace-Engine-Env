@@ -501,7 +501,7 @@ impl WgpuRenderer {
             entry_point: "main",
             compilation_options: Default::default(),
         });
-        if let Some(err) = pollster::block_on(device.pop_error_scope()).unwrap() {
+        if let Some(err) = pollster::block_on(device.pop_error_scope()) {
             panic!("compute pipeline creation failed: {:?}", err);
         }
 
@@ -2703,7 +2703,7 @@ impl WgpuRenderer {
                         entry_point: "main",
                         compilation_options: Default::default(),
                     });
-            if let Some(err) = pollster::block_on(self.device.pop_error_scope()).unwrap() {
+            if let Some(err) = pollster::block_on(self.device.pop_error_scope()) {
                 panic!("compute pipeline creation failed: {:?}", err);
             }
             self.prev_material_names = material_names.to_vec();
