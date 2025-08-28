@@ -3,7 +3,6 @@
 //! This module provides a clean application framework similar to Bevy's App system,
 //! allowing users to create applications without dealing with engine internals.
 
-use crate::ecs::behaviour::Behaviour;
 use crate::ecs::World;
 use crate::engine::engine::Engine;
 use std::any::{Any, TypeId};

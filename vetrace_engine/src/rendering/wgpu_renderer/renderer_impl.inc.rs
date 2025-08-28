@@ -49,9 +49,9 @@ impl WgpuRenderer {
         pollster::block_on(init_wgpu(window, width as u32, height as u32));
         let device = std::sync::Arc::new(device);
         // Log any GPU errors rather than silently hanging on startup
-        device.on_uncaptured_error(|e| {
+        device.on_uncaptured_error(Box::new(|e| {
             eprintln!("wgpu error: {:?}", e);
-        });
+        }));
 
         let queue = std::sync::Arc::new(queue);
         set_wgpu_device_queue(device.clone(), queue.clone());
