@@ -33,55 +33,74 @@ impl SpriteMeshSystem {
 impl Behaviour for SpriteMeshSystem {
     fn update(&mut self, engine: &mut Engine, _dt: f32) {
         let quad = self.ensure_quad(engine);
-        for (e, transform, sprite) in engine.world.query2_mut::<Transform, Sprite3D>() {
-            if engine.world.get::<MeshHandle>(e).is_none() {
-                engine.world.insert(e, quad.clone());
+        let mut needs_mesh = Vec::new();
+        let mut needs_material = Vec::new();
+
+        {
+            // Gather entities that require mesh/material insertion while we have a
+            // query borrow, but postpone the actual mutations until after the
+            // borrow ends to satisfy the Rust borrow checker.
+            let mut query = engine
+                .world
+                .query::<(&mut Transform, &Sprite3D, Option<&MeshHandle>, Option<&PbrMaterial>)>();
+            for (e, (transform, sprite, mesh, material)) in query.iter() {
+                transform.size[0] = sprite.size[0];
+                transform.size[1] = sprite.size[1];
+                if mesh.is_none() {
+                    needs_mesh.push(e);
+                }
+                if material.is_none() {
+                    needs_material.push((e, sprite.texture.clone()));
+                }
             }
-            if engine.world.get::<PbrMaterial>(e).is_none() {
-                let device = engine.renderer.device();
-                let tex_handle = {
-                    let view = sprite
-                        .texture
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
-                    let sampler = device.create_sampler(&SamplerDescriptor {
-                        label: Some("sprite_sampler"),
-                        address_mode_u: wgpu::AddressMode::ClampToEdge,
-                        address_mode_v: wgpu::AddressMode::ClampToEdge,
-                        address_mode_w: wgpu::AddressMode::ClampToEdge,
-                        mag_filter: wgpu::FilterMode::Linear,
-                        min_filter: wgpu::FilterMode::Linear,
-                        mipmap_filter: wgpu::FilterMode::Nearest,
-                        ..Default::default()
-                    });
-                    let size = sprite.texture.texture.size();
-                    let format = sprite.texture.texture.format();
-                    GpuTextureHandle(Arc::new(GpuTexture {
-                        view,
-                        sampler,
-                        format,
-                        size,
-                        is_srgb: true,
-                    }))
-                };
-                engine.world.insert(e, PbrMaterial {
-                    name: "sprite".into(),
-                    base_color: [1.0, 1.0, 1.0, 1.0],
-                    metallic: 0.0,
-                    roughness: 1.0,
-                    emissive: [0.0, 0.0, 0.0],
-                    specular_f0: [0.0, 0.0, 0.0],
-                    ior: 1.5,
-                    opacity: 1.0,
-                    base_color_tex: Some(tex_handle),
-                    metallic_roughness_tex: None,
-                    normal_tex: None,
-                    occlusion_tex: None,
-                    emissive_tex: None,
+        }
+
+        for e in needs_mesh {
+            let _ = engine.world.insert(e, quad.clone());
+        }
+
+        if !needs_material.is_empty() {
+            let device = engine.renderer.device();
+            for (e, tex) in needs_material {
+                let view = tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let sampler = device.create_sampler(&SamplerDescriptor {
+                    label: Some("sprite_sampler"),
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    mipmap_filter: wgpu::FilterMode::Nearest,
+                    ..Default::default()
                 });
+                let size = tex.texture.size();
+                let format = tex.texture.format();
+                let tex_handle = GpuTextureHandle(Arc::new(GpuTexture {
+                    view,
+                    sampler,
+                    format,
+                    size,
+                    is_srgb: true,
+                }));
+                let _ = engine.world.insert(
+                    e,
+                    PbrMaterial {
+                        name: "sprite".into(),
+                        base_color: [1.0, 1.0, 1.0, 1.0],
+                        metallic: 0.0,
+                        roughness: 1.0,
+                        emissive: [0.0, 0.0, 0.0],
+                        specular_f0: [0.0, 0.0, 0.0],
+                        ior: 1.5,
+                        opacity: 1.0,
+                        base_color_tex: Some(tex_handle),
+                        metallic_roughness_tex: None,
+                        normal_tex: None,
+                        occlusion_tex: None,
+                        emissive_tex: None,
+                    },
+                );
             }
-            transform.size[0] = sprite.size[0];
-            transform.size[1] = sprite.size[1];
         }
     }
 }
