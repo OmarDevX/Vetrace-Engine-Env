@@ -1,8 +1,9 @@
 use crate::components::components::{Sprite3D, Transform};
-use crate::materials::PbrMaterial;
-use crate::ecs::Behaviour;
+use crate::ecs::{entity::Entity, Behaviour};
 use crate::engine::engine::Engine;
-use crate::gpu::{GpuMesh, MeshHandle, TextureHandle as GpuTextureHandle, GpuTexture, Vertex};
+use crate::gpu::{GpuMesh, GpuTexture, MeshHandle, TextureHandle as GpuTextureHandle, Vertex};
+use crate::materials::PbrMaterial;
+use crate::rendering::texture::TextureHandle as CpuTextureHandle;
 use std::sync::Arc;
 use wgpu::SamplerDescriptor;
 
@@ -14,15 +15,45 @@ pub struct SpriteMeshSystem {
 
 impl SpriteMeshSystem {
     fn ensure_quad(&mut self, engine: &Engine) -> MeshHandle {
-        if let Some(m) = &self.quad { return m.clone(); }
+        if let Some(m) = &self.quad {
+            return m.clone();
+        }
         let device = engine.renderer.device();
         let verts = [
-            Vertex { pos: [-0.5, -0.5, 0.0], nrm: [0.0, 0.0, 1.0], tan: [1.0, 0.0, 0.0, 1.0], uv: [0.0, 0.0], joints: [0;4], weights:[0.0;4] },
-            Vertex { pos: [ 0.5, -0.5, 0.0], nrm: [0.0, 0.0, 1.0], tan: [1.0, 0.0, 0.0, 1.0], uv: [1.0, 0.0], joints: [0;4], weights:[0.0;4] },
-            Vertex { pos: [-0.5,  0.5, 0.0], nrm: [0.0, 0.0, 1.0], tan: [1.0, 0.0, 0.0, 1.0], uv: [0.0, 1.0], joints: [0;4], weights:[0.0;4] },
-            Vertex { pos: [ 0.5,  0.5, 0.0], nrm: [0.0, 0.0, 1.0], tan: [1.0, 0.0, 0.0, 1.0], uv: [1.0, 1.0], joints: [0;4], weights:[0.0;4] },
+            Vertex {
+                pos: [-0.5, -0.5, 0.0],
+                nrm: [0.0, 0.0, 1.0],
+                tan: [1.0, 0.0, 0.0, 1.0],
+                uv: [0.0, 0.0],
+                joints: [0; 4],
+                weights: [0.0; 4],
+            },
+            Vertex {
+                pos: [0.5, -0.5, 0.0],
+                nrm: [0.0, 0.0, 1.0],
+                tan: [1.0, 0.0, 0.0, 1.0],
+                uv: [1.0, 0.0],
+                joints: [0; 4],
+                weights: [0.0; 4],
+            },
+            Vertex {
+                pos: [-0.5, 0.5, 0.0],
+                nrm: [0.0, 0.0, 1.0],
+                tan: [1.0, 0.0, 0.0, 1.0],
+                uv: [0.0, 1.0],
+                joints: [0; 4],
+                weights: [0.0; 4],
+            },
+            Vertex {
+                pos: [0.5, 0.5, 0.0],
+                nrm: [0.0, 0.0, 1.0],
+                tan: [1.0, 0.0, 0.0, 1.0],
+                uv: [1.0, 1.0],
+                joints: [0; 4],
+                weights: [0.0; 4],
+            },
         ];
-        let indices = [0u32,1,2,2,1,3];
+        let indices = [0u32, 1, 2, 2, 1, 3];
         let mesh = GpuMesh::from_cpu(device, "sprite_quad", &verts, &indices).expect("quad");
         let handle = MeshHandle(Arc::new(mesh));
         self.quad = Some(handle.clone());
@@ -33,36 +64,28 @@ impl SpriteMeshSystem {
 impl Behaviour for SpriteMeshSystem {
     fn update(&mut self, engine: &mut Engine, _dt: f32) {
         let quad = self.ensure_quad(engine);
-        let mut needs_mesh = Vec::new();
-        let mut needs_material = Vec::new();
 
-        {
-            // Gather entities that require mesh/material insertion while we have a
-            // query borrow, but postpone the actual mutations until after the
-            // borrow ends to satisfy the Rust borrow checker.
-            let mut query = engine
-                .world
-                .query::<(&mut Transform, &Sprite3D, Option<&MeshHandle>, Option<&PbrMaterial>)>();
-            for (e, (transform, sprite, mesh, material)) in query.iter() {
+        // Clone data we need while holding the mutable query borrow, then
+        // release the borrow before mutating the world again.
+        let sprite_data: Vec<(Entity, CpuTextureHandle)> = {
+            let mut data = Vec::new();
+            for (e, transform, sprite) in engine.world.query2_mut::<Transform, Sprite3D>() {
                 transform.size[0] = sprite.size[0];
                 transform.size[1] = sprite.size[1];
-                if mesh.is_none() {
-                    needs_mesh.push(e);
-                }
-                if material.is_none() {
-                    needs_material.push((e, sprite.texture.clone()));
-                }
+                data.push((e, sprite.texture.clone()));
             }
-        }
+            data
+        };
 
-        for e in needs_mesh {
-            let _ = engine.world.insert(e, quad.clone());
-        }
-
-        if !needs_material.is_empty() {
-            let device = engine.renderer.device();
-            for (e, tex) in needs_material {
-                let view = tex.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let device = engine.renderer.device();
+        for (e, tex) in sprite_data {
+            if engine.world.get::<MeshHandle>(e).is_none() {
+                let _ = engine.world.insert(e, quad.clone());
+            }
+            if engine.world.get::<PbrMaterial>(e).is_none() {
+                let view = tex
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
                 let sampler = device.create_sampler(&SamplerDescriptor {
                     label: Some("sprite_sampler"),
                     address_mode_u: wgpu::AddressMode::ClampToEdge,
