@@ -2965,17 +2965,36 @@ impl WgpuRenderer {
                 .as_ref()
                 .map(|t| &t.0)
                 .unwrap_or(&self.white_texture.0);
-                let joint_data: Vec<[[f32;4];4]> = inst
+                // Ensure joint buffers meet the minimum size required by the shader
+                // by allocating space for at least 64 matrices.
+                const MIN_JOINT_CAPACITY: usize = 64;
+                let mut joint_data: Vec<[[f32; 4]; 4]> = inst
                     .joint_mats
                     .clone()
-                    .unwrap_or_else(|| vec![[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]]);
-                let joint_buf = self
-                    .device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("pbr_joints"),
-                        contents: bytemuck::cast_slice(&joint_data),
-                        usage: BufferUsages::UNIFORM,
+                    .unwrap_or_else(|| {
+                        vec![[
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ]]
                     });
+                if joint_data.len() < MIN_JOINT_CAPACITY {
+                    joint_data.resize(
+                        MIN_JOINT_CAPACITY,
+                        [
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ],
+                    );
+                }
+                let joint_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("pbr_joints"),
+                    contents: bytemuck::cast_slice(&joint_data),
+                    usage: BufferUsages::UNIFORM,
+                });
                 let bg = self.device.create_bind_group(&BindGroupDescriptor {
                     label: Some("pbr_bg"),
                                                        layout: &self.pbr_bind_group_layout,
