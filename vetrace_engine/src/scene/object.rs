@@ -493,6 +493,7 @@ impl Default for Object {
             triangle_count: 0,
             tri_bvh_start: 0,
             tri_bvh_count: 0,
+            is_shaded: true,
         }
     }
 }

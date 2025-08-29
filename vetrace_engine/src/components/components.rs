@@ -121,11 +121,50 @@ impl Inspectable for PbrMaterial {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub struct Collider {
-    pub radius: f32,
-    pub is_cube: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColliderShape {
+    /// Preserve previous behaviour using `radius`/`is_cube`
+    Auto = 0,
+    Sphere = 1,
+    Cube = 2,
+    Capsule = 3,
 }
+
+impl Default for ColliderShape {
+    fn default() -> Self {
+        ColliderShape::Auto
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Collider {
+    /// Legacy radius for spherical colliders
+    pub radius: f32,
+    /// Legacy cube flag
+    pub is_cube: bool,
+    /// Explicit collider shape
+    pub shape: ColliderShape,
+    /// Local offset of the collider relative to entity transform
+    pub position: [f32; 3],
+    /// Local orientation as quaternion `[x, y, z, w]`
+    pub rotation: [f32; 4],
+    /// Size parameters used by explicit shapes
+    pub size: [f32; 3],
+}
+
+impl Default for Collider {
+    fn default() -> Self {
+        Self {
+            radius: 0.5,
+            is_cube: false,
+            shape: ColliderShape::Auto,
+            position: [0.0; 3],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            size: [1.0, 1.0, 1.0],
+        }
+    }
+}
+
 impl Component for Collider {}
 impl Inspectable for Collider {
     fn exported_fields_mut(&mut self) -> Vec<ExportedField> {
@@ -145,25 +184,121 @@ impl Inspectable for Collider {
                 value: &mut self.is_cube as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<bool>(),
             },
+            ExportedField {
+                name: "shape",
+                kind: ExportKind::Slider { min: 0.0, max: 3.0 },
+                value: &mut self.shape as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<ColliderShape>(),
+            },
+            ExportedField {
+                name: "pos_x",
+                kind: ExportKind::Slider { min: -100.0, max: 100.0 },
+                value: &mut self.position[0] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "pos_y",
+                kind: ExportKind::Slider { min: -100.0, max: 100.0 },
+                value: &mut self.position[1] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "pos_z",
+                kind: ExportKind::Slider { min: -100.0, max: 100.0 },
+                value: &mut self.position[2] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "rot_x",
+                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                value: &mut self.rotation[0] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "rot_y",
+                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                value: &mut self.rotation[1] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "rot_z",
+                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                value: &mut self.rotation[2] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "rot_w",
+                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                value: &mut self.rotation[3] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "size_x",
+                kind: ExportKind::Slider { min: 0.0, max: 100.0 },
+                value: &mut self.size[0] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "size_y",
+                kind: ExportKind::Slider { min: 0.0, max: 100.0 },
+                value: &mut self.size[1] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "size_z",
+                kind: ExportKind::Slider { min: 0.0, max: 100.0 },
+                value: &mut self.size[2] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
         ]
     }
 }
 
 impl Collider {
-    pub fn shape(&self, size: [f32; 3]) -> SharedShape {
-        if self.is_cube {
-            SharedShape::cuboid(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5)
-        } else {
-            let base = rapier3d::parry::shape::Ball::new(self.radius);
-            let scale = Vector3::new(
-                size[0] / (self.radius * 2.0),
-                size[1] / (self.radius * 2.0),
-                size[2] / (self.radius * 2.0),
-            );
-            match base.scaled(&scale, 8) {
-                Some(either::Either::Left(b)) => SharedShape::new(b),
-                Some(either::Either::Right(poly)) => SharedShape::new(poly),
-                None => SharedShape::ball(self.radius),
+    /// Compute the collider's isometry by combining parent transform with local offset
+    pub fn iso(&self, parent: &Transform) -> Isometry<f32> {
+        let parent_iso = parent.iso();
+        let q = UnitQuaternion::from_quaternion(Quaternion::new(
+            self.rotation[3],
+            self.rotation[0],
+            self.rotation[1],
+            self.rotation[2],
+        ));
+        parent_iso
+            * Isometry::from_parts(
+                Translation::new(self.position[0], self.position[1], self.position[2]),
+                q,
+            )
+    }
+
+    /// Build a `SharedShape` representing this collider
+    pub fn shape(&self, base_size: [f32; 3]) -> SharedShape {
+        match self.shape {
+            ColliderShape::Sphere => SharedShape::ball(self.size[0] * 0.5),
+            ColliderShape::Cube => {
+                SharedShape::cuboid(self.size[0] * 0.5, self.size[1] * 0.5, self.size[2] * 0.5)
+            }
+            ColliderShape::Capsule => {
+                let radius = self.size[0] * 0.5;
+                let half_height = (self.size[1] * 0.5 - radius).max(0.0);
+                SharedShape::capsule_y(half_height, radius)
+            }
+            ColliderShape::Auto => {
+                if self.is_cube {
+                    SharedShape::cuboid(base_size[0] * 0.5, base_size[1] * 0.5, base_size[2] * 0.5)
+                } else {
+                    let base = rapier3d::parry::shape::Ball::new(self.radius);
+                    let scale = Vector3::new(
+                        base_size[0] / (self.radius * 2.0),
+                        base_size[1] / (self.radius * 2.0),
+                        base_size[2] / (self.radius * 2.0),
+                    );
+                    match base.scaled(&scale, 8) {
+                        Some(either::Either::Left(b)) => SharedShape::new(b),
+                        Some(either::Either::Right(poly)) => SharedShape::new(poly),
+                        None => SharedShape::ball(self.radius),
+                    }
+                }
             }
         }
     }

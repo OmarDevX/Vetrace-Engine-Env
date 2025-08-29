@@ -147,6 +147,7 @@ impl Behaviour for CarController {
                         Collider {
                             radius: 0.2,
                             is_cube: true,
+                            ..Default::default()
                         },
                     );
                     engine.world.insert(

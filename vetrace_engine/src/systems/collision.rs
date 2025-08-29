@@ -51,10 +51,10 @@ impl CollisionSystem {
         c2: &Collider,
         t2: &Transform,
     ) -> bool {
-        let iso1 = t1.iso();
-        let iso2 = t2.iso();
         let size1 = Self::scaled_size(engine, e1, t1.size);
         let size2 = Self::scaled_size(engine, e2, t2.size);
+        let iso1 = c1.iso(t1);
+        let iso2 = c2.iso(t2);
         let s1 = c1.shape(size1);
         let s2 = c2.shape(size2);
         rapier3d::parry::query::intersection_test(&iso1, &*s1, &iso2, &*s2).unwrap_or(false)
@@ -69,10 +69,10 @@ impl CollisionSystem {
         c_dyn: &Collider,
         t_dyn: &Transform,
     ) -> Option<Vector<Real>> {
-        let iso1 = t_static.iso();
-        let iso2 = t_dyn.iso();
         let size_static = Self::scaled_size(engine, static_e, t_static.size);
         let size_dyn = Self::scaled_size(engine, dynamic_e, t_dyn.size);
+        let iso1 = c_static.iso(t_static);
+        let iso2 = c_dyn.iso(t_dyn);
         let s1 = c_static.shape(size_static);
         let s2 = c_dyn.shape(size_dyn);
         if let Ok(Some(contact)) = rapier3d::parry::query::contact(&iso1, &*s1, &iso2, &*s2, 0.0) {

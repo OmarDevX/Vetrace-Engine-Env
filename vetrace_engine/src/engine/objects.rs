@@ -66,6 +66,7 @@ impl Engine {
                 Collider {
                     radius: obj.radius,
                     is_cube: obj.is_cube,
+                    ..Default::default()
                 },
             );
             self.world.insert(
