@@ -2,8 +2,9 @@ use crate::components::components::{Sprite3D, Transform};
 use crate::materials::PbrMaterial;
 use crate::ecs::Behaviour;
 use crate::engine::engine::Engine;
-use crate::gpu::{GpuMesh, MeshHandle, Vertex};
+use crate::gpu::{GpuMesh, MeshHandle, TextureHandle as GpuTextureHandle, GpuTexture, Vertex};
 use std::sync::Arc;
+use wgpu::SamplerDescriptor;
 
 /// System that ensures sprites use regular mesh rendering
 #[derive(Default)]
@@ -37,6 +38,32 @@ impl Behaviour for SpriteMeshSystem {
                 engine.world.insert(e, quad.clone());
             }
             if engine.world.get::<PbrMaterial>(e).is_none() {
+                let device = engine.renderer.device();
+                let tex_handle = {
+                    let view = sprite
+                        .texture
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
+                    let sampler = device.create_sampler(&SamplerDescriptor {
+                        label: Some("sprite_sampler"),
+                        address_mode_u: wgpu::AddressMode::ClampToEdge,
+                        address_mode_v: wgpu::AddressMode::ClampToEdge,
+                        address_mode_w: wgpu::AddressMode::ClampToEdge,
+                        mag_filter: wgpu::FilterMode::Linear,
+                        min_filter: wgpu::FilterMode::Linear,
+                        mipmap_filter: wgpu::FilterMode::Nearest,
+                        ..Default::default()
+                    });
+                    let size = sprite.texture.texture.size();
+                    let format = sprite.texture.texture.format();
+                    GpuTextureHandle(Arc::new(GpuTexture {
+                        view,
+                        sampler,
+                        format,
+                        size,
+                        is_srgb: true,
+                    }))
+                };
                 engine.world.insert(e, PbrMaterial {
                     name: "sprite".into(),
                     base_color: [1.0, 1.0, 1.0, 1.0],
@@ -46,7 +73,7 @@ impl Behaviour for SpriteMeshSystem {
                     specular_f0: [0.0, 0.0, 0.0],
                     ior: 1.5,
                     opacity: 1.0,
-                    base_color_tex: Some(sprite.texture.clone()),
+                    base_color_tex: Some(tex_handle),
                     metallic_roughness_tex: None,
                     normal_tex: None,
                     occlusion_tex: None,
