@@ -25,7 +25,7 @@ pub struct GpuObject {
     pub triangle_count: u32,
     pub tri_bvh_start: u32,
     pub tri_bvh_count: u32,
-    pub _padding4: u32,
+    pub is_shaded: u32,
     pub _padding5: u32,
     pub _padding6: u32,
 }
@@ -47,7 +47,7 @@ impl Default for GpuObject {
             triangle_count: 0,
             tri_bvh_start: 0,
             tri_bvh_count: 0,
-            _padding4: 0,
+            is_shaded: 1,
             _padding5: 0,
             _padding6: 0,
             orientation: [0.0, 0.0, 0.0, 1.0],
@@ -203,6 +203,7 @@ pub struct Object {
     pub triangle_count: usize,
     pub tri_bvh_start: usize,
     pub tri_bvh_count: usize,
+    pub is_shaded: bool,
 }
 
 impl Object {
@@ -239,6 +240,7 @@ impl Object {
             triangle_count: 0,
             tri_bvh_start: 0,
             tri_bvh_count: 0,
+            is_shaded: true,
         }
     }
     pub fn to_gpu(&self) -> GpuObject {
@@ -258,7 +260,7 @@ impl Object {
             triangle_count: self.triangle_count as u32,
             tri_bvh_start: self.tri_bvh_start as u32,
             tri_bvh_count: self.tri_bvh_count as u32,
-            _padding4: 0,
+            is_shaded: self.is_shaded as u32,
             _padding5: 0,
             _padding6: 0,
             orientation: self.orientation,
