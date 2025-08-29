@@ -3,6 +3,7 @@ pub mod export;
 use std::any::TypeId;
 use egui::Ui;
 use export::{ExportedField, ExportKind};
+use crate::components::components::ColliderShape;
 
 /// Trait implemented by user components via `#[derive(Inspectable)]`
 pub trait Inspectable {
@@ -52,8 +53,25 @@ pub trait Inspectable {
                         }
                     }
                     ExportKind::Dropdown(ref options) => {
-                        ui.label(format!("Dropdown for {}: {:?}", field.name, options));
-                        // Optional: make this real ComboBox
+                        if field.type_id == TypeId::of::<ColliderShape>() {
+                            let val = &mut *(field.value as *mut ColliderShape);
+                            let mut idx = *val as usize;
+                            egui::ComboBox::from_label(field.name)
+                                .selected_text(options[idx].clone())
+                                .show_ui(ui, |ui| {
+                                    for (i, opt) in options.iter().enumerate() {
+                                        ui.selectable_value(&mut idx, i, opt);
+                                    }
+                                });
+                            *val = match idx {
+                                0 => ColliderShape::Sphere,
+                                1 => ColliderShape::Cube,
+                                2 => ColliderShape::Capsule,
+                                _ => *val,
+                            };
+                        } else {
+                            ui.label(format!("Dropdown for {}: {:?}", field.name, options));
+                        }
                     }
                 }
             }
