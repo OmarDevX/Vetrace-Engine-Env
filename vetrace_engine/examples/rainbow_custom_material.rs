@@ -119,7 +119,7 @@ impl App for RainbowExample {
         engine.world.insert(
             cam,
             Transform {
-                position: [0.0, 0.0, 0.0],
+                position: [0.0, 0.0, -3.0],
                 ..Default::default()
             },
         );

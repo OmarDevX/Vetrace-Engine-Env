@@ -1049,7 +1049,8 @@ fn shade_base(
 
     var material_result: MaterialResult;
     if (mat.has_custom_material != 0u) {
-        material_result = evaluate_custom_material(hit, normal, -normalize(hit), uv, mat.custom_material_id);
+        let view_dir = normalize(params.camera_pos.xyz - hit);
+        material_result = evaluate_custom_material(hit, normal, view_dir, uv, mat.custom_material_id);
         // Adopt roughness/metallic/emissive output by the custom shader
         mat.roughnessFactor = material_result.roughness;
         mat.metallicFactor = material_result.metallic;
