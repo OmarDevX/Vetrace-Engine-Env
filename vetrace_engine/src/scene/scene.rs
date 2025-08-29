@@ -112,19 +112,15 @@ impl Scene {
                     obj.is_glass = material.is_glass;
                     obj.specular_f0 = material.specular_f0.into();
                     obj.ior = material.ior;
-                    match shape {
-                        crate::components::components::Shape::Cube => {
-                            obj.is_cube = true;
-                            obj.radius = 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]);
-                        }
-                        crate::components::components::Shape::Sphere { radius } => {
-                            obj.is_cube = false;
-                            obj.radius = *radius;
-                        }
-                        crate::components::components::Shape::Mesh { .. } => {
-                            obj.is_cube = false;
-                            obj.radius = 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]);
-                        }
+                    if renderable.is_mesh {
+                        obj.is_cube = false;
+                        obj.radius = 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]);
+                    } else if shape.is_cube {
+                        obj.is_cube = true;
+                        obj.radius = 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]);
+                    } else {
+                        obj.is_cube = false;
+                        obj.radius = shape.radius;
                     }
                     obj.velocity = velocity.velocity;
                     // The `Velocity` component already stores the current
@@ -164,11 +160,14 @@ impl Scene {
                 }
             }
 
-            let is_cube = matches!(shape, crate::components::components::Shape::Cube) as u32;
+            let is_cube = if renderable.is_mesh { 0 } else { shape.is_cube as u32 };
             let is_mesh = renderable.is_mesh as u32;
-            let radius = match shape {
-                crate::components::components::Shape::Sphere { radius } => *radius,
-                _ => 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]),
+            let radius = if renderable.is_mesh {
+                0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2])
+            } else if shape.is_cube {
+                0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2])
+            } else {
+                shape.radius
             };
             let (tri_start, tri_count) = if renderable.is_mesh {
                 (renderable.triangle_start_idx, renderable.triangle_count)

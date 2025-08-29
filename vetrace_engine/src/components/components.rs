@@ -163,7 +163,11 @@ impl Inspectable for Collider {
         vec![
             ExportedField {
                 name: "shape",
-                kind: ExportKind::Slider { min: 0.0, max: 2.0 },
+                kind: ExportKind::Dropdown(vec![
+                    "Sphere".to_string(),
+                    "Cube".to_string(),
+                    "Capsule".to_string(),
+                ]),
                 value: &mut self.shape as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<ColliderShape>(),
             },
@@ -968,60 +972,41 @@ impl Inspectable for Children {
 }
 
 #[derive(Debug)]
-pub enum Shape {
-    Sphere {
-        radius: f32,
-    },
-    Cube,
-    Mesh {
-        triangle_start_idx: u32,
-        triangle_count: u32,
-    },
+pub struct Shape {
+    pub is_cube: bool,
+    pub radius: f32,
 }
+
 impl Default for Shape {
     fn default() -> Self {
-        Shape::Sphere { radius: 1.0 }
+        Self {
+            is_cube: false,
+            radius: 1.0,
+        }
     }
 }
+
 impl Component for Shape {}
 
 impl Inspectable for Shape {
     fn exported_fields_mut(&mut self) -> Vec<ExportedField> {
-        match self {
-            Shape::Sphere { radius } => vec![ExportedField {
+        vec![
+            ExportedField {
+                name: "is_cube",
+                kind: ExportKind::Checkbox,
+                value: &mut self.is_cube as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<bool>(),
+            },
+            ExportedField {
                 name: "radius",
                 kind: ExportKind::Slider {
                     min: 0.0,
                     max: 100.0,
                 },
-                value: radius as *mut _ as *mut dyn std::any::Any,
+                value: &mut self.radius as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
-            }],
-            Shape::Cube => vec![],
-            Shape::Mesh {
-                triangle_start_idx,
-                triangle_count,
-            } => vec![
-                ExportedField {
-                    name: "triangle_start_idx",
-                    kind: ExportKind::Slider {
-                        min: 0.0,
-                        max: 10000.0,
-                    },
-                    value: triangle_start_idx as *mut _ as *mut dyn std::any::Any,
-                    type_id: std::any::TypeId::of::<u32>(),
-                },
-                ExportedField {
-                    name: "triangle_count",
-                    kind: ExportKind::Slider {
-                        min: 0.0,
-                        max: 10000.0,
-                    },
-                    value: triangle_count as *mut _ as *mut dyn std::any::Any,
-                    type_id: std::any::TypeId::of::<u32>(),
-                },
-            ],
-        }
+            },
+        ]
     }
 }
 
