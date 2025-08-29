@@ -1472,24 +1472,70 @@ impl Engine {
                             ("color_tint", MaterialParameter::Vec3(v)) => {
                                 gpu.color_tint = [v[0], v[1], v[2], 1.0]
                             }
-                            ("roughness", MaterialParameter::Float(f)) => gpu.roughness = *f,
-                            ("metallic", MaterialParameter::Float(f)) => gpu.metallic = *f,
-                            ("noise_scale", MaterialParameter::Float(f)) => gpu.noise_scale = *f,
+                            ("roughness", MaterialParameter::Float(f)) => gpu.base_props[0] = *f,
+                            ("metallic", MaterialParameter::Float(f)) => gpu.base_props[1] = *f,
+                            ("noise_scale", MaterialParameter::Float(f)) => gpu.base_props[2] = *f,
                             ("emission_strength", MaterialParameter::Float(f)) => {
-                                gpu.emission_strength = *f
+                                gpu.base_props[3] = *f
                             }
                             ("custom_float_1", MaterialParameter::Float(f))
                             | ("rainbow_scale", MaterialParameter::Float(f)) => {
-                                gpu.custom_float_1 = *f
+                                gpu.custom_floats[0] = *f
                             }
                             ("custom_float_2", MaterialParameter::Float(f))
-                            | ("speed", MaterialParameter::Float(f)) => gpu.custom_float_2 = *f,
+                            | ("speed", MaterialParameter::Float(f)) => gpu.custom_floats[1] = *f,
                             ("custom_float_3", MaterialParameter::Float(f))
                             | ("glow_strength", MaterialParameter::Float(f)) => {
-                                gpu.custom_float_3 = *f
+                                gpu.custom_floats[2] = *f
                             }
                             ("custom_float_4", MaterialParameter::Float(f)) => {
-                                gpu.custom_float_4 = *f
+                                gpu.custom_floats[3] = *f
+                            }
+                            ("transparency", MaterialParameter::Float(f)) => {
+                                gpu.transparency_params[0] = *f
+                            }
+                            ("transmission", MaterialParameter::Float(f)) => {
+                                gpu.transparency_params[1] = *f
+                            }
+                            ("transmission_roughness", MaterialParameter::Float(f)) => {
+                                gpu.transparency_params[2] = *f
+                            }
+                            ("refraction_ior", MaterialParameter::Float(f)) => {
+                                gpu.transparency_params[3] = *f
+                            }
+                            ("subsurface_strength", MaterialParameter::Float(f)) => {
+                                gpu.subsurface_params[0] = *f
+                            }
+                            ("subsurface_radius", MaterialParameter::Vec3(v)) => {
+                                gpu.subsurface_params[1] = v[0];
+                                gpu.subsurface_params[2] = v[1];
+                                gpu.subsurface_params[3] = v[2];
+                            }
+                            ("clearcoat_strength", MaterialParameter::Float(f)) => {
+                                gpu.coat_aniso[0] = *f
+                            }
+                            ("clearcoat_roughness", MaterialParameter::Float(f)) => {
+                                gpu.coat_aniso[1] = *f
+                            }
+                            ("anisotropy", MaterialParameter::Float(f)) => {
+                                gpu.coat_aniso[2] = *f
+                            }
+                            ("anisotropy_rotation", MaterialParameter::Float(f)) => {
+                                gpu.coat_aniso[3] = *f
+                            }
+                            ("sheen_strength", MaterialParameter::Float(f)) => {
+                                gpu.sheen_params[0] = *f
+                            }
+                            ("sheen_tint", MaterialParameter::Vec3(v)) => {
+                                gpu.sheen_params[1] = v[0];
+                                gpu.sheen_params[2] = v[1];
+                                gpu.sheen_params[3] = v[2];
+                            }
+                            ("normal_strength", MaterialParameter::Float(f)) => {
+                                gpu.normal_disp[0] = *f
+                            }
+                            ("displacement_strength", MaterialParameter::Float(f)) => {
+                                gpu.normal_disp[1] = *f
                             }
                             ("texture", MaterialParameter::Texture(tex)) => {
                                 let ptr = std::sync::Arc::as_ptr(&tex.0);
@@ -1503,7 +1549,7 @@ impl Engine {
                             _ => {}
                         }
                     }
-                    gpu.custom_float_4 = time;
+                    gpu.custom_floats[3] = time;
                     custom_materials.push(gpu);
                     material_names.push(custom.material_type.clone());
                     shader_defs

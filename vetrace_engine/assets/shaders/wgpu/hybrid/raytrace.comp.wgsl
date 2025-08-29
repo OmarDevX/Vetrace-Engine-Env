@@ -58,14 +58,13 @@ struct MaterialParams {
 
 struct CustomMaterialParams {
     color_tint: vec4<f32>,
-    roughness: f32,
-    metallic: f32,
-    noise_scale: f32,
-    emission_strength: f32,
-    custom_float_1: f32,
-    custom_float_2: f32,
-    custom_float_3: f32,
-    custom_float_4: f32,
+    base_props: vec4<f32>,            // roughness, metallic, noise_scale, emission_strength
+    custom_floats: vec4<f32>,         // custom_float_1..4
+    transparency_params: vec4<f32>,   // transparency, transmission, transmission_roughness, refraction_ior
+    subsurface_params: vec4<f32>,     // subsurface_strength, subsurface_radius.rgb
+    coat_aniso: vec4<f32>,            // clearcoat_strength, clearcoat_roughness, anisotropy, anisotropy_rotation
+    sheen_params: vec4<f32>,          // sheen_strength, sheen_tint.rgb
+    normal_disp: vec4<f32>,           // normal_strength, displacement_strength, unused0, unused1
     texture_index: u32,
     _pad: vec3<u32>,
 };
@@ -76,6 +75,16 @@ struct MaterialResult {
     roughness: f32,
     metallic: f32,
     emission: vec3<f32>,
+    // Transparency and extended outputs
+    transparency: f32,
+    transmission: f32,
+    transmission_roughness: f32,
+    ior: f32,
+    subsurface: vec4<f32>,     // strength + RGB radii
+    clearcoat: vec2<f32>,      // strength + roughness
+    anisotropy: vec2<f32>,     // strength + rotation
+    sheen: vec4<f32>,          // strength + RGB tint
+    displacement: f32,
 };
 
 // MATERIAL_FUNCTIONS_PLACEHOLDER
@@ -983,6 +992,15 @@ fn default_material_result(hit_point: vec3<f32>, normal: vec3<f32>, _view_dir: v
     result.roughness = 1.0;
     result.metallic = 0.0;
     result.emission = vec3<f32>(0.0, 0.0, 0.0);
+    result.transparency = 0.0;
+    result.transmission = 0.0;
+    result.transmission_roughness = 0.0;
+    result.ior = 1.5;
+    result.subsurface = vec4<f32>(0.0);
+    result.clearcoat = vec2<f32>(0.0);
+    result.anisotropy = vec2<f32>(0.0);
+    result.sheen = vec4<f32>(0.0);
+    result.displacement = 0.0;
     return result;
 }
 
@@ -1008,6 +1026,15 @@ fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialPar
     result.roughness = mat.roughnessFactor;
     result.metallic = mat.metallicFactor;
     result.emission = mat.emissiveFactor * mat.emissiveStrength;
+    result.transparency = 0.0;
+    result.transmission = 0.0;
+    result.transmission_roughness = 0.0;
+    result.ior = mat.ior;
+    result.subsurface = vec4<f32>(0.0);
+    result.clearcoat = vec2<f32>(0.0);
+    result.anisotropy = vec2<f32>(0.0);
+    result.sheen = vec4<f32>(0.0);
+    result.displacement = 0.0;
     return result;
 }
 
