@@ -2,13 +2,12 @@ use rapier3d::na::{Quaternion, Translation3 as Translation, Unit, UnitQuaternion
 use rapier3d::prelude::*;
 
 use crate::{
-    Behaviour,
     components::components::{
         AngularVelocity, BallJoint, Collider, ColliderShape, KinematicBody, RevoluteJoint,
-        RigidBody3D,
-        StaticBody, Transform, Velocity,
+        RigidBody3D, StaticBody, Transform, Velocity,
     },
     engine::engine::Engine,
+    Behaviour,
 };
 
 pub struct RapierPhysicsSystem;
@@ -85,25 +84,14 @@ impl Behaviour for RapierPhysicsSystem {
             let handle = engine.physics.bodies.insert(builder.build());
 
             let mut col_builder = match c.shape {
-                ColliderShape::Sphere =>
-                    ColliderBuilder::ball(c.size[0] * 0.5),
-                ColliderShape::Cube =>
-                    ColliderBuilder::cuboid(c.size[0] * 0.5, c.size[1] * 0.5, c.size[2] * 0.5),
+                ColliderShape::Sphere => ColliderBuilder::ball(c.size[0] * 0.5),
+                ColliderShape::Cube => {
+                    ColliderBuilder::cuboid(c.size[0] * 0.5, c.size[1] * 0.5, c.size[2] * 0.5)
+                }
                 ColliderShape::Capsule => {
                     let radius = c.size[0] * 0.5;
                     let half_height = (c.size[1] * 0.5 - radius).max(0.0);
                     ColliderBuilder::capsule_y(half_height, radius)
-                }
-                ColliderShape::Auto => {
-                    if c.is_cube {
-                        ColliderBuilder::cuboid(
-                            t.size[0] * 0.5,
-                            t.size[1] * 0.5,
-                            t.size[2] * 0.5,
-                        )
-                    } else {
-                        ColliderBuilder::ball(c.radius)
-                    }
                 }
             };
             col_builder = col_builder.position(Isometry::from_parts(
@@ -116,9 +104,7 @@ impl Behaviour for RapierPhysicsSystem {
                 )),
             ));
             if let Some(rb) = engine.world.get::<RigidBody3D>(e) {
-                col_builder = col_builder
-                    .friction(rb.friction)
-                    .restitution(rb.bounciness);
+                col_builder = col_builder.friction(rb.friction).restitution(rb.bounciness);
             } else {
                 col_builder = col_builder.friction(1.0);
             }
@@ -287,7 +273,7 @@ impl Behaviour for RapierPhysicsSystem {
         }
 
         // Apply user-defined angular velocities and update collider sizes.
-        for (_e, t, av, rb, col) in engine
+        for (_e, _t, av, rb, col) in engine
             .world
             .query4_mut::<Transform, AngularVelocity, RigidBody3D, Collider>()
         {
@@ -316,17 +302,6 @@ impl Behaviour for RapierPhysicsSystem {
                                     let half_height = (col.size[1] * 0.5 - radius).max(0.0);
                                     SharedShape::capsule_y(half_height, radius)
                                 }
-                                ColliderShape::Auto => {
-                                    if col.is_cube {
-                                        SharedShape::cuboid(
-                                            t.size[0] * 0.5,
-                                            t.size[1] * 0.5,
-                                            t.size[2] * 0.5,
-                                        )
-                                    } else {
-                                        SharedShape::ball(col.radius)
-                                    }
-                                }
                             };
                             col_inst.set_shape(shape);
                         }
@@ -334,7 +309,7 @@ impl Behaviour for RapierPhysicsSystem {
                 }
             }
         }
-        for (_e, t, av, kb, col) in engine
+        for (_e, _t, av, kb, col) in engine
             .world
             .query4_mut::<Transform, AngularVelocity, KinematicBody, Collider>()
         {
@@ -361,17 +336,6 @@ impl Behaviour for RapierPhysicsSystem {
                                     let radius = col.size[0] * 0.5;
                                     let half_height = (col.size[1] * 0.5 - radius).max(0.0);
                                     SharedShape::capsule_y(half_height, radius)
-                                }
-                                ColliderShape::Auto => {
-                                    if col.is_cube {
-                                        SharedShape::cuboid(
-                                            t.size[0] * 0.5,
-                                            t.size[1] * 0.5,
-                                            t.size[2] * 0.5,
-                                        )
-                                    } else {
-                                        SharedShape::ball(col.radius)
-                                    }
                                 }
                             };
                             col_inst.set_shape(shape);

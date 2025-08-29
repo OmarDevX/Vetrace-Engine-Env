@@ -6,7 +6,7 @@ use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
 use rapier3d::na::{
-    Isometry3 as Isometry, Quaternion, Translation3 as Translation, UnitQuaternion, Vector3,
+    Isometry3 as Isometry, Quaternion, Translation3 as Translation, UnitQuaternion,
 };
 use rapier3d::prelude::{RigidBodyHandle, SharedShape};
 use serde::{Deserialize, Serialize};
@@ -123,25 +123,19 @@ impl Inspectable for PbrMaterial {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColliderShape {
-    /// Preserve previous behaviour using `radius`/`is_cube`
-    Auto = 0,
-    Sphere = 1,
-    Cube = 2,
-    Capsule = 3,
+    Sphere = 0,
+    Cube = 1,
+    Capsule = 2,
 }
 
 impl Default for ColliderShape {
     fn default() -> Self {
-        ColliderShape::Auto
+        ColliderShape::Sphere
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Collider {
-    /// Legacy radius for spherical colliders
-    pub radius: f32,
-    /// Legacy cube flag
-    pub is_cube: bool,
     /// Explicit collider shape
     pub shape: ColliderShape,
     /// Local offset of the collider relative to entity transform
@@ -155,9 +149,7 @@ pub struct Collider {
 impl Default for Collider {
     fn default() -> Self {
         Self {
-            radius: 0.5,
-            is_cube: false,
-            shape: ColliderShape::Auto,
+            shape: ColliderShape::Sphere,
             position: [0.0; 3],
             rotation: [0.0, 0.0, 0.0, 1.0],
             size: [1.0, 1.0, 1.0],
@@ -170,83 +162,98 @@ impl Inspectable for Collider {
     fn exported_fields_mut(&mut self) -> Vec<ExportedField> {
         vec![
             ExportedField {
-                name: "radius",
-                kind: ExportKind::Slider {
-                    min: 0.0,
-                    max: 100.0,
-                },
-                value: &mut self.radius as *mut _ as *mut dyn std::any::Any,
-                type_id: std::any::TypeId::of::<f32>(),
-            },
-            ExportedField {
-                name: "is_cube",
-                kind: ExportKind::Checkbox,
-                value: &mut self.is_cube as *mut _ as *mut dyn std::any::Any,
-                type_id: std::any::TypeId::of::<bool>(),
-            },
-            ExportedField {
                 name: "shape",
-                kind: ExportKind::Slider { min: 0.0, max: 3.0 },
+                kind: ExportKind::Slider { min: 0.0, max: 2.0 },
                 value: &mut self.shape as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<ColliderShape>(),
             },
             ExportedField {
                 name: "pos_x",
-                kind: ExportKind::Slider { min: -100.0, max: 100.0 },
+                kind: ExportKind::Slider {
+                    min: -100.0,
+                    max: 100.0,
+                },
                 value: &mut self.position[0] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "pos_y",
-                kind: ExportKind::Slider { min: -100.0, max: 100.0 },
+                kind: ExportKind::Slider {
+                    min: -100.0,
+                    max: 100.0,
+                },
                 value: &mut self.position[1] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "pos_z",
-                kind: ExportKind::Slider { min: -100.0, max: 100.0 },
+                kind: ExportKind::Slider {
+                    min: -100.0,
+                    max: 100.0,
+                },
                 value: &mut self.position[2] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "rot_x",
-                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                kind: ExportKind::Slider {
+                    min: -1.0,
+                    max: 1.0,
+                },
                 value: &mut self.rotation[0] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "rot_y",
-                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                kind: ExportKind::Slider {
+                    min: -1.0,
+                    max: 1.0,
+                },
                 value: &mut self.rotation[1] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "rot_z",
-                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                kind: ExportKind::Slider {
+                    min: -1.0,
+                    max: 1.0,
+                },
                 value: &mut self.rotation[2] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "rot_w",
-                kind: ExportKind::Slider { min: -1.0, max: 1.0 },
+                kind: ExportKind::Slider {
+                    min: -1.0,
+                    max: 1.0,
+                },
                 value: &mut self.rotation[3] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "size_x",
-                kind: ExportKind::Slider { min: 0.0, max: 100.0 },
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 100.0,
+                },
                 value: &mut self.size[0] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "size_y",
-                kind: ExportKind::Slider { min: 0.0, max: 100.0 },
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 100.0,
+                },
                 value: &mut self.size[1] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "size_z",
-                kind: ExportKind::Slider { min: 0.0, max: 100.0 },
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 100.0,
+                },
                 value: &mut self.size[2] as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
@@ -272,7 +279,7 @@ impl Collider {
     }
 
     /// Build a `SharedShape` representing this collider
-    pub fn shape(&self, base_size: [f32; 3]) -> SharedShape {
+    pub fn shape(&self) -> SharedShape {
         match self.shape {
             ColliderShape::Sphere => SharedShape::ball(self.size[0] * 0.5),
             ColliderShape::Cube => {
@@ -282,23 +289,6 @@ impl Collider {
                 let radius = self.size[0] * 0.5;
                 let half_height = (self.size[1] * 0.5 - radius).max(0.0);
                 SharedShape::capsule_y(half_height, radius)
-            }
-            ColliderShape::Auto => {
-                if self.is_cube {
-                    SharedShape::cuboid(base_size[0] * 0.5, base_size[1] * 0.5, base_size[2] * 0.5)
-                } else {
-                    let base = rapier3d::parry::shape::Ball::new(self.radius);
-                    let scale = Vector3::new(
-                        base_size[0] / (self.radius * 2.0),
-                        base_size[1] / (self.radius * 2.0),
-                        base_size[2] / (self.radius * 2.0),
-                    );
-                    match base.scaled(&scale, 8) {
-                        Some(either::Either::Left(b)) => SharedShape::new(b),
-                        Some(either::Either::Right(poly)) => SharedShape::new(poly),
-                        None => SharedShape::ball(self.radius),
-                    }
-                }
             }
         }
     }

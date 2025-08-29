@@ -1,4 +1,6 @@
-use vetrace_engine::components::components::{BallJoint, Collider, RigidBody3D, StaticBody};
+use vetrace_engine::components::components::{
+    BallJoint, Collider, ColliderShape, RigidBody3D, StaticBody,
+};
 use vetrace_engine::engine::Engine;
 use vetrace_engine::scene::object::Object;
 
@@ -48,7 +50,7 @@ fn main() {
                 },
             );
             if let Some(col) = engine.world.get_mut::<Collider>(ent) {
-                col.is_cube = true;
+                col.shape = ColliderShape::Cube;
             }
         }
         prev = link_id;

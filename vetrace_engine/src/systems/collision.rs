@@ -1,6 +1,6 @@
 use crate::behaviour::script::ScriptBehaviour;
 use crate::components::components::{
-    Collider, ObjectRef, RigidBody3D, ScriptComponent, StaticBody, Transform, Velocity,
+    Collider, RigidBody3D, ScriptComponent, StaticBody, Transform, Velocity,
 };
 use crate::ecs::{Behaviour, Entity};
 use crate::engine::engine::Engine;
@@ -15,18 +15,6 @@ pub struct CollisionEvent {
 pub struct CollisionSystem;
 
 impl CollisionSystem {
-    fn scaled_size(engine: &Engine, entity: Entity, size: [f32; 3]) -> [f32; 3] {
-        if let Some(obj_ref) = engine.world.get::<ObjectRef>(entity) {
-            if let Some(obj) = engine.scene.objects.get(obj_ref.id as usize) {
-                return [
-                    obj.scale[0] * obj.size[0],
-                    obj.scale[1] * obj.size[1],
-                    obj.scale[2] * obj.size[2],
-                ];
-            }
-        }
-        size
-    }
     fn handle_lua(engine: &mut Engine, event: CollisionEvent) {
         for &entity in &[event.a, event.b] {
             if let Some(script) = engine.get_component_mut_entity::<ScriptComponent>(entity) {
@@ -51,12 +39,10 @@ impl CollisionSystem {
         c2: &Collider,
         t2: &Transform,
     ) -> bool {
-        let size1 = Self::scaled_size(engine, e1, t1.size);
-        let size2 = Self::scaled_size(engine, e2, t2.size);
         let iso1 = c1.iso(t1);
         let iso2 = c2.iso(t2);
-        let s1 = c1.shape(size1);
-        let s2 = c2.shape(size2);
+        let s1 = c1.shape();
+        let s2 = c2.shape();
         rapier3d::parry::query::intersection_test(&iso1, &*s1, &iso2, &*s2).unwrap_or(false)
     }
 
@@ -69,12 +55,10 @@ impl CollisionSystem {
         c_dyn: &Collider,
         t_dyn: &Transform,
     ) -> Option<Vector<Real>> {
-        let size_static = Self::scaled_size(engine, static_e, t_static.size);
-        let size_dyn = Self::scaled_size(engine, dynamic_e, t_dyn.size);
         let iso1 = c_static.iso(t_static);
         let iso2 = c_dyn.iso(t_dyn);
-        let s1 = c_static.shape(size_static);
-        let s2 = c_dyn.shape(size_dyn);
+        let s1 = c_static.shape();
+        let s2 = c_dyn.shape();
         if let Ok(Some(contact)) = rapier3d::parry::query::contact(&iso1, &*s1, &iso2, &*s2, 0.0) {
             Some(contact.normal1.into_inner() * -contact.dist)
         } else {

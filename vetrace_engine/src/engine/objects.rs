@@ -1,6 +1,7 @@
 use super::Engine;
 use crate::components::components::{
-    AngularVelocity, Collider, Material, ObjMesh, ObjectRef, Renderable, Shape, Transform,
+    AngularVelocity, Collider, ColliderShape, Material, ObjMesh, ObjectRef, Renderable, Shape,
+    Transform,
 };
 use crate::ecs::Entity;
 use crate::ecs::World;
@@ -61,14 +62,29 @@ impl Engine {
                     triangle_count: obj.triangle_count as u32,
                 },
             );
-            self.world.insert(
-                entity,
-                Collider {
-                    radius: obj.radius,
-                    is_cube: obj.is_cube,
-                    ..Default::default()
-                },
-            );
+            let shape = if obj.is_mesh {
+                Shape::Mesh {
+                    triangle_start_idx: obj.triangle_start_idx as u32,
+                    triangle_count: obj.triangle_count as u32,
+                }
+            } else if obj.is_cube {
+                Shape::Cube
+            } else {
+                Shape::Sphere { radius: obj.radius }
+            };
+
+            let mut collider = Collider::default();
+            match shape {
+                Shape::Cube | Shape::Mesh { .. } => {
+                    collider.shape = ColliderShape::Cube;
+                    collider.size = final_size;
+                }
+                Shape::Sphere { radius } => {
+                    collider.shape = ColliderShape::Sphere;
+                    collider.size = [radius * 2.0, radius * 2.0, radius * 2.0];
+                }
+            }
+            self.world.insert(entity, collider);
             self.world.insert(
                 entity,
                 Material {
@@ -84,16 +100,6 @@ impl Engine {
                     angular_acceleration: obj.angular_acceleration,
                 },
             );
-            let shape = if obj.is_mesh {
-                Shape::Mesh {
-                    triangle_start_idx: obj.triangle_start_idx as u32,
-                    triangle_count: obj.triangle_count as u32,
-                }
-            } else if obj.is_cube {
-                Shape::Cube
-            } else {
-                Shape::Sphere { radius: obj.radius }
-            };
             self.world.insert(entity, shape);
         }
         self.core.register_object_entity(object_id, entity);
