@@ -1,9 +1,10 @@
-use crate::components::components::{Sprite3D, Transform};
+use crate::components::components::{Material, ObjectRef, Renderable, Shape, Sprite3D, Transform};
 use crate::ecs::{entity::Entity, Behaviour};
 use crate::engine::engine::Engine;
 use crate::gpu::{GpuMesh, GpuTexture, MeshHandle, TextureHandle as GpuTextureHandle, Vertex};
 use crate::materials::PbrMaterial;
 use crate::rendering::texture::TextureHandle as CpuTextureHandle;
+use crate::scene::object::{GpuTriangle, Object};
 use std::sync::Arc;
 use wgpu::SamplerDescriptor;
 
@@ -65,8 +66,7 @@ impl Behaviour for SpriteMeshSystem {
     fn update(&mut self, engine: &mut Engine, _dt: f32) {
         let quad = self.ensure_quad(engine);
 
-        // Clone data we need while holding the mutable query borrow, then
-        // release the borrow before mutating the world again.
+        // Gather sprite entities while holding the query borrow, then release it
         let sprite_data: Vec<(Entity, CpuTextureHandle)> = {
             let mut data = Vec::new();
             for (e, transform, sprite) in engine.world.query2_mut::<Transform, Sprite3D>() {
@@ -79,10 +79,94 @@ impl Behaviour for SpriteMeshSystem {
 
         let device = engine.renderer.device();
         for (e, tex) in sprite_data {
-            // Always replace the mesh with the quad to guarantee sprites render
+            if engine.world.get::<ObjectRef>(e).is_none() {
+                if let Some(t) = engine.world.get::<Transform>(e).cloned() {
+                    let radius = 0.5 * t.size[0].max(t.size[1]);
+                    let tris = vec![
+                        GpuTriangle {
+                            v0: [-0.5, -0.5, 0.0],
+                            _pad0: 0.0,
+                            e1: [1.0, 0.0, 0.0],
+                            _pad1: 0.0,
+                            e2: [0.0, 1.0, 0.0],
+                            _pad2: 0.0,
+                            n0: [0.0, 0.0, 1.0],
+                            _pad3: 0.0,
+                            n1: [0.0, 0.0, 1.0],
+                            _pad4: 0.0,
+                            n2: [0.0, 0.0, 1.0],
+                            _pad5: 0.0,
+                            uv0: [0.0, 0.0],
+                            duv1: [1.0, 0.0],
+                            duv2: [0.0, 1.0],
+                            material_index: 0,
+                            _pad6: 0,
+                        },
+                        GpuTriangle {
+                            v0: [-0.5, 0.5, 0.0],
+                            _pad0: 0.0,
+                            e1: [1.0, -1.0, 0.0],
+                            _pad1: 0.0,
+                            e2: [1.0, 0.0, 0.0],
+                            _pad2: 0.0,
+                            n0: [0.0, 0.0, 1.0],
+                            _pad3: 0.0,
+                            n1: [0.0, 0.0, 1.0],
+                            _pad4: 0.0,
+                            n2: [0.0, 0.0, 1.0],
+                            _pad5: 0.0,
+                            uv0: [0.0, 1.0],
+                            duv1: [1.0, -1.0],
+                            duv2: [1.0, 0.0],
+                            material_index: 0,
+                            _pad6: 0,
+                        },
+                    ];
+
+                    let start = engine.scene.triangles.len();
+                    engine.scene.add_triangles(tris.clone());
+                    let mut nodes = crate::scene::tri_bvh::build_bvh(&tris);
+                    let b_start = engine.scene.tri_bvh_nodes.len();
+                    crate::scene::tri_bvh::offset_nodes(&mut nodes, b_start as i32);
+                    let b_count = nodes.len();
+                    engine.scene.add_tri_bvh_nodes(nodes);
+
+                    let mut obj = Object::new(t.position, radius, [1.0, 1.0, 1.0], 1.0, 0.0, false);
+                    obj.is_cube = false;
+                    obj.is_mesh = true;
+                    obj.triangle_start_idx = start;
+                    obj.triangle_count = tris.len();
+                    obj.tri_bvh_start = b_start;
+                    obj.tri_bvh_count = b_count;
+                    obj.size = [1.0, 1.0, 0.0];
+                    obj.orientation = t.orientation;
+                    engine.scene.add_object(obj);
+                    let obj_id = (engine.scene.objects.len() - 1) as u32;
+                    engine.world.insert(e, ObjectRef { id: obj_id });
+                    engine.world.insert(
+                        e,
+                        Renderable {
+                            color: [1.0, 1.0, 1.0],
+                            roughness: 1.0,
+                            emission: 0.0,
+                            is_mesh: true,
+                            triangle_start_idx: start as u32,
+                            triangle_count: tris.len() as u32,
+                        },
+                    );
+                    engine.world.insert(e, Material::default());
+                    engine.world.insert(
+                        e,
+                        Shape {
+                            is_cube: false,
+                            radius,
+                        },
+                    );
+                }
+            }
+
             let _ = engine.world.insert(e, quad.clone());
 
-            // Build a basic PBR material with the sprite texture every update
             let view = tex
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
