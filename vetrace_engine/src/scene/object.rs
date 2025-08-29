@@ -25,7 +25,7 @@ pub struct GpuObject {
     pub triangle_count: u32,
     pub tri_bvh_start: u32,
     pub tri_bvh_count: u32,
-    pub _padding4: u32,
+    pub is_shaded: u32,
     pub _padding5: u32,
     pub _padding6: u32,
 }
@@ -47,7 +47,7 @@ impl Default for GpuObject {
             triangle_count: 0,
             tri_bvh_start: 0,
             tri_bvh_count: 0,
-            _padding4: 0,
+            is_shaded: 1,
             _padding5: 0,
             _padding6: 0,
             orientation: [0.0, 0.0, 0.0, 1.0],
@@ -119,34 +119,30 @@ impl Default for GpuMaterial {
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GpuCustomMaterial {
     pub color_tint: [f32; 4],
-    pub roughness: f32,
-    pub metallic: f32,
-    pub noise_scale: f32,
-    pub emission_strength: f32,
-    pub custom_float_1: f32,
-    pub custom_float_2: f32,
-    pub custom_float_3: f32,
-    pub custom_float_4: f32,
+    pub base_props: [f32; 4],            // roughness, metallic, noise_scale, emission_strength
+    pub custom_floats: [f32; 4],         // custom_float_1..4
+    pub transparency_params: [f32; 4],   // transparency, transmission, transmission_roughness, refraction_ior
+    pub subsurface_params: [f32; 4],     // subsurface_strength, subsurface_radius.rgb
+    pub coat_aniso: [f32; 4],            // clearcoat_strength, clearcoat_roughness, anisotropy, anisotropy_rotation
+    pub sheen_params: [f32; 4],          // sheen_strength, sheen_tint.rgb
+    pub normal_disp: [f32; 4],           // normal_strength, displacement_strength, unused, unused
     pub texture_index: u32,
-    pub _pad0: [u32; 3],
-    pub _pad: [u32; 4],
+    pub _pad: [u32; 3],
 }
 
 impl Default for GpuCustomMaterial {
     fn default() -> Self {
         Self {
             color_tint: [1.0, 1.0, 1.0, 1.0],
-            roughness: 0.5,
-            metallic: 0.0,
-            noise_scale: 1.0,
-            emission_strength: 0.0,
-            custom_float_1: 0.0,
-            custom_float_2: 0.0,
-            custom_float_3: 0.0,
-            custom_float_4: 0.0,
+            base_props: [0.5, 0.0, 1.0, 0.0],
+            custom_floats: [0.0, 0.0, 0.0, 0.0],
+            transparency_params: [0.0, 0.0, 0.0, 1.5],
+            subsurface_params: [0.0, 0.0, 0.0, 0.0],
+            coat_aniso: [0.0, 0.0, 0.0, 0.0],
+            sheen_params: [0.0, 0.0, 0.0, 0.0],
+            normal_disp: [0.0, 0.0, 0.0, 0.0],
             texture_index: 0,
-            _pad0: [0; 3],
-            _pad: [0; 4],
+            _pad: [0; 3],
         }
     }
 }
@@ -207,6 +203,7 @@ pub struct Object {
     pub triangle_count: usize,
     pub tri_bvh_start: usize,
     pub tri_bvh_count: usize,
+    pub is_shaded: bool,
 }
 
 impl Object {
@@ -243,6 +240,7 @@ impl Object {
             triangle_count: 0,
             tri_bvh_start: 0,
             tri_bvh_count: 0,
+            is_shaded: true,
         }
     }
     pub fn to_gpu(&self) -> GpuObject {
@@ -262,7 +260,7 @@ impl Object {
             triangle_count: self.triangle_count as u32,
             tri_bvh_start: self.tri_bvh_start as u32,
             tri_bvh_count: self.tri_bvh_count as u32,
-            _padding4: 0,
+            is_shaded: self.is_shaded as u32,
             _padding5: 0,
             _padding6: 0,
             orientation: self.orientation,

@@ -13,7 +13,7 @@ struct Object {
     triangle_count: u32,
     tri_bvh_start: u32,
     tri_bvh_count: u32,
-    _pad4: u32,
+    is_shaded: u32,
     _pad5: u32,
     _pad6: u32,
 };

@@ -23,13 +23,23 @@ fn evaluate_rainbow_material(
     params: CustomMaterialParams
 ) -> MaterialResult {
     var result: MaterialResult;
-    let time = params.custom_float_4;
-    let rainbow_factor = dot(hit_point, vec3<f32>(1.0, 0.0, 0.0)) * params.custom_float_1 + time * params.custom_float_2;
+    let time = params.custom_floats.w;
+    let rainbow_factor =
+        dot(hit_point, vec3<f32>(1.0, 0.0, 0.0)) * params.custom_floats.x + time * params.custom_floats.y;
     let hue = fract(rainbow_factor);
     let rainbow_color = hsv_to_rgb(vec3<f32>(hue, 1.0, 1.0));
     result.base_color = rainbow_color;
-    result.roughness = params.roughness;
-    result.metallic = params.metallic;
-    result.emission = rainbow_color * params.custom_float_3;
+    result.roughness = params.base_props.x;
+    result.metallic = params.base_props.y;
+    result.emission = rainbow_color * params.custom_floats.z;
+    result.transparency = params.transparency_params.x;
+    result.transmission = params.transparency_params.y;
+    result.transmission_roughness = params.transparency_params.z;
+    result.ior = params.transparency_params.w;
+    result.subsurface = vec4<f32>(params.subsurface_params.x, params.subsurface_params.yzw);
+    result.clearcoat = params.coat_aniso.xy;
+    result.anisotropy = params.coat_aniso.zw;
+    result.sheen = vec4<f32>(params.sheen_params.x, params.sheen_params.yzw);
+    result.displacement = params.normal_disp.y;
     return result;
 }

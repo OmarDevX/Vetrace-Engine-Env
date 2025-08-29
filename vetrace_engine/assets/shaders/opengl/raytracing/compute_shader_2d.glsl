@@ -24,7 +24,7 @@ struct Object {
     uint triangle_count;
     uint tri_bvh_start;
     uint tri_bvh_count;
-    uint _padding4;
+    uint is_shaded;
 };
 
 struct TriBvhNode {
