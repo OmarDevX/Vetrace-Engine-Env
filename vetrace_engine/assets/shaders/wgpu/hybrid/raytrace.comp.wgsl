@@ -66,7 +66,9 @@ struct CustomMaterialParams {
     sheen_params: vec4<f32>,          // sheen_strength, sheen_tint.rgb
     normal_disp: vec4<f32>,           // normal_strength, displacement_strength, unused0, unused1
     texture_index: u32,
-    _pad: vec3<u32>,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
 };
 
 struct MaterialResult {
