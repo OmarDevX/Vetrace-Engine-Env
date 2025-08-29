@@ -1,18 +1,18 @@
+use crate::custom_material::RaytraceShaderCompiler;
 use crate::math::*;
 use crate::rendering::renderer::RenderParams;
 use crate::rendering::texture::set_wgpu_device_queue;
 use crate::scene::object::{
     GpuAtmosphere, GpuCustomMaterial, GpuMaterial, GpuObject, GpuTriangle, MAX_ATMOSPHERES,
 };
-use crate::custom_material::RaytraceShaderCompiler;
 use crate::scene::{bvh::GpuBvhNode, tri_bvh::GpuTriBvhNode};
 use bytemuck::Zeroable;
 use egui::{ClippedPrimitive, TexturesDelta};
 use sdl2::video::Window;
+use std::num::NonZeroU64;
 use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::{util::DeviceExt, *};
-use std::num::NonZeroU64;
 
 use super::setup::{create_textures, init_wgpu};
 use super::types::*;
@@ -146,6 +146,7 @@ pub struct WgpuRenderer {
     sprite_vertices_cache: Vec<[f32; 5]>,
     prev_material_names: Vec<String>,
     prev_shader_defs: Vec<(String, String)>,
+    prev_triangles: Vec<GpuTriangle>,
 }
 
 include!("renderer_impl.inc.rs");

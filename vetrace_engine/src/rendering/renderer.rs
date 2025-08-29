@@ -1,17 +1,24 @@
+use crate::rendering::resource::{compile_shader, link_program};
+use crate::rendering::ssbo::{create_ssbo, update_ssbo};
+use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle};
 use gl::types::*;
+use sdl2::video::Window;
 use std::ffi::CString;
 use std::mem::size_of;
 use std::ptr;
-use crate::scene::object::{GpuObject, GpuTriangle, GpuAtmosphere};
-use crate::rendering::ssbo::{create_ssbo, update_ssbo};
-use crate::rendering::resource::{compile_shader, link_program};
-use sdl2::video::Window;
 
 fn load_gl(window: &Window) {
     gl::load_with(|s| window.subsystem().gl_get_proc_address(s) as *const _);
 }
 
-fn create_texture(width: i32, height: i32, internal: GLint, format: GLenum, ty: GLenum, filter: GLint) -> GLuint {
+fn create_texture(
+    width: i32,
+    height: i32,
+    internal: GLint,
+    format: GLenum,
+    ty: GLenum,
+    filter: GLint,
+) -> GLuint {
     unsafe {
         let mut tex = 0;
         gl::GenTextures(1, &mut tex);
@@ -34,7 +41,14 @@ fn create_texture(width: i32, height: i32, internal: GLint, format: GLenum, ty: 
     }
 }
 
-fn resize_texture(tex: GLuint, width: i32, height: i32, internal: GLint, format: GLenum, ty: GLenum) {
+fn resize_texture(
+    tex: GLuint,
+    width: i32,
+    height: i32,
+    internal: GLint,
+    format: GLenum,
+    ty: GLenum,
+) {
     unsafe {
         gl::BindTexture(gl::TEXTURE_2D, tex);
         gl::TexImage2D(
@@ -125,6 +139,7 @@ pub struct Renderer {
     pub tri_bvh_ssbo: GLuint,
     uniforms: Uniforms,
     denoise_uniforms: DenoiseUniforms,
+    prev_triangles: Vec<GpuTriangle>,
 }
 
 impl Renderer {
@@ -145,18 +160,14 @@ impl Renderer {
         } else {
             include_str!("../../assets/shaders/opengl/raytracing/compute_shader.glsl")
         };
-        let denoise_src: &str = include_str!(
-            "../../assets/shaders/opengl/raytracing/denoise_shader.glsl",
-        );
+        let denoise_src: &str =
+            include_str!("../../assets/shaders/opengl/raytracing/denoise_shader.glsl",);
         const vert_src: &str =
             include_str!("../../assets/shaders/opengl/raster/quad_vertex_shader.glsl");
         const frag_src: &str =
             include_str!("../../assets/shaders/opengl/raster/quad_fragment_shader.glsl");
-        const blur_vert_src: &str =
-            include_str!("../../assets/shaders/opengl/ui/blur.vert");
-        const blur_frag_src: &str =
-            include_str!("../../assets/shaders/opengl/ui/blur.frag");
-
+        const blur_vert_src: &str = include_str!("../../assets/shaders/opengl/ui/blur.vert");
+        const blur_frag_src: &str = include_str!("../../assets/shaders/opengl/ui/blur.frag");
 
         let ray_shader = compile_shader(&ray_src, gl::COMPUTE_SHADER);
         let denoise_shader = compile_shader(&denoise_src, gl::COMPUTE_SHADER);
@@ -174,7 +185,7 @@ impl Renderer {
             let c_name = CString::new(name).unwrap();
             let loc = unsafe { gl::GetUniformLocation(ray_program, c_name.as_ptr()) };
             if loc == -1 && warn_missing {
-                    println!("Warning: Uniform '{}' not found", name);
+                println!("Warning: Uniform '{}' not found", name);
             }
             loc
         };
@@ -316,6 +327,7 @@ impl Renderer {
             tri_bvh_ssbo,
             uniforms,
             denoise_uniforms,
+            prev_triangles: Vec::new(),
         }
     }
     pub fn resize(&mut self, width: i32, height: i32) {
@@ -326,25 +338,71 @@ impl Renderer {
             gl::Viewport(0, 0, width, height);
 
             // Resize the output texture
-            resize_texture(self.texture, width, height, gl::RGBA32F as GLint, gl::RGBA, gl::FLOAT);
-            resize_texture(self.ray_texture, width, height, gl::RGBA32F as GLint, gl::RGBA, gl::FLOAT);
-            resize_texture(self.depth_texture, width, height, gl::R32F as GLint, gl::RED, gl::FLOAT);
-            resize_texture(self.normal_texture, width, height, gl::RGBA32F as GLint, gl::RGBA, gl::FLOAT);
-            resize_texture(self.capture_texture, width, height, gl::RGBA as GLint, gl::RGBA, gl::UNSIGNED_BYTE);
+            resize_texture(
+                self.texture,
+                width,
+                height,
+                gl::RGBA32F as GLint,
+                gl::RGBA,
+                gl::FLOAT,
+            );
+            resize_texture(
+                self.ray_texture,
+                width,
+                height,
+                gl::RGBA32F as GLint,
+                gl::RGBA,
+                gl::FLOAT,
+            );
+            resize_texture(
+                self.depth_texture,
+                width,
+                height,
+                gl::R32F as GLint,
+                gl::RED,
+                gl::FLOAT,
+            );
+            resize_texture(
+                self.normal_texture,
+                width,
+                height,
+                gl::RGBA32F as GLint,
+                gl::RGBA,
+                gl::FLOAT,
+            );
+            resize_texture(
+                self.capture_texture,
+                width,
+                height,
+                gl::RGBA as GLint,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+            );
         }
 
         // Reset frame counter after resize
         self.reset_frame();
     }
-    pub fn update_scene_data(&mut self, objects: &[GpuObject], triangles: &[GpuTriangle], bvh: &[crate::scene::bvh::GpuBvhNode], tri_bvh: &[crate::scene::tri_bvh::GpuTriBvhNode]) {
+    pub fn update_scene_data(
+        &mut self,
+        objects: &[GpuObject],
+        triangles: &[GpuTriangle],
+        bvh: &[crate::scene::bvh::GpuBvhNode],
+        tri_bvh: &[crate::scene::tri_bvh::GpuTriBvhNode],
+    ) {
         update_ssbo(self.object_ssbo, objects);
-        update_ssbo(self.triangle_ssbo, triangles);
+        if self.prev_triangles.len() != triangles.len()
+            || bytemuck::cast_slice(&self.prev_triangles) != bytemuck::cast_slice(triangles)
+        {
+            update_ssbo(self.triangle_ssbo, triangles);
+            self.prev_triangles = triangles.to_vec();
+        }
         update_ssbo(self.bvh_ssbo, bvh);
         update_ssbo(self.tri_bvh_ssbo, tri_bvh);
-    //      println!("SSBO update: objects {} bytes, triangles {} bytes",
-    //     objects.len() * size_of::<GpuObject>(),
-    //     triangles.len() * size_of::<GpuTriangle>());
-     }
+        //      println!("SSBO update: objects {} bytes, triangles {} bytes",
+        //     objects.len() * size_of::<GpuObject>(),
+        //     triangles.len() * size_of::<GpuTriangle>());
+    }
 
     pub fn render(&mut self, params: &RenderParams) {
         unsafe {
@@ -374,7 +432,16 @@ impl Renderer {
             gl::Uniform3fv(self.uniforms.camera_velocity, 1, params.velocity.as_ptr());
             gl::Uniform1f(self.uniforms.fov, params.fov);
             gl::Uniform1i(self.uniforms.is_fisheye, params.is_fisheye);
-            gl::Uniform3fv(self.uniforms.skycolor, 1, [params.skycolor[0]/255.0,params.skycolor[1]/255.0,params.skycolor[2]/255.0].as_ptr());
+            gl::Uniform3fv(
+                self.uniforms.skycolor,
+                1,
+                [
+                    params.skycolor[0] / 255.0,
+                    params.skycolor[1] / 255.0,
+                    params.skycolor[2] / 255.0,
+                ]
+                .as_ptr(),
+            );
             let halton = |mut idx: i32, base: i32| -> f32 {
                 let mut f = 1.0f32;
                 let mut r = 0.0f32;
@@ -393,10 +460,38 @@ impl Renderer {
             gl::Uniform1i(self.uniforms.num_objects, params.num_objects);
 
             // Bind texture for compute shader output
-            let compute_output = if self.is_2d { self.texture } else { self.ray_texture };
-            gl::BindImageTexture(0, compute_output, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RGBA32F);
-            gl::BindImageTexture(1, self.depth_texture, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::R32F);
-            gl::BindImageTexture(2, self.normal_texture, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RGBA32F);
+            let compute_output = if self.is_2d {
+                self.texture
+            } else {
+                self.ray_texture
+            };
+            gl::BindImageTexture(
+                0,
+                compute_output,
+                0,
+                gl::FALSE,
+                0,
+                gl::WRITE_ONLY,
+                gl::RGBA32F,
+            );
+            gl::BindImageTexture(
+                1,
+                self.depth_texture,
+                0,
+                gl::FALSE,
+                0,
+                gl::WRITE_ONLY,
+                gl::R32F,
+            );
+            gl::BindImageTexture(
+                2,
+                self.normal_texture,
+                0,
+                gl::FALSE,
+                0,
+                gl::WRITE_ONLY,
+                gl::RGBA32F,
+            );
 
             // Dispatch compute shader
             gl::DispatchCompute(
@@ -411,12 +506,48 @@ impl Renderer {
             // Denoise pass for 3D rendering
             if !self.is_2d {
                 gl::UseProgram(self.denoise_program);
-                gl::Uniform2fv(self.denoise_uniforms.taa_jitter, 1, [jitter_x, jitter_y].as_ptr());
+                gl::Uniform2fv(
+                    self.denoise_uniforms.taa_jitter,
+                    1,
+                    [jitter_x, jitter_y].as_ptr(),
+                );
                 gl::Uniform1i(self.denoise_uniforms.frame_number, self.frame_number);
-                gl::BindImageTexture(0, self.ray_texture, 0, gl::FALSE, 0, gl::READ_ONLY, gl::RGBA32F);
-                gl::BindImageTexture(1, self.texture, 0, gl::FALSE, 0, gl::READ_WRITE, gl::RGBA32F);
-                gl::BindImageTexture(2, self.depth_texture, 0, gl::FALSE, 0, gl::READ_ONLY, gl::R32F);
-                gl::BindImageTexture(3, self.normal_texture, 0, gl::FALSE, 0, gl::READ_ONLY, gl::RGBA32F);
+                gl::BindImageTexture(
+                    0,
+                    self.ray_texture,
+                    0,
+                    gl::FALSE,
+                    0,
+                    gl::READ_ONLY,
+                    gl::RGBA32F,
+                );
+                gl::BindImageTexture(
+                    1,
+                    self.texture,
+                    0,
+                    gl::FALSE,
+                    0,
+                    gl::READ_WRITE,
+                    gl::RGBA32F,
+                );
+                gl::BindImageTexture(
+                    2,
+                    self.depth_texture,
+                    0,
+                    gl::FALSE,
+                    0,
+                    gl::READ_ONLY,
+                    gl::R32F,
+                );
+                gl::BindImageTexture(
+                    3,
+                    self.normal_texture,
+                    0,
+                    gl::FALSE,
+                    0,
+                    gl::READ_ONLY,
+                    gl::RGBA32F,
+                );
                 gl::DispatchCompute(
                     ((self.screen_width + 15) / 16) as u32,
                     ((self.screen_height + 15) / 16) as u32,
@@ -468,18 +599,28 @@ impl Renderer {
     pub fn blur_regions(&mut self, regions: &[(i32, i32, i32, i32)], feather: f32) {
         unsafe {
             gl::UseProgram(self.blur_program);
-            let res_loc = gl::GetUniformLocation(self.blur_program, CString::new("resolution").unwrap().as_ptr());
+            let res_loc = gl::GetUniformLocation(
+                self.blur_program,
+                CString::new("resolution").unwrap().as_ptr(),
+            );
             gl::Uniform2f(res_loc, self.screen_width as f32, self.screen_height as f32);
-            let feat_loc = gl::GetUniformLocation(self.blur_program, CString::new("feather").unwrap().as_ptr());
+            let feat_loc = gl::GetUniformLocation(
+                self.blur_program,
+                CString::new("feather").unwrap().as_ptr(),
+            );
             gl::Uniform1f(feat_loc, feather);
-            let tex_loc = gl::GetUniformLocation(self.blur_program, CString::new("screenTex").unwrap().as_ptr());
+            let tex_loc = gl::GetUniformLocation(
+                self.blur_program,
+                CString::new("screenTex").unwrap().as_ptr(),
+            );
             gl::Uniform1i(tex_loc, 0);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, self.capture_texture);
             gl::BindVertexArray(self.vao);
             gl::Disable(gl::DEPTH_TEST);
             gl::Enable(gl::SCISSOR_TEST);
-            let region_loc = gl::GetUniformLocation(self.blur_program, CString::new("region").unwrap().as_ptr());
+            let region_loc =
+                gl::GetUniformLocation(self.blur_program, CString::new("region").unwrap().as_ptr());
             for (x, y, w, h) in regions {
                 gl::Uniform4f(region_loc, *x as f32, *y as f32, *w as f32, *h as f32);
                 gl::Scissor(*x, *y, *w, *h);
@@ -516,5 +657,4 @@ impl Renderer {
 
     #[cfg(feature = "wgpu")]
     pub fn set_post_fx_uniforms(&mut self, _fx: crate::rendering::wgpu_renderer::PostFxUniforms) {}
-
 }

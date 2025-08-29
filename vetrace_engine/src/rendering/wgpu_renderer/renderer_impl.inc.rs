@@ -1952,6 +1952,7 @@ impl WgpuRenderer {
             sprite_vertices_cache: Vec::new(),
             prev_material_names: Vec::new(),
             prev_shader_defs: Vec::new(),
+            prev_triangles: vec![GpuTriangle::zeroed()],
         }
     }
 
@@ -2441,19 +2442,30 @@ impl WgpuRenderer {
                 contents: bytemuck::cast_slice(&obj_data),
                 usage: BufferUsages::STORAGE,
             });
-        let default_tri;
-        let tri_bytes: &[u8];
-        if triangles.is_empty() {
-            default_tri = GpuTriangle::zeroed();
-            tri_bytes = bytemuck::bytes_of(&default_tri);
-        } else {
-            tri_bytes = bytemuck::cast_slice(triangles);
+        let tri_changed = self.prev_triangles.len() != triangles.len()
+            || bytemuck::cast_slice(&self.prev_triangles)
+                != bytemuck::cast_slice(triangles);
+        if tri_changed {
+            let default_tri;
+            let tri_bytes: &[u8];
+            if triangles.is_empty() {
+                default_tri = GpuTriangle::zeroed();
+                tri_bytes = bytemuck::bytes_of(&default_tri);
+            } else {
+                tri_bytes = bytemuck::cast_slice(triangles);
+            }
+            if triangles.len() == self.prev_triangles.len() {
+                self.queue.write_buffer(&self.triangle_buffer, 0, tri_bytes);
+            } else {
+                self.triangle_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("triangles"),
+                    contents: tri_bytes,
+                    usage: BufferUsages::STORAGE,
+                });
+            }
+            self.prev_triangles = triangles.to_vec();
         }
-        self.triangle_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("triangles"),
-                                                              contents: tri_bytes,
-                                                              usage: BufferUsages::STORAGE,
-        });
+        self.triangle_count = triangles.len() as u32;
         let default_bvh;
         let bvh_data = if bvh.is_empty() {
             default_bvh = GpuBvhNode::default();
