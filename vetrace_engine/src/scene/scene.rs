@@ -119,7 +119,7 @@ impl Scene {
                         }
                         crate::components::components::Shape::Sphere { radius } => {
                             obj.is_cube = false;
-                            obj.radius = radius;
+                            obj.radius = *radius;
                         }
                         crate::components::components::Shape::Mesh { .. } => {
                             obj.is_cube = false;
@@ -167,7 +167,7 @@ impl Scene {
             let is_cube = matches!(shape, crate::components::components::Shape::Cube) as u32;
             let is_mesh = renderable.is_mesh as u32;
             let radius = match shape {
-                crate::components::components::Shape::Sphere { radius } => radius,
+                crate::components::components::Shape::Sphere { radius } => *radius,
                 _ => 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]),
             };
             let (tri_start, tri_count) = if renderable.is_mesh {
