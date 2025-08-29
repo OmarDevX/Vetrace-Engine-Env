@@ -15,7 +15,6 @@ use crate::scene::scene::Scene;
 #[cfg(all(not(feature = "wgpu"), feature = "use_epi"))]
 use crate::shared::ShaderVersion;
 use crate::systems::free_flight::FreeFlightState;
-#[cfg(not(feature = "wgpu"))]
 use egui::Context as EguiContext;
 use std::sync::Arc;
 

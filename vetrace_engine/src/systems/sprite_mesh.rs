@@ -1,4 +1,5 @@
-use crate::components::components::{Sprite3D, Transform, PbrMaterial};
+use crate::components::components::{Sprite3D, Transform};
+use crate::materials::PbrMaterial;
 use crate::ecs::Behaviour;
 use crate::engine::engine::Engine;
 use crate::gpu::{GpuMesh, MeshHandle, Vertex};
