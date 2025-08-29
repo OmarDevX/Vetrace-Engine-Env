@@ -111,21 +111,22 @@ impl WgpuRenderer {
                                                          view_formats: &[],
         });
         let blur_src_view = blur_src_texture.create_view(&TextureViewDescriptor::default());
-        // Create a placeholder object buffer that matches the size expected by
-        // the compute shader for a single `GpuObject`. Wgpu rejects zero sized
-        // bindings, so allocating enough space for one object ensures the bind
-        // group is always valid even when the scene has no objects.
+        // Create placeholder buffers large enough to satisfy the minimum
+        // binding size required by the shaders. Even with an empty scene the
+        // renderer expects space for at least 64 objects and materials.
+        const MIN_SCENE_CAPACITY: u64 = 64;
         let object_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("objects"),
-                                                 size: std::mem::size_of::<GpuObject>() as u64,
-                                                 usage: BufferUsages::STORAGE,
-                                                 mapped_at_creation: false,
+            size: std::mem::size_of::<GpuObject>() as u64 * MIN_SCENE_CAPACITY,
+            usage: BufferUsages::STORAGE,
+            mapped_at_creation: false,
         });
         let material_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("materials"),
-                                                  size: std::mem::size_of::<crate::scene::object::GpuMaterial>() as u64,
-                                                  usage: BufferUsages::STORAGE,
-                                                  mapped_at_creation: false,
+            size: std::mem::size_of::<crate::scene::object::GpuMaterial>() as u64
+                * MIN_SCENE_CAPACITY,
+            usage: BufferUsages::STORAGE,
+            mapped_at_creation: false,
         });
         let default_custom = crate::scene::object::GpuCustomMaterial::default();
         let custom_material_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -2428,20 +2429,18 @@ impl WgpuRenderer {
         shaders: &[(String, String)],
         textures: &[crate::gpu::TextureHandle],
     ) {
-        // Avoid creating a zero-sized buffer when there are no objects in the scene.
-        // The compute shader expects at least enough space for one `GpuObject`.
-        let default_obj;
-        let data = if objects.is_empty() {
-            default_obj = GpuObject::default();
-            bytemuck::bytes_of(&default_obj)
-        } else {
-            bytemuck::cast_slice(objects)
-        };
-        self.object_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("objects"),
-                                                            contents: data,
-                                                            usage: BufferUsages::STORAGE,
-        });
+        // Ensure the object buffer always has space for at least 64 entries to
+        // satisfy the shader's minimum binding size requirements.
+        const MIN_SCENE_CAPACITY: usize = 64;
+        let mut obj_data = vec![GpuObject::default(); MIN_SCENE_CAPACITY.max(objects.len())];
+        obj_data[..objects.len()].copy_from_slice(objects);
+        self.object_buffer = self
+            .device
+            .create_buffer_init(&util::BufferInitDescriptor {
+                label: Some("objects"),
+                contents: bytemuck::cast_slice(&obj_data),
+                usage: BufferUsages::STORAGE,
+            });
         let default_tri;
         let tri_bytes: &[u8];
         if triangles.is_empty() {
@@ -2486,30 +2485,29 @@ impl WgpuRenderer {
                 m.base_color_tex = 0;
             }
         }
-        let default_mat;
-        let mat_bytes = if clamped_mats.is_empty() {
-            default_mat = crate::scene::object::GpuMaterial::default();
-            bytemuck::bytes_of(&default_mat)
-        } else {
-            bytemuck::cast_slice(&clamped_mats)
-        };
-        self.material_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("materials"),
-            contents: mat_bytes,
-            usage: BufferUsages::STORAGE,
-        });
-        let default_custom;
-        let custom_bytes = if custom_materials.is_empty() {
-            default_custom = crate::scene::object::GpuCustomMaterial::default();
-            bytemuck::bytes_of(&default_custom)
-        } else {
-            bytemuck::cast_slice(custom_materials)
-        };
-        self.custom_material_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("custom_materials"),
-            contents: custom_bytes,
-            usage: BufferUsages::STORAGE,
-        });
+        // Grow material buffers to at least the same minimum capacity used for
+        // objects so that the bind group requirements are always met.
+        let mut mat_vec = vec![crate::scene::object::GpuMaterial::default();
+            MIN_SCENE_CAPACITY.max(clamped_mats.len())];
+        mat_vec[..clamped_mats.len()].copy_from_slice(&clamped_mats);
+        self.material_buffer = self
+            .device
+            .create_buffer_init(&util::BufferInitDescriptor {
+                label: Some("materials"),
+                contents: bytemuck::cast_slice(&mat_vec),
+                usage: BufferUsages::STORAGE,
+            });
+
+        let mut custom_vec = vec![crate::scene::object::GpuCustomMaterial::default();
+            MIN_SCENE_CAPACITY.max(custom_materials.len())];
+        custom_vec[..custom_materials.len()].copy_from_slice(custom_materials);
+        self.custom_material_buffer = self
+            .device
+            .create_buffer_init(&util::BufferInitDescriptor {
+                label: Some("custom_materials"),
+                contents: bytemuck::cast_slice(&custom_vec),
+                usage: BufferUsages::STORAGE,
+            });
         let mut lights: Vec<u32> = Vec::new();
         for (i, obj) in objects.iter().enumerate() {
             let mi = obj.material_index as usize;
@@ -2967,17 +2965,36 @@ impl WgpuRenderer {
                 .as_ref()
                 .map(|t| &t.0)
                 .unwrap_or(&self.white_texture.0);
-                let joint_data: Vec<[[f32;4];4]> = inst
+                // Ensure joint buffers meet the minimum size required by the shader
+                // by allocating space for at least 64 matrices.
+                const MIN_JOINT_CAPACITY: usize = 64;
+                let mut joint_data: Vec<[[f32; 4]; 4]> = inst
                     .joint_mats
                     .clone()
-                    .unwrap_or_else(|| vec![[[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]]);
-                let joint_buf = self
-                    .device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("pbr_joints"),
-                        contents: bytemuck::cast_slice(&joint_data),
-                        usage: BufferUsages::UNIFORM,
+                    .unwrap_or_else(|| {
+                        vec![[
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ]]
                     });
+                if joint_data.len() < MIN_JOINT_CAPACITY {
+                    joint_data.resize(
+                        MIN_JOINT_CAPACITY,
+                        [
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ],
+                    );
+                }
+                let joint_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("pbr_joints"),
+                    contents: bytemuck::cast_slice(&joint_data),
+                    usage: BufferUsages::UNIFORM,
+                });
                 let bg = self.device.create_bind_group(&BindGroupDescriptor {
                     label: Some("pbr_bg"),
                                                        layout: &self.pbr_bind_group_layout,

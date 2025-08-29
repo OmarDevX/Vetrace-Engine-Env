@@ -1,16 +1,14 @@
 use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
 use crate::components::components::ObjectRef;
-use crate::components::components::Sprite3D;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "wgpu")]
-use crate::rendering::wgpu_renderer::{PbrRenderData, SpriteRenderData};
+use crate::rendering::wgpu_renderer::PbrRenderData;
 use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
 #[cfg(not(feature = "wgpu"))]
-use crate::systems::sprite_render::SpriteRenderSystem;
 use crate::Behaviour;
 use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
@@ -590,77 +588,23 @@ impl Engine {
                     });
                 }
 
-                let mut sprite_batches = Vec::new();
-                for (_e, transform, sprite) in self.world.query2::<Transform, Sprite3D>() {
-                    let pos = Vec3::from(transform.position) - cam_pos;
-                    let mut right = Vec3::X;
-                    let mut up_v = Vec3::Y;
-                    if self.is_2d {
-                        if !sprite.facing_camera {
-                            let angle =
-                                2.0 * transform.orientation[2].atan2(transform.orientation[3]);
-                            let q = Quat::from_rotation_z(angle);
-                            right = q * right;
-                            up_v = q * up_v;
-                        }
-                    } else if sprite.facing_camera {
-                        right = cam_right;
-                        up_v = cam_up;
-                    } else {
-                        let q = Quat::from_xyzw(
-                            transform.orientation[0],
-                            transform.orientation[1],
-                            transform.orientation[2],
-                            transform.orientation[3],
-                        );
-                        right = q * right;
-                        up_v = q * up_v;
-                    }
-                    right = right.normalize() * sprite.size[0] * transform.size[0] * 0.5;
-                    up_v = up_v.normalize() * sprite.size[1] * transform.size[1] * 0.5;
-                    let p0 = pos - right - up_v;
-                    let p1 = pos + right - up_v;
-                    let p2 = pos - right + up_v;
-                    let p3 = pos + right + up_v;
-                    let verts = [
-                        [p0.x, p0.y, p0.z, 0.0, 0.0],
-                        [p2.x, p2.y, p2.z, 0.0, 1.0],
-                        [p1.x, p1.y, p1.z, 1.0, 0.0],
-                        [p2.x, p2.y, p2.z, 0.0, 1.0],
-                        [p3.x, p3.y, p3.z, 1.0, 1.0],
-                        [p1.x, p1.y, p1.z, 1.0, 0.0],
-                    ];
-                    sprite_batches.push(SpriteRenderData {
-                        vertices: verts,
-                        texture: sprite.texture.view.clone(),
-                        double_sided: sprite.double_sided,
-                    });
-                }
                 let paint_jobs = self
                     .egui_ctx
                     .tessellate(shapes, self.egui_ctx.pixels_per_point());
                 #[cfg(feature = "use_epi")]
                 self.renderer.render(
                     &render_params,
-                    &sprite_batches,
+                    &[],
                     &pbr_meshes,
                     Some((&mut self.egui_renderer, &paint_jobs, &textures_delta)),
                 );
                 #[cfg(not(feature = "use_epi"))]
                 self.renderer
-                    .render(&render_params, &sprite_batches, &pbr_meshes, None);
+                    .render(&render_params, &[], &pbr_meshes, None);
             }
             #[cfg(not(feature = "wgpu"))]
             {
                 self.renderer.render(&render_params);
-            }
-            #[cfg(not(feature = "wgpu"))]
-            {
-                let engine_ptr: *mut Engine = self;
-                let sprite_renderer = &mut self.sprite_renderer;
-                unsafe {
-                    sprite_renderer.update(&mut *engine_ptr, delta);
-                }
             }
             #[cfg(not(feature = "wgpu"))]
             {

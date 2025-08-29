@@ -11,6 +11,5 @@ pub use types::{
     OPENGL_TO_WGPU_MATRIX,
     PostFxUniforms,
     ShaderParams,
-    SpriteRenderData,
     PbrRenderData,
 };

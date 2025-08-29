@@ -15,8 +15,6 @@ use crate::scene::scene::Scene;
 #[cfg(all(not(feature = "wgpu"), feature = "use_epi"))]
 use crate::shared::ShaderVersion;
 use crate::systems::free_flight::FreeFlightState;
-#[cfg(not(feature = "wgpu"))]
-use crate::systems::sprite_render::SpriteRenderSystem;
 use egui::Context as EguiContext;
 use std::sync::Arc;
 
@@ -92,16 +90,12 @@ impl EngineBuilder {
         );
         #[cfg(all(not(feature = "wgpu"), feature = "use_epi"))]
         let egui_renderer = EguiRenderer::new(&window.window, 1.0, ShaderVersion::Default);
-        #[cfg(not(feature = "wgpu"))]
-        let sprite_renderer = SpriteRenderSystem::new();
         Ok(RenderingManager::new(
             renderer,
             scene,
             egui_ctx,
             #[cfg(feature = "use_epi")]
             egui_renderer,
-            #[cfg(not(feature = "wgpu"))]
-            sprite_renderer,
         ))
     }
 

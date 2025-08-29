@@ -14,11 +14,7 @@ An experimental **raytracing-capable game engine** written in Rust, powered by:
 ## 🚀 Features
 
 - ✅ Real-time raytracing using wgpu compute shaders
-- 🖼️ Textured sprite rendering via `Sprite3D`
-- Sprites respect depth testing and support billboarding. Disable
-  `facing_camera` to orient them freely and set `double_sided` if you
-  need to view both sides. Sprites also work in 2D mode when
-  creating the engine with `Engine::new(true)`.
+- 🖼️ `Sprite3D` converts textures into textured quad meshes for full raytraced lighting
 - 🧠 Modular ECS design
 - 🎛️ Integrated GUI using `egui`
 - 🖱️ SDL2 input and window management
@@ -46,12 +42,9 @@ before running the sprite example. Textures are loaded with the `image` crate
 and converted to RGBA internally, so formats like PNG or JPEG will work.
 If the file is missing the engine will panic with an `IoError` (`No such file or
 directory`). A corrupt or unsupported image instead produces a `DecodingError`.
-The sprite example shows a simple textured quad using `facing_camera: false` and
-`double_sided: true` so you can freely orbit around it.
-
-**Note**: Sprite rendering is implemented only for the OpenGL backend at the
-moment. Building the example with the `wgpu` feature enabled will print a
-message and exit.
+The sprite example shows a simple textured quad rendered through the standard
+mesh pipeline so it receives lighting, shadows and global illumination like any
+other object.
 
 See [ENGINE_GUIDE.md](ENGINE_GUIDE.md) for detailed documentation on how the engine works and how to extend it.
 
