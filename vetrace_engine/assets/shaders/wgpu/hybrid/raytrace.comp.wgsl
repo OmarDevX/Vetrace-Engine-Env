@@ -1042,7 +1042,7 @@ fn evaluate_default_material(hit: vec3<f32>, normal: vec3<f32>, mat: MaterialPar
 
 fn shade_base(
     hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, gi: vec3<f32>, rng: ptr<function, u32>
-) -> vec3<f32> {
+) -> vec4<f32> {
     var mat_idx: u32 = objects[obj_idx].material_index;
     if (tri_idx != 0xffffffffu) { let tri = triangles[tri_idx]; mat_idx = tri.material_index; }
     var mat = materials[mat_idx];
@@ -1123,14 +1123,14 @@ fn shade_base(
         }
     }
     col = col * ao;
-    return col;
+    return vec4<f32>(col, material_result.transparency);
 }
 
-fn shade(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+fn shade(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec4<f32> {
     let gi = sample_diffuse_gi(hit, normal, rng);
     return shade_base(hit, normal, obj_idx, tri_idx, uv, gi, rng);
 }
-fn shade_no_gi(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+fn shade_no_gi(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv: vec2<f32>, rng: ptr<function, u32>) -> vec4<f32> {
     return shade_base(hit, normal, obj_idx, tri_idx, uv, vec3<f32>(0.0), rng);
 }
 
@@ -1152,7 +1152,17 @@ fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<funct
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        var col: vec3<f32> = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        let shade_res = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        var col = shade_res.xyz;
+        let trans = shade_res.w;
+        if (trans > 0.0) {
+            let obj = objects[u32(hit.idx)];
+            let eps = surf_eps(obj);
+            let next = trace_ray_skip(hit_pos + dir * eps, dir, depth + 1, rng, hit.idx);
+            col = col * (1.0 - trans) + next.color * trans;
+            col = apply_atmosphere(origin, dir, t_total, col);
+            return RayResult(col, t_total + next.depth, next.normal, next.obj_idx, next.tri_idx);
+        }
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
@@ -1173,7 +1183,17 @@ fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        let shade_res = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        var col = shade_res.xyz;
+        let trans = shade_res.w;
+        if (trans > 0.0) {
+            let obj = objects[u32(hit.idx)];
+            let eps = surf_eps(obj);
+            let next = trace_ray_skip(hit_pos + dir * eps, dir, depth + 1, rng, hit.idx);
+            col = col * (1.0 - trans) + next.color * trans;
+            col = apply_atmosphere(origin, dir, t_total, col);
+            return RayResult(col, t_total + next.depth, next.normal, next.obj_idx, next.tri_idx);
+        }
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
@@ -1204,7 +1224,17 @@ fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
         t_total = t_total + hit.t;
         if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
         let hit_pos = origin + dir * t_total;
-        var col: vec3<f32> = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        let shade_res = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        var col = shade_res.xyz;
+        let trans = shade_res.w;
+        if (trans > 0.0) {
+            let obj = objects[u32(hit.idx)];
+            let eps = surf_eps(obj);
+            let next = trace_ray_skip(hit_pos + dir * eps, dir, depth + 1, rng, hit.idx);
+            col = col * (1.0 - trans) + next.color * trans;
+            col = apply_atmosphere(origin, dir, t_total, col);
+            return RayResult(col, t_total + next.depth, next.normal, next.obj_idx, next.tri_idx);
+        }
         col = apply_atmosphere(origin, dir, t_total, col);
         return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
     }
