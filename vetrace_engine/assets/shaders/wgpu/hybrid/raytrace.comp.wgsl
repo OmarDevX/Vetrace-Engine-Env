@@ -1142,100 +1142,6 @@ fn shade_no_gi(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv
 // Rays
 // -----------------------------
 struct RayResult { color: vec3<f32>, depth: f32, normal: vec3<f32>, obj_idx: i32, tri_idx: u32, };
-
-fn trace_ray_skip_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
-    if (depth >= params.max_bounces) {
-        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
-    }
-    var o = origin; var t_total = 0.0;
-    for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
-        let hit = object_tlas_intersect(o, dir, skip);
-        if (hit.idx < 0) { break; }
-        let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
-        t_total = t_total + hit.t;
-        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
-        let hit_pos = origin + dir * t_total;
-        let shade_res = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
-        var col = shade_res.xyz;
-        let trans = shade_res.w;
-        if (trans > 0.0) {
-            let obj = objects[u32(hit.idx)];
-            let eps = surf_eps(obj);
-            let next = trace_ray_skip_no_gi(hit_pos + dir * eps, dir, depth + 1, rng, hit.idx);
-            col = col * (1.0 - trans) + next.color * trans;
-            col = apply_atmosphere(origin, dir, t_total, col);
-            return RayResult(col, t_total + next.depth, next.normal, next.obj_idx, next.tri_idx);
-        }
-        col = apply_atmosphere(origin, dir, t_total, col);
-        return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
-    }
-    let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
-}
-
-fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
-    if (depth >= params.max_bounces) {
-        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
-    }
-    var o = origin; var t_total = 0.0;
-    for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
-        let hit = object_tlas_intersect(o, dir, -1);
-        if (hit.idx < 0) { break; }
-        let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
-        t_total = t_total + hit.t;
-        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
-        let hit_pos = origin + dir * t_total;
-        let shade_res = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
-        var col = shade_res.xyz;
-        let trans = shade_res.w;
-        if (trans > 0.0) {
-            let obj = objects[u32(hit.idx)];
-            let eps = surf_eps(obj);
-            let next = trace_ray_skip_no_gi(hit_pos + dir * eps, dir, depth + 1, rng, hit.idx);
-            col = col * (1.0 - trans) + next.color * trans;
-            col = apply_atmosphere(origin, dir, t_total, col);
-            return RayResult(col, t_total + next.depth, next.normal, next.obj_idx, next.tri_idx);
-        }
-        col = apply_atmosphere(origin, dir, t_total, col);
-        return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
-    }
-    let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
-}
-
-fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
-    if (depth >= params.max_bounces) {
-        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
-    }
-    var o = origin; var t_total = 0.0;
-    for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
-        let hit = object_tlas_intersect(o, dir, -1);
-        if (hit.idx < 0) { break; }
-        let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
-        t_total = t_total + hit.t;
-        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
-        let hit_pos = origin + dir * t_total;
-        let shade_res = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
-        var col = shade_res.xyz;
-        let trans = shade_res.w;
-        if (trans > 0.0) {
-            let obj = objects[u32(hit.idx)];
-            let eps = surf_eps(obj);
-            let next = trace_ray_skip(hit_pos + dir * eps, dir, depth + 1, rng, hit.idx);
-            col = col * (1.0 - trans) + next.color * trans;
-            col = apply_atmosphere(origin, dir, t_total, col);
-            return RayResult(col, t_total + next.depth, next.normal, next.obj_idx, next.tri_idx);
-        }
-        col = apply_atmosphere(origin, dir, t_total, col);
-        return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
-    }
-    let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
-}
-
 // ---- helpers for size-scaled eps and skipping self ----
 fn object_extent(obj: Object) -> f32 {
     let s = obj.size * obj.scale;
@@ -1245,36 +1151,72 @@ fn surf_eps(obj: Object) -> f32 {
     return max(1e-4, object_extent(obj) * 1e-4);
 }
 
-// identical to trace_ray(...) but skips `skip` on the first TLAS hit
-fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
-    if (depth >= params.max_bounces) {
-        let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-        return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
-    }
-    var o = origin; var t_total = 0.0;
+fn trace_ray_base(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32, use_gi: bool) -> RayResult {
+    var o = origin;
+    var s = skip;
+    var d = depth;
+    var t_total = 0.0;
+    var atten = 1.0;
+    var col = vec3<f32>(0.0);
+    var norm = vec3<f32>(0.0, 0.0, 1.0);
+    var obj_idx = -1;
+    var tri_idx = 0u;
     for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
-        let hit = object_tlas_intersect(o, dir, skip);
+        if (d >= params.max_bounces) { break; }
+        let hit = object_tlas_intersect(o, dir, s);
         if (hit.idx < 0) { break; }
         let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
         t_total = t_total + hit.t;
-        if (alpha < 0.5) { o = origin + dir * (t_total + 0.001); continue; }
-        let hit_pos = origin + dir * t_total;
-        let shade_res = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
-        var col = shade_res.xyz;
-        let trans = shade_res.w;
-        if (trans > 0.0) {
-            let obj = objects[u32(hit.idx)];
-            let eps = surf_eps(obj);
-            let next = trace_ray_skip(hit_pos + dir * eps, dir, depth + 1, rng, hit.idx);
-            col = col * (1.0 - trans) + next.color * trans;
-            col = apply_atmosphere(origin, dir, t_total, col);
-            return RayResult(col, t_total + next.depth, next.normal, next.obj_idx, next.tri_idx);
+        if (alpha < 0.5) {
+            o = o + dir * (hit.t + 0.001);
+            t_total = t_total + 0.001;
+            s = -1;
+            continue;
         }
-        col = apply_atmosphere(origin, dir, t_total, col);
-        return RayResult(col, t_total, hit.n, hit.idx, hit.tri);
+        let hit_pos = origin + dir * t_total;
+        var shade_res: vec4<f32>;
+        if (use_gi) {
+            shade_res = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        } else {
+            shade_res = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        }
+        var surf_col = shade_res.xyz;
+        let trans = shade_res.w;
+        surf_col = apply_atmosphere(origin, dir, t_total, surf_col);
+        col = col + surf_col * atten * (1.0 - trans);
+        atten = atten * trans;
+        norm = hit.n;
+        obj_idx = hit.idx;
+        tri_idx = hit.tri;
+        if (atten <= 0.0) {
+            return RayResult(col, t_total, norm, obj_idx, tri_idx);
+        }
+        let obj = objects[u32(hit.idx)];
+        let eps = surf_eps(obj);
+        o = hit_pos + dir * eps;
+        t_total = t_total + eps;
+        s = hit.idx;
+        d = d + 1;
     }
     let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
-    return RayResult(sky, 1.0, vec3<f32>(0.0,0.0,1.0), -1, 0u);
+    col = col + sky * atten;
+    return RayResult(col, 1.0, norm, obj_idx, tri_idx);
+}
+
+fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
+    return trace_ray_base(origin, dir, depth, rng, -1, true);
+}
+
+fn trace_ray_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
+    return trace_ray_base(origin, dir, depth, rng, -1, false);
+}
+
+fn trace_ray_skip(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
+    return trace_ray_base(origin, dir, depth, rng, skip, true);
+}
+
+fn trace_ray_skip_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
+    return trace_ray_base(origin, dir, depth, rng, skip, false);
 }
 
 // -----------------------------
