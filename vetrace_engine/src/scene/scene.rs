@@ -1,6 +1,6 @@
-use crate::math::vec3;
 use crate::materials::PbrMaterial;
-use crate::scene::object::{GpuObject, GpuTriangle, GpuAtmosphere, Object};
+use crate::math::vec3;
+use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, Object};
 
 pub struct Scene {
     pub objects: Vec<Object>,
@@ -55,13 +55,13 @@ impl Scene {
         self.gpu_objects.clear();
         self.atmospheres.clear();
         for &entity in world.entities().to_vec().iter() {
-            let (transform, material, renderable, collider) = match (
+            let (transform, material, renderable, shape) = match (
                 world.get::<crate::components::components::Transform>(entity),
                 world.get::<crate::components::components::Material>(entity),
                 world.get::<crate::components::components::Renderable>(entity),
-                world.get::<crate::components::components::Collider>(entity),
+                world.get::<crate::components::components::Shape>(entity),
             ) {
-                (Some(t), Some(m), Some(r), Some(c)) => (t, m, r, c),
+                (Some(t), Some(m), Some(r), Some(s)) => (t, m, r, s),
                 _ => continue,
             };
             let obj_ref = world.get::<crate::components::components::ObjectRef>(entity);
@@ -112,8 +112,16 @@ impl Scene {
                     obj.is_glass = material.is_glass;
                     obj.specular_f0 = material.specular_f0.into();
                     obj.ior = material.ior;
-                    obj.is_cube = collider.is_cube;
-                    obj.radius = collider.radius;
+                    if renderable.is_mesh {
+                        obj.is_cube = false;
+                        obj.radius = 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]);
+                    } else if shape.is_cube {
+                        obj.is_cube = true;
+                        obj.radius = 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2]);
+                    } else {
+                        obj.is_cube = false;
+                        obj.radius = shape.radius;
+                    }
                     obj.velocity = velocity.velocity;
                     // The `Velocity` component already stores the current
                     // acceleration including gravity, so copy it directly
@@ -152,9 +160,15 @@ impl Scene {
                 }
             }
 
-            let is_cube = collider.is_cube as u32;
+            let is_cube = if renderable.is_mesh { 0 } else { shape.is_cube as u32 };
             let is_mesh = renderable.is_mesh as u32;
-            let radius = collider.radius;
+            let radius = if renderable.is_mesh {
+                0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2])
+            } else if shape.is_cube {
+                0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2])
+            } else {
+                shape.radius
+            };
             let (tri_start, tri_count) = if renderable.is_mesh {
                 (renderable.triangle_start_idx, renderable.triangle_count)
             } else {
@@ -192,8 +206,18 @@ impl Scene {
                     atmo_g_height: [atmo.atmo_radius, atmo.g, atmo.height_ray, atmo.height_mie],
                     ray_beta: [atmo.ray_beta.x, atmo.ray_beta.y, atmo.ray_beta.z, 0.0],
                     mie_beta: [atmo.mie_beta.x, atmo.mie_beta.y, atmo.mie_beta.z, 0.0],
-                    ambient_beta: [atmo.ambient_beta.x, atmo.ambient_beta.y, atmo.ambient_beta.z, 0.0],
-                    absorption_beta: [atmo.absorption_beta.x, atmo.absorption_beta.y, atmo.absorption_beta.z, 0.0],
+                    ambient_beta: [
+                        atmo.ambient_beta.x,
+                        atmo.ambient_beta.y,
+                        atmo.ambient_beta.z,
+                        0.0,
+                    ],
+                    absorption_beta: [
+                        atmo.absorption_beta.x,
+                        atmo.absorption_beta.y,
+                        atmo.absorption_beta.z,
+                        0.0,
+                    ],
                     absorb_params: [
                         atmo.height_absorption,
                         atmo.absorption_falloff,
@@ -207,7 +231,6 @@ impl Scene {
             let _ = transform;
             let _ = material;
             let _ = renderable;
-            let _ = collider;
 
             if let Some(pbr) = world.get_mut::<crate::materials::PbrMaterial>(entity) {
                 pbr.emissive = [emission; 3];

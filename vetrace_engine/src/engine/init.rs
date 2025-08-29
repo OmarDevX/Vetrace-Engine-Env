@@ -15,7 +15,6 @@ use crate::rendering::Renderer;
 use crate::scene::scene::Scene;
 use crate::systems::free_flight::FreeFlightState;
 #[cfg(not(feature = "wgpu"))]
-use crate::systems::sprite_render::SpriteRenderSystem;
 // Note: MainWindow and SandboxWindow have been moved to vetrace_editor crate
 #[cfg(not(feature = "wgpu"))]
 use crate::shared::ShaderVersion;
@@ -93,8 +92,6 @@ impl Engine {
             egui_ctx,
             #[cfg(feature = "use_epi")]
             egui_renderer,
-            #[cfg(not(feature = "wgpu"))]
-            sprite_renderer: SpriteRenderSystem::new(),
             egui_events: Vec::new(),
             world,
             free_flight,

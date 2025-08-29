@@ -1,6 +1,6 @@
 use sdl2::keyboard::Keycode;
 use vetrace_engine::components::components::{
-    AngularVelocity, Collider, RevoluteJoint, RigidBody3D, StaticBody,
+    AngularVelocity, Collider, ColliderShape, RevoluteJoint, RigidBody3D, StaticBody,
 };
 use vetrace_engine::engine::Engine;
 use vetrace_engine::scene::object::Object;
@@ -103,7 +103,8 @@ fn main() {
                 },
             );
             if let Some(col) = engine.world.get_mut::<Collider>(ent) {
-                col.radius = wheel.radius;
+                col.shape = ColliderShape::Sphere;
+                col.size = [wheel.radius * 2.0; 3];
             }
             engine.world.insert(ent, AngularVelocity::default());
         }

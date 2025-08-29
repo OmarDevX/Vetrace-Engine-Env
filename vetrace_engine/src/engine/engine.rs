@@ -38,8 +38,6 @@ use crate::scene::{
 };
 use crate::systems::collision::CollisionEvent;
 use crate::systems::free_flight::FreeFlightState;
-#[cfg(not(feature = "wgpu"))]
-use crate::systems::sprite_render::SpriteRenderSystem;
 
 use glam::{Mat3, Quat, Vec3};
 use mlua::{Function, Lua, Value as LuaValue};
@@ -122,8 +120,6 @@ pub struct Engine {
     pub assets: std::sync::Arc<crate::assets::AssetManager>,
     #[cfg(feature = "use_epi")]
     pub egui_renderer: EguiRenderer,
-    #[cfg(not(feature = "wgpu"))]
-    pub sprite_renderer: SpriteRenderSystem,
     pub egui_events: Vec<Event>,
     pub behaviours: Vec<Box<dyn Behaviour>>,
     pub script_library: HashMap<String, ScriptBehaviour>,
@@ -189,6 +185,8 @@ impl Engine {
         self.add_behaviour(crate::systems::lerp::LerpSystem::default());
         self.add_behaviour(crate::systems::timer::TimerSystem::default());
         self.add_behaviour(AnimationSystem::new(self.assets.clone()));
+        #[cfg(feature = "wgpu")]
+        self.add_behaviour(crate::systems::sprite_mesh::SpriteMeshSystem::default());
     }
 
     pub fn ensure_generated_folder(&self) {
@@ -716,10 +714,9 @@ impl Engine {
             let proj_mat = perspective(cam.fov, aspect, 0.1, 1000.0);
 
             // Build PBR meshes from ECS world (from run.rs line 416-437)
-            use crate::components::components::Sprite3D;
             use crate::gpu::MeshHandle;
             use crate::materials::PbrMaterial;
-            use crate::rendering::wgpu_renderer::{PbrRenderData, SpriteRenderData};
+            use crate::rendering::wgpu_renderer::PbrRenderData;
             use glam::{Mat4, Quat, Vec3};
 
             let mut pbr_meshes = Vec::new();
@@ -769,38 +766,6 @@ impl Engine {
                 });
             }
 
-            // Build sprite batches from ECS world (from run.rs line 439-484)
-            let mut sprite_batches = Vec::new();
-            for (_e, transform, sprite) in self.world.query2::<Transform, Sprite3D>() {
-                let pos = Vec3::from(transform.position) - cam_pos;
-                let mut right = Vec3::X;
-                let mut up_v = Vec3::Y;
-                if self.is_2d {
-                    right = Vec3::X;
-                    up_v = Vec3::Y;
-                } else {
-                    right = cam_right;
-                    up_v = cam_up;
-                }
-                let size = Vec3::from(transform.size);
-                let p0 = pos - right * size.x * 0.5 - up_v * size.y * 0.5;
-                let p1 = pos + right * size.x * 0.5 - up_v * size.y * 0.5;
-                let p2 = pos + right * size.x * 0.5 + up_v * size.y * 0.5;
-                let p3 = pos - right * size.x * 0.5 + up_v * size.y * 0.5;
-                let verts = [
-                    [p0.x, p0.y, p0.z, 0.0, 0.0],
-                    [p1.x, p1.y, p1.z, 1.0, 0.0],
-                    [p2.x, p2.y, p2.z, 0.0, 1.0],
-                    [p3.x, p3.y, p3.z, 1.0, 1.0],
-                    [p1.x, p1.y, p1.z, 1.0, 0.0],
-                    [p2.x, p2.y, p2.z, 0.0, 1.0],
-                ];
-                sprite_batches.push(SpriteRenderData {
-                    vertices: verts,
-                    texture: sprite.texture.view.clone(),
-                    double_sided: sprite.double_sided,
-                });
-            }
 
             // Handle EGUI rendering for wgpu
             #[cfg(feature = "use_epi")]
@@ -843,7 +808,7 @@ impl Engine {
                 // Render with wgpu including EGUI
                 self.renderer.render(
                     &render_params,
-                    &sprite_batches,
+                    &[],
                     &pbr_meshes,
                     Some((&mut self.egui_renderer, &paint_jobs, &textures_delta)),
                 );
@@ -852,7 +817,7 @@ impl Engine {
             {
                 // Render with wgpu without EGUI
                 self.renderer
-                    .render(&render_params, &sprite_batches, &pbr_meshes, None);
+                    .render(&render_params, &[], &pbr_meshes, None);
             }
         }
         #[cfg(not(feature = "wgpu"))]
@@ -872,15 +837,6 @@ impl Engine {
         }
 
         // Post-render operations (from run.rs line 503-538)
-        #[cfg(not(feature = "wgpu"))]
-        {
-            // Update sprite renderer (simplified for app framework)
-            let engine_ptr: *mut Engine = self;
-            let sprite_renderer = &mut self.sprite_renderer;
-            unsafe {
-                sprite_renderer.update(&mut *engine_ptr, 0.0); // No delta time in simplified version
-            }
-        }
         #[cfg(not(feature = "wgpu"))]
         {
             self.renderer.capture_screen();

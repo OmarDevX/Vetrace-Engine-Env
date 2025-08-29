@@ -5,7 +5,6 @@ pub mod hierarchy;
 pub mod rapier_physics;
 pub mod selection;
 pub mod gizmo;
-pub mod sprite_render;
 pub mod transform_sync;
 pub mod networking;
 pub mod raycast;
@@ -15,3 +14,5 @@ pub mod particle_gpu;
 pub mod lerp;
 pub mod timer;
 pub mod animation;
+#[cfg(feature = "wgpu")]
+pub mod sprite_mesh;

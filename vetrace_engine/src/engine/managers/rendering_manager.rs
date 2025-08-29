@@ -2,8 +2,6 @@ use crate::rendering::Renderer;
 use crate::scene::scene::Scene;
 #[cfg(feature = "use_epi")]
 use crate::rendering::EguiRenderer;
-#[cfg(not(feature = "wgpu"))]
-use crate::systems::sprite_render::SpriteRenderSystem;
 use egui::{Context as EguiContext, Event};
 
 /// Manages all rendering-related functionality
@@ -13,8 +11,6 @@ pub struct RenderingManager {
     pub egui_ctx: EguiContext,
     #[cfg(feature = "use_epi")]
     pub egui_renderer: EguiRenderer,
-    #[cfg(not(feature = "wgpu"))]
-    pub sprite_renderer: SpriteRenderSystem,
     pub egui_events: Vec<Event>,
 }
 
@@ -25,8 +21,6 @@ impl RenderingManager {
         egui_ctx: EguiContext,
         #[cfg(feature = "use_epi")]
         egui_renderer: EguiRenderer,
-        #[cfg(not(feature = "wgpu"))]
-        sprite_renderer: SpriteRenderSystem,
     ) -> Self {
         Self {
             renderer,
@@ -34,8 +28,6 @@ impl RenderingManager {
             egui_ctx,
             #[cfg(feature = "use_epi")]
             egui_renderer,
-            #[cfg(not(feature = "wgpu"))]
-            sprite_renderer,
             egui_events: Vec::new(),
         }
     }

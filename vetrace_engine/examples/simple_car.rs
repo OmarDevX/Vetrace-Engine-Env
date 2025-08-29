@@ -3,7 +3,9 @@ use rapier3d::prelude::*;
 
 use sdl2::keyboard::Keycode;
 use vetrace_engine::components::components::{
-    Bloom, CameraAttachment, Collider, DirectionalLight, Easing, FreeFlightControls, Lerp, LerpData, LerpState, LoopMode, Material, Parent, Particle, PostProcessing, Renderable, RigidBody3D, StaticBody, Timer, Transform
+    Bloom, CameraAttachment, Collider, ColliderShape, DirectionalLight, Easing, FreeFlightControls,
+    Lerp, LerpData, LerpState, LoopMode, Material, Parent, Particle, PostProcessing, Renderable,
+    RigidBody3D, StaticBody, Timer, Transform,
 };
 use vetrace_engine::engine::Engine;
 use vetrace_engine::scene::object::Object;
@@ -145,8 +147,9 @@ impl Behaviour for CarController {
                     engine.world.insert(
                         ent,
                         Collider {
-                            radius: 0.2,
-                            is_cube: true,
+                            shape: ColliderShape::Cube,
+                            size: [0.4, 0.4, 0.4],
+                            ..Default::default()
                         },
                     );
                     engine.world.insert(
@@ -240,12 +243,12 @@ fn main() {
         threshold: 0.0,
         ..Default::default()
     };
-    let ps=PostProcessing{
+    let ps = PostProcessing {
         bloom: Some(bloom),
-        gi_enabled:false,
+        gi_enabled: false,
         ..Default::default()
     };
-    let dl= DirectionalLight {
+    let dl = DirectionalLight {
         color: [255.0, 255.0, 255.0],
         intensity: 10.0,
         direction: [-1.0, -1.0, -1.0],

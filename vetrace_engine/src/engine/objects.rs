@@ -1,6 +1,7 @@
 use super::Engine;
 use crate::components::components::{
-    AngularVelocity, Collider, Material, ObjMesh, ObjectRef, Renderable, Shape, Transform,
+    AngularVelocity, Collider, ColliderShape, Material, ObjMesh, ObjectRef, Renderable, Shape,
+    Transform,
 };
 use crate::ecs::Entity;
 use crate::ecs::World;
@@ -61,13 +62,20 @@ impl Engine {
                     triangle_count: obj.triangle_count as u32,
                 },
             );
-            self.world.insert(
-                entity,
-                Collider {
-                    radius: obj.radius,
-                    is_cube: obj.is_cube,
-                },
-            );
+            let shape = Shape {
+                is_cube: obj.is_cube,
+                radius: obj.radius,
+            };
+
+            let mut collider = Collider::default();
+            if obj.is_mesh || shape.is_cube {
+                collider.shape = ColliderShape::Cube;
+                collider.size = final_size;
+            } else {
+                collider.shape = ColliderShape::Sphere;
+                collider.size = [shape.radius * 2.0, shape.radius * 2.0, shape.radius * 2.0];
+            }
+            self.world.insert(entity, collider);
             self.world.insert(
                 entity,
                 Material {
@@ -83,16 +91,6 @@ impl Engine {
                     angular_acceleration: obj.angular_acceleration,
                 },
             );
-            let shape = if obj.is_mesh {
-                Shape::Mesh {
-                    triangle_start_idx: obj.triangle_start_idx as u32,
-                    triangle_count: obj.triangle_count as u32,
-                }
-            } else if obj.is_cube {
-                Shape::Cube
-            } else {
-                Shape::Sphere { radius: obj.radius }
-            };
             self.world.insert(entity, shape);
         }
         self.core.register_object_entity(object_id, entity);
@@ -448,10 +446,11 @@ impl Engine {
                     render.is_mesh = true;
                     render.triangle_start_idx = start as u32;
                     render.triangle_count = count as u32;
-                    *shape = crate::components::components::Shape::Mesh {
-                        triangle_start_idx: start as u32,
-                        triangle_count: count as u32,
-                    };
+                    shape.is_cube = false;
+                    shape.radius = 0.5
+                        * (bmax[0] - bmin[0])
+                            .max(bmax[1] - bmin[1])
+                            .max(bmax[2] - bmin[2]);
                     if let Some(obj) = self.scene.objects.get_mut(obj_ref.id as usize) {
                         obj.is_mesh = true;
                         obj.triangle_start_idx = start;

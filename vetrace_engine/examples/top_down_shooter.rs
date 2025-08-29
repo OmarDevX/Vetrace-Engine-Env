@@ -5,7 +5,7 @@ use vetrace_engine::app::{app, App};
 use vetrace_engine::behaviour::look_at::LookAtBehaviour;
 use vetrace_engine::components::components::{Anchor, UILabel, UILayout, UIScreenSpace};
 use vetrace_engine::components::components::{
-    Collider, Lifetime, LookAt, Metadata, Player, Transform, Velocity,
+    Collider, ColliderShape, Lifetime, LookAt, Metadata, Player, Transform, Velocity,
 };
 use vetrace_engine::ecs::{Component, Entity};
 use vetrace_engine::inspector::export::{ExportKind, ExportedField};
@@ -187,8 +187,8 @@ impl GameBehaviour {
             }
             actor.with_bundle((Velocity::default(), Collider::default()));
             if let Some(col) = actor.get_component_mut::<Collider>() {
-                col.radius = 0.5;
-                col.is_cube = true;
+                col.shape = ColliderShape::Cube;
+                col.size = [1.0, 1.0, 1.0];
             }
         }
     }
@@ -345,8 +345,8 @@ impl App for TopDownShooterApp {
         }
         player_actor.with_bundle((Player, Velocity::default(), Collider::default()));
         if let Some(col) = player_actor.get_component_mut::<Collider>() {
-            col.radius = 0.5;
-            col.is_cube = true;
+            col.shape = ColliderShape::Cube;
+            col.size = [1.0, 1.0, 1.0];
         }
         player_actor.with_bundle((
             LookAt::default(),

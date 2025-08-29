@@ -502,17 +502,11 @@ engine.entity_has_tag(entity, "enemy");
 ```
 
 ## Sprite3D Component
-`Sprite3D` draws a textured quad in the world. Sprites can automatically face the
-camera (billboarding) or use the entity's rotation. Depth testing is enabled so
-sprites behave like regular geometry. Disable billboarding via `facing_camera`
-and set `double_sided` if you need the texture visible from the back. They render
-through the built-in `SpriteRenderSystem`. When `Engine::new(true)` is used,
-sprites are projected in 2D with the same scaling as objects drawn by the 2D
-compute shader.
-
-Sprite rendering works on both the OpenGL and `wgpu` backends. When built with
-the `wgpu` feature the engine loads textures through `wgpu` and uses the WGSL
-sprite shaders.
+`Sprite3D` spawns a textured quad mesh in the world that is processed like any
+other piece of geometry. It receives lighting, shadows and global illumination
+from the raytracing pipeline. Set `facing_camera` for billboarding or leave it
+`false` to orient the quad manually. Use `double_sided` if the texture should be
+visible from both sides. No separate sprite renderer is required.
 
 Load a texture and attach a sprite:
 ```rust

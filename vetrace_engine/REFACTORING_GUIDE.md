@@ -26,12 +26,11 @@ This made the code:
 
 The new architecture separates concerns into **specialized managers**:
 
-### 1. **RenderingManager** 
+### 1. **RenderingManager**
 Handles all rendering-related functionality:
 - Renderer backend (WGPU/OpenGL)
 - Scene management
 - EGUI integration
-- Sprite rendering
 
 ### 2. **InputManager**
 Manages input and window operations:
