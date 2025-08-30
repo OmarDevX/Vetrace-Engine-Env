@@ -197,7 +197,7 @@ impl WgpuRenderer {
         let triangle_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("triangles"),
                                                    size: std::mem::size_of::<GpuTriangle>() as u64,
-                                                   usage: BufferUsages::STORAGE,
+                                                   usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                                                    mapped_at_creation: false,
         });
         let bvh_buffer = device.create_buffer(&BufferDescriptor {
@@ -1952,6 +1952,9 @@ impl WgpuRenderer {
             sprite_vertices_cache: Vec::new(),
             prev_material_names: Vec::new(),
             prev_shader_defs: Vec::new(),
+            prev_triangles: vec![GpuTriangle::zeroed()],
+            prev_bvh_nodes: Vec::new(),
+            prev_tri_bvh_nodes: Vec::new(),
         }
     }
 
@@ -2441,43 +2444,76 @@ impl WgpuRenderer {
                 contents: bytemuck::cast_slice(&obj_data),
                 usage: BufferUsages::STORAGE,
             });
-        let default_tri;
-        let tri_bytes: &[u8];
-        if triangles.is_empty() {
-            default_tri = GpuTriangle::zeroed();
-            tri_bytes = bytemuck::bytes_of(&default_tri);
-        } else {
-            tri_bytes = bytemuck::cast_slice(triangles);
+        let tri_changed = self.prev_triangles.len() != triangles.len()
+            || bytemuck::cast_slice::<GpuTriangle, u8>(&self.prev_triangles)
+                != bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
+        if tri_changed {
+            let default_tri;
+            let tri_bytes: &[u8];
+            if triangles.is_empty() {
+                default_tri = GpuTriangle::zeroed();
+                tri_bytes = bytemuck::bytes_of(&default_tri);
+            } else {
+                tri_bytes = bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
+            }
+            if triangles.len() == self.prev_triangles.len() {
+                self.queue.write_buffer(&self.triangle_buffer, 0, tri_bytes);
+            } else {
+                self.triangle_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("triangles"),
+                    contents: tri_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+            }
+            self.prev_triangles = triangles.to_vec();
         }
-        self.triangle_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("triangles"),
-                                                              contents: tri_bytes,
-                                                              usage: BufferUsages::STORAGE,
-        });
-        let default_bvh;
-        let bvh_data = if bvh.is_empty() {
-            default_bvh = GpuBvhNode::default();
-            bytemuck::bytes_of(&default_bvh)
-        } else {
-            bytemuck::cast_slice(bvh)
-        };
-        self.bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("bvh"),
-                                                         contents: bvh_data,
-                                                         usage: BufferUsages::STORAGE,
-        });
-        let default_tbvh;
-        let tbvh_data = if tri_bvh.is_empty() {
-            default_tbvh = GpuTriBvhNode::default();
-            bytemuck::bytes_of(&default_tbvh)
-        } else {
-            bytemuck::cast_slice(tri_bvh)
-        };
-        self.tri_bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("tri_bvh"),
-                                                             contents: tbvh_data,
-                                                             usage: BufferUsages::STORAGE,
-        });
+        self.triangle_count = triangles.len() as u32;
+        let bvh_changed = self.prev_bvh_nodes.len() != bvh.len()
+            || bytemuck::cast_slice::<GpuBvhNode, u8>(&self.prev_bvh_nodes)
+                != bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
+        if bvh_changed {
+            let default_bvh;
+            let bvh_bytes: &[u8];
+            if bvh.is_empty() {
+                default_bvh = GpuBvhNode::default();
+                bvh_bytes = bytemuck::bytes_of(&default_bvh);
+            } else {
+                bvh_bytes = bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
+            }
+            if bvh.len() == self.prev_bvh_nodes.len() {
+                self.queue.write_buffer(&self.bvh_buffer, 0, bvh_bytes);
+            } else {
+                self.bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("bvh"),
+                    contents: bvh_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+            }
+            self.prev_bvh_nodes = bvh.to_vec();
+        }
+        let tri_bvh_changed = self.prev_tri_bvh_nodes.len() != tri_bvh.len()
+            || bytemuck::cast_slice::<GpuTriBvhNode, u8>(&self.prev_tri_bvh_nodes)
+                != bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
+        if tri_bvh_changed {
+            let default_tbvh;
+            let tbvh_bytes: &[u8];
+            if tri_bvh.is_empty() {
+                default_tbvh = GpuTriBvhNode::default();
+                tbvh_bytes = bytemuck::bytes_of(&default_tbvh);
+            } else {
+                tbvh_bytes = bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
+            }
+            if tri_bvh.len() == self.prev_tri_bvh_nodes.len() {
+                self.queue.write_buffer(&self.tri_bvh_buffer, 0, tbvh_bytes);
+            } else {
+                self.tri_bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("tri_bvh"),
+                    contents: tbvh_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+            }
+            self.prev_tri_bvh_nodes = tri_bvh.to_vec();
+        }
         let tex_limit = Self::texture_array_limit(&self.device) as u32;
         let mut clamped_mats: Vec<crate::scene::object::GpuMaterial> = materials.to_vec();
         for m in &mut clamped_mats {
