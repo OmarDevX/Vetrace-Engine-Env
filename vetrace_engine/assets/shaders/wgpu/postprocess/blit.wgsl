@@ -241,11 +241,41 @@ fn reproject_prev_uv(cur_uv: vec2<f32>, cur_depth01: f32) -> vec2<f32> {
     return prev_uv;
 }
 
+fn cubic(w: f32) -> f32 {
+    let a = -0.5;
+    let t = abs(w);
+    if (t <= 1.0) {
+        return (a + 2.0) * t * t * t - (a + 3.0) * t * t + 1.0;
+    } else if (t < 2.0) {
+        return a * t * t * t - 5.0 * a * t * t + 8.0 * a * t - 4.0 * a;
+    } else {
+        return 0.0;
+    }
+}
+
+fn bicubic_sample(uv: vec2<f32>) -> vec3<f32> {
+    let tex_size = params.tex_size;
+    let coord = uv * tex_size - vec2<f32>(0.5, 0.5);
+    let base = floor(coord);
+    let f = coord - base;
+    var sum = vec3<f32>(0.0, 0.0, 0.0);
+    for (var j: i32 = -1; j <= 2; j = j + 1) {
+        let wj = cubic(f.y - f32(j));
+        for (var i: i32 = -1; i <= 2; i = i + 1) {
+            let wi = cubic(f.x - f32(i));
+            let uv_samp = (base + vec2<f32>(f32(i), f32(j)) + vec2<f32>(0.5, 0.5)) / tex_size;
+            let samp = textureSample(tex, lin_samp, uv_samp).rgb;
+            sum += samp * wi * wj;
+        }
+    }
+    return sum;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cur_col = textureSample(tex, lin_samp, in.uv);
     let texel = vec2<f32>(1.0) / params.tex_size;
-    let c = cur_col.rgb;
+    let c = bicubic_sample(in.uv);
     let n = textureSample(tex, lin_samp, in.uv + vec2<f32>(texel.x, 0.0)).rgb;
     let s = textureSample(tex, lin_samp, in.uv - vec2<f32>(texel.x, 0.0)).rgb;
     let e = textureSample(tex, lin_samp, in.uv + vec2<f32>(0.0, texel.y)).rgb;
