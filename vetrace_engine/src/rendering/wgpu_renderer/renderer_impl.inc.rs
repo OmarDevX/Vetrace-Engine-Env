@@ -50,6 +50,10 @@ impl WgpuRenderer {
         let device = std::sync::Arc::new(device);
         let queue = std::sync::Arc::new(queue);
         set_wgpu_device_queue(device.clone(), queue.clone());
+        let surface_width = width as u32;
+        let surface_height = height as u32;
+        let render_width = surface_width;
+        let render_height = surface_height;
         let (
             st,
              screen_view,
@@ -95,12 +99,12 @@ impl WgpuRenderer {
              occluder_view,
              sampler,
              linear_sampler,
-        ) = create_textures(&device, config.format, width as u32, height as u32);
+        ) = create_textures(&device, config.format, render_width, render_height);
         let blur_src_texture = device.create_texture(&TextureDescriptor {
             label: Some("blur_src"),
                                                      size: Extent3d {
-                                                         width: width as u32,
-                                                         height: height as u32,
+                                                         width: render_width,
+                                                         height: render_height,
                                                          depth_or_array_layers: 1,
                                                      },
                                                      mip_level_count: 1,
@@ -1828,8 +1832,12 @@ impl WgpuRenderer {
             device,
             queue,
             config,
-            width: width as u32,
-            height: height as u32,
+            surface_width,
+            surface_height,
+            width: render_width,
+            height: render_height,
+            render_scale: 1.0,
+            sharpness: 0.0,
             is_2d: is_2d,
             object_buffer,
             triangle_buffer,
@@ -1959,11 +1967,13 @@ impl WgpuRenderer {
     }
 
     pub fn resize(&mut self, width: i32, height: i32) {
-        self.width = width as u32;
-        self.height = height as u32;
-        self.config.width = self.width;
-        self.config.height = self.height;
+        self.surface_width = width as u32;
+        self.surface_height = height as u32;
+        self.config.width = self.surface_width;
+        self.config.height = self.surface_height;
         self.surface.configure(&self.device, &self.config);
+        self.width = (self.surface_width as f32 * self.render_scale) as u32;
+        self.height = (self.surface_height as f32 * self.render_scale) as u32;
         let (
             st,
              screen_view,
@@ -2896,6 +2906,9 @@ impl WgpuRenderer {
             prev_view_proj: self.prev_view_proj,
             taa_jitter: [jitter_x, jitter_y],
             prev_taa_jitter: prev_jitter,
+            tex_size: [self.width as f32, self.height as f32],
+            sharpness: self.sharpness,
+            _pad0: 0.0,
         };
         if self.prev_blit_params.map_or(true, |p| p != blit_params) {
             self.queue.write_buffer(
@@ -2910,11 +2923,11 @@ impl WgpuRenderer {
         let cam_pos = Vec3::from(params.camera_pos);
         let cam_front = Vec3::from(params.camera_front);
         let cam_up = Vec3::from(params.camera_up);
-        let aspect = self.width as f32 / self.height as f32;
+        let aspect = self.surface_width as f32 / self.surface_height as f32;
         let view_proj = if self.is_2d {
-            let scale = self.height as f32 / (params.fov * 10.0);
-            let sx = 2.0 * scale / self.width as f32;
-            let sy = 2.0 * scale / self.height as f32;
+            let scale = self.surface_height as f32 / (params.fov * 10.0);
+            let sx = 2.0 * scale / self.surface_width as f32;
+            let sy = 2.0 * scale / self.surface_height as f32;
             Mat4::from_cols_array(&[
                 sx,
                 0.0,
@@ -3618,7 +3631,16 @@ impl WgpuRenderer {
         self.frame_number = 0;
     }
     pub fn screen_dimensions(&self) -> (i32, i32) {
-        (self.width as i32, self.height as i32)
+        (self.surface_width as i32, self.surface_height as i32)
+    }
+
+    pub fn set_render_scale(&mut self, scale: f32) {
+        self.render_scale = scale.clamp(0.1, 1.0);
+        self.resize(self.surface_width as i32, self.surface_height as i32);
+    }
+
+    pub fn enable_fsr(&mut self, sharpness: f32) {
+        self.sharpness = sharpness;
     }
 
     pub fn set_post_fx_uniforms(&mut self, fx: PostFxUniforms) {

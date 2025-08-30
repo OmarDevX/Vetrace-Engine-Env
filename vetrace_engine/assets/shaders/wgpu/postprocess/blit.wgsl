@@ -83,6 +83,9 @@ struct Params {
     prev_view_proj: mat4x4<f32>, // built with PREVIOUS jitter
     taa_jitter: vec2<f32>,       // current jitter (UV)
     prev_taa_jitter: vec2<f32>,  // previous jitter (UV)
+    tex_size: vec2<f32>,         // source texture size
+    sharpness: f32,
+    _pad: f32,
 };
 @group(0) @binding(13) var<uniform> params: Params;
 
@@ -241,7 +244,15 @@ fn reproject_prev_uv(cur_uv: vec2<f32>, cur_depth01: f32) -> vec2<f32> {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cur_col = textureSample(tex, lin_samp, in.uv);
-    var color   = cur_col;
+    let texel = vec2<f32>(1.0) / params.tex_size;
+    let c = cur_col.rgb;
+    let n = textureSample(tex, lin_samp, in.uv + vec2<f32>(texel.x, 0.0)).rgb;
+    let s = textureSample(tex, lin_samp, in.uv - vec2<f32>(texel.x, 0.0)).rgb;
+    let e = textureSample(tex, lin_samp, in.uv + vec2<f32>(0.0, texel.y)).rgb;
+    let w = textureSample(tex, lin_samp, in.uv - vec2<f32>(0.0, texel.y)).rgb;
+    let avg = (n + s + e + w) * 0.25;
+    let sharpened = c + params.sharpness * (c - avg);
+    var color = vec4<f32>(sharpened, cur_col.a);
 
     // --------- simple 2D “godray” shadow (kept as-is) ----------
     if (light.intensity > 0.0) {

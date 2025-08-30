@@ -190,6 +190,9 @@ pub struct BlitParams {
     pub prev_view_proj: [[f32; 4]; 4],
     pub taa_jitter: [f32; 2],
     pub prev_taa_jitter: [f32; 2],
+    pub tex_size: [f32; 2],
+    pub sharpness: f32,
+    pub _pad0: f32,
 }
 
 #[repr(C)]
