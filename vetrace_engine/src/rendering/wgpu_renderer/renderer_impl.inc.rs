@@ -1953,6 +1953,8 @@ impl WgpuRenderer {
             prev_material_names: Vec::new(),
             prev_shader_defs: Vec::new(),
             prev_triangles: vec![GpuTriangle::zeroed()],
+            prev_bvh_nodes: Vec::new(),
+            prev_tri_bvh_nodes: Vec::new(),
         }
     }
 
@@ -2466,30 +2468,50 @@ impl WgpuRenderer {
             self.prev_triangles = triangles.to_vec();
         }
         self.triangle_count = triangles.len() as u32;
-        let default_bvh;
-        let bvh_data = if bvh.is_empty() {
-            default_bvh = GpuBvhNode::default();
-            bytemuck::bytes_of(&default_bvh)
-        } else {
-            bytemuck::cast_slice(bvh)
-        };
-        self.bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("bvh"),
-                                                         contents: bvh_data,
-                                                         usage: BufferUsages::STORAGE,
-        });
-        let default_tbvh;
-        let tbvh_data = if tri_bvh.is_empty() {
-            default_tbvh = GpuTriBvhNode::default();
-            bytemuck::bytes_of(&default_tbvh)
-        } else {
-            bytemuck::cast_slice(tri_bvh)
-        };
-        self.tri_bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("tri_bvh"),
-                                                             contents: tbvh_data,
-                                                             usage: BufferUsages::STORAGE,
-        });
+        let bvh_changed = self.prev_bvh_nodes.len() != bvh.len()
+            || bytemuck::cast_slice(&self.prev_bvh_nodes) != bytemuck::cast_slice(bvh);
+        if bvh_changed {
+            let default_bvh;
+            let bvh_bytes: &[u8];
+            if bvh.is_empty() {
+                default_bvh = GpuBvhNode::default();
+                bvh_bytes = bytemuck::bytes_of(&default_bvh);
+            } else {
+                bvh_bytes = bytemuck::cast_slice(bvh);
+            }
+            if bvh.len() == self.prev_bvh_nodes.len() {
+                self.queue.write_buffer(&self.bvh_buffer, 0, bvh_bytes);
+            } else {
+                self.bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("bvh"),
+                    contents: bvh_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+            }
+            self.prev_bvh_nodes = bvh.to_vec();
+        }
+        let tri_bvh_changed = self.prev_tri_bvh_nodes.len() != tri_bvh.len()
+            || bytemuck::cast_slice(&self.prev_tri_bvh_nodes) != bytemuck::cast_slice(tri_bvh);
+        if tri_bvh_changed {
+            let default_tbvh;
+            let tbvh_bytes: &[u8];
+            if tri_bvh.is_empty() {
+                default_tbvh = GpuTriBvhNode::default();
+                tbvh_bytes = bytemuck::bytes_of(&default_tbvh);
+            } else {
+                tbvh_bytes = bytemuck::cast_slice(tri_bvh);
+            }
+            if tri_bvh.len() == self.prev_tri_bvh_nodes.len() {
+                self.queue.write_buffer(&self.tri_bvh_buffer, 0, tbvh_bytes);
+            } else {
+                self.tri_bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("tri_bvh"),
+                    contents: tbvh_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+            }
+            self.prev_tri_bvh_nodes = tri_bvh.to_vec();
+        }
         let tex_limit = Self::texture_array_limit(&self.device) as u32;
         let mut clamped_mats: Vec<crate::scene::object::GpuMaterial> = materials.to_vec();
         for m in &mut clamped_mats {

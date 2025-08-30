@@ -147,6 +147,8 @@ pub struct WgpuRenderer {
     prev_material_names: Vec<String>,
     prev_shader_defs: Vec<(String, String)>,
     prev_triangles: Vec<GpuTriangle>,
+    prev_bvh_nodes: Vec<GpuBvhNode>,
+    prev_tri_bvh_nodes: Vec<GpuTriBvhNode>,
 }
 
 include!("renderer_impl.inc.rs");

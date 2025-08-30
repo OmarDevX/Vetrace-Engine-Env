@@ -1,6 +1,8 @@
 use crate::rendering::resource::{compile_shader, link_program};
 use crate::rendering::ssbo::{create_ssbo, update_ssbo};
+use crate::scene::bvh::GpuBvhNode;
 use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle};
+use crate::scene::tri_bvh::GpuTriBvhNode;
 use gl::types::*;
 use sdl2::video::Window;
 use std::ffi::CString;
@@ -140,6 +142,8 @@ pub struct Renderer {
     uniforms: Uniforms,
     denoise_uniforms: DenoiseUniforms,
     prev_triangles: Vec<GpuTriangle>,
+    prev_bvh: Vec<GpuBvhNode>,
+    prev_tri_bvh: Vec<GpuTriBvhNode>,
 }
 
 impl Renderer {
@@ -328,6 +332,8 @@ impl Renderer {
             uniforms,
             denoise_uniforms,
             prev_triangles: Vec::new(),
+            prev_bvh: Vec::new(),
+            prev_tri_bvh: Vec::new(),
         }
     }
     pub fn resize(&mut self, width: i32, height: i32) {
@@ -397,8 +403,18 @@ impl Renderer {
             update_ssbo(self.triangle_ssbo, triangles);
             self.prev_triangles = triangles.to_vec();
         }
-        update_ssbo(self.bvh_ssbo, bvh);
-        update_ssbo(self.tri_bvh_ssbo, tri_bvh);
+        if self.prev_bvh.len() != bvh.len()
+            || bytemuck::cast_slice(&self.prev_bvh) != bytemuck::cast_slice(bvh)
+        {
+            update_ssbo(self.bvh_ssbo, bvh);
+            self.prev_bvh = bvh.to_vec();
+        }
+        if self.prev_tri_bvh.len() != tri_bvh.len()
+            || bytemuck::cast_slice(&self.prev_tri_bvh) != bytemuck::cast_slice(tri_bvh)
+        {
+            update_ssbo(self.tri_bvh_ssbo, tri_bvh);
+            self.prev_tri_bvh = tri_bvh.to_vec();
+        }
         //      println!("SSBO update: objects {} bytes, triangles {} bytes",
         //     objects.len() * size_of::<GpuObject>(),
         //     triangles.len() * size_of::<GpuTriangle>());
