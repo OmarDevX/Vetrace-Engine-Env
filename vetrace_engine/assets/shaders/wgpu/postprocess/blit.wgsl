@@ -241,47 +241,65 @@ fn reproject_prev_uv(cur_uv: vec2<f32>, cur_depth01: f32) -> vec2<f32> {
     return prev_uv;
 }
 
-fn cubic(w: f32) -> f32 {
-    let a = -0.5;
-    let t = abs(w);
-    if (t <= 1.0) {
-        return (a + 2.0) * t * t * t - (a + 3.0) * t * t + 1.0;
-    } else if (t < 2.0) {
-        return a * t * t * t - 5.0 * a * t * t + 8.0 * a * t - 4.0 * a;
-    } else {
-        return 0.0;
-    }
+fn catrom_weights(t: f32) -> vec4<f32> {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let w0 = -0.5 * t3 + 1.0 * t2 - 0.5 * t;
+    let w1 =  1.5 * t3 - 2.5 * t2 + 1.0;
+    let w2 = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
+    let w3 =  0.5 * t3 - 0.5 * t2;
+    return vec4<f32>(w0, w1, w2, w3);
 }
 
-fn bicubic_sample(uv: vec2<f32>) -> vec3<f32> {
-    let tex_size = params.tex_size;
-    let coord = uv * tex_size - vec2<f32>(0.5, 0.5);
-    let base = floor(coord);
-    let f = coord - base;
-    var sum = vec3<f32>(0.0, 0.0, 0.0);
-    for (var j: i32 = -1; j <= 2; j = j + 1) {
-        let wj = cubic(f.y - f32(j));
-        for (var i: i32 = -1; i <= 2; i = i + 1) {
-            let wi = cubic(f.x - f32(i));
-            let uv_samp = (base + vec2<f32>(f32(i), f32(j)) + vec2<f32>(0.5, 0.5)) / tex_size;
-            let samp = textureSample(tex, lin_samp, uv_samp).rgb;
-            sum += samp * wi * wj;
+fn clamp_uv01(uv: vec2<f32>) -> vec2<f32> {
+    return clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
+}
+
+// Catmull-Rom bicubic with anti-ringing and edge clamping, LOD 0
+fn bicubic_catrom_sample(uv: vec2<f32>) -> vec3<f32> {
+    let size = params.tex_size;
+    let p = uv * size - vec2<f32>(0.5);
+    let base = floor(p);
+    let f = p - base;
+    let wx = catrom_weights(f.x);
+    let wy = catrom_weights(f.y);
+    var accum = vec3<f32>(0.0);
+    var cmin = vec3<f32>(1e9);
+    var cmax = vec3<f32>(-1e9);
+    for (var j: i32 = 0; j < 4; j = j + 1) {
+        let wyj = wy[j];
+        for (var i: i32 = 0; i < 4; i = i + 1) {
+            let uv_s = (base + vec2<f32>(f32(i - 1), f32(j - 1)) + vec2<f32>(0.5)) / size;
+            let s = textureSampleLevel(tex, lin_samp, clamp_uv01(uv_s), 0.0).rgb;
+            let w = wx[i] * wyj;
+            accum += s * w;
+            cmin = min(cmin, s);
+            cmax = max(cmax, s);
         }
     }
-    return sum;
+    return clamp(accum, cmin, cmax);
+}
+
+fn rcas_sharpen(c: vec3<f32>, n: vec3<f32>, s: vec3<f32>, e: vec3<f32>, w: vec3<f32>, sharp: f32) -> vec3<f32> {
+    let mn = min(min(n, s), min(e, w));
+    let mx = max(max(n, s), max(e, w));
+    let range = mx - mn + vec3<f32>(1e-5);
+    let detail = c - (n + s + e + w) * 0.25;
+    let gain = sharp * detail / range;
+    return clamp(c + gain, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cur_col = textureSample(tex, lin_samp, in.uv);
     let texel = vec2<f32>(1.0) / params.tex_size;
-    let c = bicubic_sample(in.uv);
-    let n = textureSample(tex, lin_samp, in.uv + vec2<f32>(texel.x, 0.0)).rgb;
-    let s = textureSample(tex, lin_samp, in.uv - vec2<f32>(texel.x, 0.0)).rgb;
-    let e = textureSample(tex, lin_samp, in.uv + vec2<f32>(0.0, texel.y)).rgb;
-    let w = textureSample(tex, lin_samp, in.uv - vec2<f32>(0.0, texel.y)).rgb;
-    let avg = (n + s + e + w) * 0.25;
-    let sharpened = c + params.sharpness * (c - avg);
+    let c = bicubic_catrom_sample(in.uv);
+    let n4 = textureSampleLevel(tex, lin_samp, in.uv + vec2<f32>(texel.x, 0.0), 0.0).rgb;
+    let s4 = textureSampleLevel(tex, lin_samp, in.uv - vec2<f32>(texel.x, 0.0), 0.0).rgb;
+    let e4 = textureSampleLevel(tex, lin_samp, in.uv + vec2<f32>(0.0, texel.y), 0.0).rgb;
+    let w4 = textureSampleLevel(tex, lin_samp, in.uv - vec2<f32>(0.0, texel.y), 0.0).rgb;
+    let sharpen = clamp(params.sharpness, 0.0, 1.0);
+    let sharpened = rcas_sharpen(c, n4, s4, e4, w4, sharpen);
     var color = vec4<f32>(sharpened, cur_col.a);
 
     // --------- simple 2D “godray” shadow (kept as-is) ----------

@@ -487,6 +487,9 @@ pub fn create_textures(
     });
     let linear_sampler = device.create_sampler(&SamplerDescriptor {
         label: Some("linear_sampler"),
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        address_mode_w: AddressMode::ClampToEdge,
         mag_filter: FilterMode::Linear,
         min_filter: FilterMode::Linear,
         ..Default::default()
