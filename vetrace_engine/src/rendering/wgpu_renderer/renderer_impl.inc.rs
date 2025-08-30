@@ -3643,6 +3643,10 @@ impl WgpuRenderer {
         self.sharpness = sharpness;
     }
 
+    pub fn disable_fsr(&mut self) {
+        self.sharpness = 0.0;
+    }
+
     pub fn set_post_fx_uniforms(&mut self, fx: PostFxUniforms) {
         if fx.temporal_blend != self.post_fx_uniforms.temporal_blend
             || fx.history_clamp_k != self.post_fx_uniforms.history_clamp_k
