@@ -122,8 +122,13 @@ struct DenoiseUniforms {
 pub struct Renderer {
     screen_width: i32,
     screen_height: i32,
+    render_width: i32,
+    render_height: i32,
+    render_scale: f32,
     frame_number: i32,
     is_2d: bool,
+    use_fsr: bool,
+    sharpness: f32,
     ray_program: GLuint,
     denoise_program: GLuint,
     quad_program: GLuint,
@@ -223,9 +228,12 @@ impl Renderer {
             frame_number: get_denoise_uniform("frameNumber"),
         };
 
+        let render_width = screen_width;
+        let render_height = screen_height;
+
         let texture = create_texture(
-            screen_width,
-            screen_height,
+            render_width,
+            render_height,
             gl::RGBA32F as GLint,
             gl::RGBA,
             gl::FLOAT,
@@ -233,8 +241,8 @@ impl Renderer {
         );
 
         let ray_texture = create_texture(
-            screen_width,
-            screen_height,
+            render_width,
+            render_height,
             gl::RGBA32F as GLint,
             gl::RGBA,
             gl::FLOAT,
@@ -242,8 +250,8 @@ impl Renderer {
         );
 
         let depth_texture = create_texture(
-            screen_width,
-            screen_height,
+            render_width,
+            render_height,
             gl::R32F as GLint,
             gl::RED,
             gl::FLOAT,
@@ -251,8 +259,8 @@ impl Renderer {
         );
 
         let normal_texture = create_texture(
-            screen_width,
-            screen_height,
+            render_width,
+            render_height,
             gl::RGBA32F as GLint,
             gl::RGBA,
             gl::FLOAT,
@@ -312,8 +320,13 @@ impl Renderer {
         Self {
             screen_width,
             screen_height,
+            render_width,
+            render_height,
+            render_scale: 1.0,
             frame_number: 0,
             is_2d,
+            use_fsr: false,
+            sharpness: 0.0,
             ray_program,
             denoise_program,
             quad_program,
@@ -339,39 +352,40 @@ impl Renderer {
     pub fn resize(&mut self, width: i32, height: i32) {
         self.screen_width = width;
         self.screen_height = height;
+        self.render_width = (width as f32 * self.render_scale) as i32;
+        self.render_height = (height as f32 * self.render_scale) as i32;
 
         unsafe {
             gl::Viewport(0, 0, width, height);
 
-            // Resize the output texture
             resize_texture(
                 self.texture,
-                width,
-                height,
+                self.render_width,
+                self.render_height,
                 gl::RGBA32F as GLint,
                 gl::RGBA,
                 gl::FLOAT,
             );
             resize_texture(
                 self.ray_texture,
-                width,
-                height,
+                self.render_width,
+                self.render_height,
                 gl::RGBA32F as GLint,
                 gl::RGBA,
                 gl::FLOAT,
             );
             resize_texture(
                 self.depth_texture,
-                width,
-                height,
+                self.render_width,
+                self.render_height,
                 gl::R32F as GLint,
                 gl::RED,
                 gl::FLOAT,
             );
             resize_texture(
                 self.normal_texture,
-                width,
-                height,
+                self.render_width,
+                self.render_height,
                 gl::RGBA32F as GLint,
                 gl::RGBA,
                 gl::FLOAT,
@@ -386,8 +400,57 @@ impl Renderer {
             );
         }
 
-        // Reset frame counter after resize
         self.reset_frame();
+    }
+
+    pub fn set_render_scale(&mut self, scale: f32) {
+        self.render_scale = scale.clamp(0.1, 1.0);
+        self.render_width = (self.screen_width as f32 * self.render_scale) as i32;
+        self.render_height = (self.screen_height as f32 * self.render_scale) as i32;
+        unsafe {
+            resize_texture(
+                self.texture,
+                self.render_width,
+                self.render_height,
+                gl::RGBA32F as GLint,
+                gl::RGBA,
+                gl::FLOAT,
+            );
+            resize_texture(
+                self.ray_texture,
+                self.render_width,
+                self.render_height,
+                gl::RGBA32F as GLint,
+                gl::RGBA,
+                gl::FLOAT,
+            );
+            resize_texture(
+                self.depth_texture,
+                self.render_width,
+                self.render_height,
+                gl::R32F as GLint,
+                gl::RED,
+                gl::FLOAT,
+            );
+            resize_texture(
+                self.normal_texture,
+                self.render_width,
+                self.render_height,
+                gl::RGBA32F as GLint,
+                gl::RGBA,
+                gl::FLOAT,
+            );
+        }
+        self.reset_frame();
+    }
+
+    pub fn enable_fsr(&mut self, sharpness: f32) {
+        self.use_fsr = true;
+        self.sharpness = sharpness;
+    }
+
+    pub fn disable_fsr(&mut self) {
+        self.use_fsr = false;
     }
     pub fn update_scene_data(
         &mut self,
@@ -471,8 +534,8 @@ impl Renderer {
                 }
                 r
             };
-            let jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.screen_width as f32;
-            let jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.screen_height as f32;
+            let jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.render_width as f32;
+            let jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.render_height as f32;
             gl::Uniform2fv(self.uniforms.taa_jitter, 1, [jitter_x, jitter_y].as_ptr());
             gl::Uniform1f(self.uniforms.current_time, params.current_time);
             gl::Uniform1i(self.uniforms.frame_number, self.frame_number);
@@ -514,8 +577,8 @@ impl Renderer {
 
             // Dispatch compute shader
             gl::DispatchCompute(
-                ((self.screen_width + 15) / 16) as u32,
-                ((self.screen_height + 15) / 16) as u32,
+                ((self.render_width + 15) / 16) as u32,
+                ((self.render_height + 15) / 16) as u32,
                 1,
             );
 
@@ -568,8 +631,8 @@ impl Renderer {
                     gl::RGBA32F,
                 );
                 gl::DispatchCompute(
-                    ((self.screen_width + 15) / 16) as u32,
-                    ((self.screen_height + 15) / 16) as u32,
+                    ((self.render_width + 15) / 16) as u32,
+                    ((self.render_height + 15) / 16) as u32,
                     1,
                 );
 
@@ -586,6 +649,19 @@ impl Renderer {
                 println!("Warning: Uniform 'screenTex' not found");
             }
             gl::Uniform1i(tex_loc, 0);
+            let size_loc =
+                gl::GetUniformLocation(self.quad_program, CString::new("texSize").unwrap().as_ptr());
+            if size_loc >= 0 {
+                gl::Uniform2f(size_loc, self.render_width as f32, self.render_height as f32);
+            }
+            let sharp_loc = gl::GetUniformLocation(
+                self.quad_program,
+                CString::new("sharpness").unwrap().as_ptr(),
+            );
+            if sharp_loc >= 0 {
+                let s = if self.use_fsr { self.sharpness } else { 0.0 };
+                gl::Uniform1f(sharp_loc, s);
+            }
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, self.texture);
 

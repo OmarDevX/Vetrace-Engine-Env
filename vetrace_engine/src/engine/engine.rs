@@ -876,6 +876,29 @@ impl Engine {
         }
     }
 
+    /// Change the window resolution and resize renderer accordingly.
+    pub fn set_window_size(&mut self, width: u32, height: u32) {
+        self.window.resize(width as i32, height as i32);
+        self.renderer.resize(width as i32, height as i32);
+        #[cfg(feature = "use_epi")]
+        self.egui_renderer.update_screen_rect((width, height));
+    }
+
+    /// Adjust internal rendering resolution scale (0.1-1.0).
+    pub fn set_render_scale(&mut self, scale: f32) {
+        self.renderer.set_render_scale(scale);
+    }
+
+    /// Enable AMD FSR upscaling with a given sharpness factor.
+    pub fn enable_fsr(&mut self, sharpness: f32) {
+        self.renderer.enable_fsr(sharpness);
+    }
+
+    /// Disable AMD FSR upscaling.
+    pub fn disable_fsr(&mut self) {
+        self.renderer.disable_fsr();
+    }
+
     /// Render EGUI UI with a callback function
     /// This allows plugins to render their UI during the EGUI frame
     pub fn render_ui<F>(&mut self, ui_callback: F)
