@@ -98,6 +98,11 @@ fn luminance(c: vec3<f32>) -> f32 {
     return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
 }
 
+fn luma_gamma(c: vec3<f32>) -> f32 {
+    let cg = pow(c, vec3<f32>(1.0 / 2.2));
+    return dot(cg, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     var positions = array<vec2<f32>, 4>(
@@ -255,7 +260,7 @@ fn clamp_uv01(uv: vec2<f32>) -> vec2<f32> {
     return clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
 }
 
-// Catmull-Rom bicubic with anti-ringing and edge clamping, LOD 0
+// Catmull-Rom bicubic with luminance anti-ringing and edge clamping, LOD 0
 fn bicubic_catrom_sample(uv: vec2<f32>) -> vec3<f32> {
     let size = params.tex_size;
     let p = uv * size - vec2<f32>(0.5);
@@ -264,8 +269,8 @@ fn bicubic_catrom_sample(uv: vec2<f32>) -> vec3<f32> {
     let wx = catrom_weights(f.x);
     let wy = catrom_weights(f.y);
     var accum = vec3<f32>(0.0);
-    var cmin = vec3<f32>(1e9);
-    var cmax = vec3<f32>(-1e9);
+    var lmin = 1e9;
+    var lmax = -1e9;
     for (var j: i32 = 0; j < 4; j = j + 1) {
         let wyj = wy[j];
         for (var i: i32 = 0; i < 4; i = i + 1) {
@@ -273,11 +278,14 @@ fn bicubic_catrom_sample(uv: vec2<f32>) -> vec3<f32> {
             let s = textureSampleLevel(tex, lin_samp, clamp_uv01(uv_s), 0.0).rgb;
             let w = wx[i] * wyj;
             accum += s * w;
-            cmin = min(cmin, s);
-            cmax = max(cmax, s);
+            let lum = luminance(s);
+            lmin = min(lmin, lum);
+            lmax = max(lmax, lum);
         }
     }
-    return clamp(accum, cmin, cmax);
+    let lum_acc = luminance(accum);
+    let lum_clamped = clamp(lum_acc, lmin, lmax);
+    return accum + (lum_clamped - lum_acc);
 }
 
 // Higher quality FXAA pass operating on the upscaled image
@@ -290,26 +298,26 @@ fn fxaa(
     luma_e: f32,
     luma_w: f32,
 ) -> vec3<f32> {
-    let luma_m = luminance(c);
-    let luma_nw = luminance(textureSampleLevel(
+    let luma_m = luma_gamma(c);
+    let luma_nw = luma_gamma(textureSampleLevel(
         tex,
         lin_samp,
         clamp_uv01(uv + vec2<f32>(-texel.x, -texel.y)),
         0.0,
     ).rgb);
-    let luma_ne = luminance(textureSampleLevel(
+    let luma_ne = luma_gamma(textureSampleLevel(
         tex,
         lin_samp,
         clamp_uv01(uv + vec2<f32>(texel.x, -texel.y)),
         0.0,
     ).rgb);
-    let luma_sw = luminance(textureSampleLevel(
+    let luma_sw = luma_gamma(textureSampleLevel(
         tex,
         lin_samp,
         clamp_uv01(uv + vec2<f32>(-texel.x, texel.y)),
         0.0,
     ).rgb);
-    let luma_se = luminance(textureSampleLevel(
+    let luma_se = luma_gamma(textureSampleLevel(
         tex,
         lin_samp,
         clamp_uv01(uv + vec2<f32>(texel.x, texel.y)),
@@ -364,15 +372,21 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let e4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv + vec2<f32>(0.0, texel.y)), 0.0).rgb;
     let w4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv - vec2<f32>(0.0, texel.y)), 0.0).rgb;
 
+    let luma_n_g = luma_gamma(n4);
+    let luma_s_g = luma_gamma(s4);
+    let luma_e_g = luma_gamma(e4);
+    let luma_w_g = luma_gamma(w4);
+
+    let aa = fxaa(in.uv, texel, c, luma_n_g, luma_s_g, luma_e_g, luma_w_g);
+
     let luma_n = luminance(n4);
     let luma_s = luminance(s4);
     let luma_e = luminance(e4);
     let luma_w = luminance(w4);
-
-    let aa = fxaa(in.uv, texel, c, luma_n, luma_s, luma_e, luma_w);
-    let avg = (n4 + s4 + e4 + w4) * 0.25;
+    let luma_avg = (luma_n + luma_s + luma_e + luma_w) * 0.25;
+    let luma_aa = luminance(aa);
     let sharpen = clamp(params.sharpness, 0.0, 1.0);
-    let sharpened = mix(aa, aa + (aa - avg), sharpen);
+    let sharpened = aa + vec3<f32>(sharpen * (luma_aa - luma_avg));
     var color = vec4<f32>(sharpened, cur_col.a);
 
     // --------- simple 2D “godray” shadow (kept as-is) ----------
