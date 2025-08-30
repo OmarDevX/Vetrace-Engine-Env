@@ -1,5 +1,5 @@
 use crate::materials::PbrMaterial;
-use crate::math::vec3;
+use crate::math::{vec3, Vec3};
 use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, Object};
 
 pub struct Scene {
@@ -322,6 +322,27 @@ impl Scene {
 
     pub fn get_bvh_nodes(&self) -> &[crate::scene::bvh::GpuBvhNode] {
         &self.bvh_nodes
+    }
+
+    /// Calculate a conservative near plane based on distance to the closest
+    /// object's bounding sphere. This helps avoid clipping when the camera is
+    /// very close to geometry or inside enclosed spaces.
+    pub fn camera_near_plane(&self, cam_pos: Vec3) -> f32 {
+        let mut min_dist = f32::MAX;
+        for obj in &self.objects {
+            let center = Vec3::from(obj.position);
+            let dist = center.distance(cam_pos) - obj.radius;
+            if dist < min_dist {
+                min_dist = dist;
+            }
+        }
+        if !min_dist.is_finite() {
+            0.1
+        } else if min_dist <= 0.0 {
+            0.01
+        } else {
+            (min_dist * 0.5).clamp(0.01, 0.1)
+        }
     }
 
     pub fn sync_objects_to_world(

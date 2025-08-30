@@ -496,6 +496,7 @@ impl Engine {
         let (raw_gpu_objects, raw_triangles) = self.scene.get_gpu_buffers();
         let raw_atmos = self.scene.get_gpu_atmospheres();
         let cam_pos = cam.position;
+        let z_near = self.scene.camera_near_plane(cam_pos);
 
         // Offset all GPU objects by the camera so the camera stays at the origin
         let mut gpu_objects: Vec<_> = raw_gpu_objects.to_vec();
@@ -661,7 +662,7 @@ impl Engine {
             inv_view_proj: {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
-                let vp = perspective(cam.fov, aspect, 0.1, 1000.0)
+                let vp = perspective(cam.fov, aspect, z_near, 1000.0)
                     * look_at(&Vec3::ZERO, &cam_front, &cam_up);
                 vp.inverse().to_cols_array_2d()
             },
@@ -711,7 +712,7 @@ impl Engine {
             let (w, h) = self.renderer.screen_dimensions();
             let aspect = w as f32 / h as f32;
             let view_mat = look_at(&Vec3::ZERO, &cam_front, &cam_up);
-            let proj_mat = perspective(cam.fov, aspect, 0.1, 1000.0);
+            let proj_mat = perspective(cam.fov, aspect, z_near, 1000.0);
 
             // Build PBR meshes from ECS world (from run.rs line 416-437)
             use crate::gpu::MeshHandle;

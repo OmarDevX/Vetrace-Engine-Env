@@ -171,7 +171,8 @@ impl Behaviour for PostProcessBehaviour {
                 uniforms.dof_db_size = 1.0;
                 uniforms.dof_feather = 0.0;
                 uniforms.dof_pentagon = 0;
-                uniforms.z_near = 0.1;
+                let cam_pos = engine.active_camera_info().position;
+                uniforms.z_near = engine.scene.camera_near_plane(cam_pos);
                 uniforms.z_far = 1000.0;
                 if let Some(d) = &pp.dof {
                     uniforms.dof_enabled = 1;

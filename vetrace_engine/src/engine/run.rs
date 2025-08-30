@@ -311,6 +311,7 @@ impl Engine {
             let cam_front = cam.orientation * Vec3::X;
             let cam_up = cam.orientation * Vec3::Y;
             let cam_right = cam.orientation * Vec3::Z;
+            let z_near = scene.camera_near_plane(cam_pos);
 
             let mut gpu_objects: Vec<_> = raw_gpu_objects.to_vec();
             for obj in &mut gpu_objects {
@@ -475,7 +476,7 @@ impl Engine {
                 inv_view_proj: {
                     let (w, h) = self.renderer.screen_dimensions();
                     let aspect = w as f32 / h as f32;
-                    let vp = (perspective(cam.fov, aspect, 0.1, 1000.0)
+                    let vp = (perspective(cam.fov, aspect, z_near, 1000.0)
                         * look_at(&Vec3::ZERO, &cam_front, &cam_up))
                     .inverse()
                     .to_cols_array();
@@ -539,7 +540,7 @@ impl Engine {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
                 let view_mat = look_at(&Vec3::ZERO, &cam_front, &cam_up);
-                let proj_mat = perspective(cam.fov, aspect, 0.1, 1000.0);
+                let proj_mat = perspective(cam.fov, aspect, z_near, 1000.0);
 
                 let mut pbr_meshes = Vec::new();
                 for (e, transform, mesh, mat) in
