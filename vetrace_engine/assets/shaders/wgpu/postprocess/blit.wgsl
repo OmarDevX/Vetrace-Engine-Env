@@ -280,6 +280,35 @@ fn bicubic_catrom_sample(uv: vec2<f32>) -> vec3<f32> {
     return clamp(accum, cmin, cmax);
 }
 
+// Lightweight FXAA pass operating on the upscaled image
+fn fxaa(
+    uv: vec2<f32>,
+    texel: vec2<f32>,
+    c: vec3<f32>,
+    n: vec3<f32>,
+    s: vec3<f32>,
+    e: vec3<f32>,
+    w: vec3<f32>,
+) -> vec3<f32> {
+    let luma_c = luminance(c);
+    let luma_n = luminance(n);
+    let luma_s = luminance(s);
+    let luma_e = luminance(e);
+    let luma_w = luminance(w);
+    let luma_min = min(luma_c, min(min(luma_n, luma_s), min(luma_e, luma_w)));
+    let luma_max = max(luma_c, max(max(luma_n, luma_s), max(luma_e, luma_w)));
+    let range = luma_max - luma_min;
+    if (range < max(0.0312, luma_max * 0.125)) {
+        return c;
+    }
+    let edge_h = abs(luma_w - luma_e);
+    let edge_v = abs(luma_n - luma_s);
+    let dir = select(vec2<f32>(0.0, texel.y), vec2<f32>(texel.x, 0.0), edge_h > edge_v);
+    let c1 = bicubic_catrom_sample(uv + dir * 0.5);
+    let c2 = bicubic_catrom_sample(uv - dir * 0.5);
+    return (c1 + c2) * 0.5;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cur_col = textureSample(tex, lin_samp, in.uv);
@@ -292,7 +321,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let avg = (n4 + s4 + e4 + w4) * 0.25;
     let sharpen = clamp(params.sharpness, 0.0, 1.0);
     let sharpened = mix(c, c + (c - avg), sharpen);
-    var color = vec4<f32>(sharpened, cur_col.a);
+    let aa = fxaa(in.uv, texel, sharpened, n4, s4, e4, w4);
+    var color = vec4<f32>(aa, cur_col.a);
 
     // --------- simple 2D “godray” shadow (kept as-is) ----------
     if (light.intensity > 0.0) {
