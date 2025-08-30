@@ -197,7 +197,7 @@ impl WgpuRenderer {
         let triangle_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("triangles"),
                                                    size: std::mem::size_of::<GpuTriangle>() as u64,
-                                                   usage: BufferUsages::STORAGE,
+                                                   usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                                                    mapped_at_creation: false,
         });
         let bvh_buffer = device.create_buffer(&BufferDescriptor {
@@ -2460,7 +2460,7 @@ impl WgpuRenderer {
                 self.triangle_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
                     label: Some("triangles"),
                     contents: tri_bytes,
-                    usage: BufferUsages::STORAGE,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                 });
             }
             self.prev_triangles = triangles.to_vec();
