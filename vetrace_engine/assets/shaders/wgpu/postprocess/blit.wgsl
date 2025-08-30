@@ -280,15 +280,6 @@ fn bicubic_catrom_sample(uv: vec2<f32>) -> vec3<f32> {
     return clamp(accum, cmin, cmax);
 }
 
-fn rcas_sharpen(c: vec3<f32>, n: vec3<f32>, s: vec3<f32>, e: vec3<f32>, w: vec3<f32>, sharp: f32) -> vec3<f32> {
-    let mn = min(min(n, s), min(e, w));
-    let mx = max(max(n, s), max(e, w));
-    let range = mx - mn + vec3<f32>(1e-5);
-    let detail = c - (n + s + e + w) * 0.25;
-    let gain = sharp * detail / range;
-    return clamp(c + gain, vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cur_col = textureSample(tex, lin_samp, in.uv);
@@ -298,8 +289,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let s4 = textureSampleLevel(tex, lin_samp, in.uv - vec2<f32>(texel.x, 0.0), 0.0).rgb;
     let e4 = textureSampleLevel(tex, lin_samp, in.uv + vec2<f32>(0.0, texel.y), 0.0).rgb;
     let w4 = textureSampleLevel(tex, lin_samp, in.uv - vec2<f32>(0.0, texel.y), 0.0).rgb;
+    let avg = (n4 + s4 + e4 + w4) * 0.25;
     let sharpen = clamp(params.sharpness, 0.0, 1.0);
-    let sharpened = rcas_sharpen(c, n4, s4, e4, w4, sharpen);
+    let sharpened = mix(c, c + (c - avg), sharpen);
     var color = vec4<f32>(sharpened, cur_col.a);
 
     // --------- simple 2D “godray” shadow (kept as-is) ----------
