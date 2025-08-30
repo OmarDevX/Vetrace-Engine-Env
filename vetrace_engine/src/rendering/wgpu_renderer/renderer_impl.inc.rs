@@ -2469,7 +2469,8 @@ impl WgpuRenderer {
         }
         self.triangle_count = triangles.len() as u32;
         let bvh_changed = self.prev_bvh_nodes.len() != bvh.len()
-            || bytemuck::cast_slice(&self.prev_bvh_nodes) != bytemuck::cast_slice(bvh);
+            || bytemuck::cast_slice::<GpuBvhNode, u8>(&self.prev_bvh_nodes)
+                != bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
         if bvh_changed {
             let default_bvh;
             let bvh_bytes: &[u8];
@@ -2477,7 +2478,7 @@ impl WgpuRenderer {
                 default_bvh = GpuBvhNode::default();
                 bvh_bytes = bytemuck::bytes_of(&default_bvh);
             } else {
-                bvh_bytes = bytemuck::cast_slice(bvh);
+                bvh_bytes = bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
             }
             if bvh.len() == self.prev_bvh_nodes.len() {
                 self.queue.write_buffer(&self.bvh_buffer, 0, bvh_bytes);
@@ -2491,7 +2492,8 @@ impl WgpuRenderer {
             self.prev_bvh_nodes = bvh.to_vec();
         }
         let tri_bvh_changed = self.prev_tri_bvh_nodes.len() != tri_bvh.len()
-            || bytemuck::cast_slice(&self.prev_tri_bvh_nodes) != bytemuck::cast_slice(tri_bvh);
+            || bytemuck::cast_slice::<GpuTriBvhNode, u8>(&self.prev_tri_bvh_nodes)
+                != bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
         if tri_bvh_changed {
             let default_tbvh;
             let tbvh_bytes: &[u8];
@@ -2499,7 +2501,7 @@ impl WgpuRenderer {
                 default_tbvh = GpuTriBvhNode::default();
                 tbvh_bytes = bytemuck::bytes_of(&default_tbvh);
             } else {
-                tbvh_bytes = bytemuck::cast_slice(tri_bvh);
+                tbvh_bytes = bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
             }
             if tri_bvh.len() == self.prev_tri_bvh_nodes.len() {
                 self.queue.write_buffer(&self.tri_bvh_buffer, 0, tbvh_bytes);

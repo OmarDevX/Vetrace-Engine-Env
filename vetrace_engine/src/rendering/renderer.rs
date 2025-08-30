@@ -398,19 +398,22 @@ impl Renderer {
     ) {
         update_ssbo(self.object_ssbo, objects);
         if self.prev_triangles.len() != triangles.len()
-            || bytemuck::cast_slice(&self.prev_triangles) != bytemuck::cast_slice(triangles)
+            || bytemuck::cast_slice::<GpuTriangle, u8>(&self.prev_triangles)
+                != bytemuck::cast_slice::<GpuTriangle, u8>(triangles)
         {
             update_ssbo(self.triangle_ssbo, triangles);
             self.prev_triangles = triangles.to_vec();
         }
         if self.prev_bvh.len() != bvh.len()
-            || bytemuck::cast_slice(&self.prev_bvh) != bytemuck::cast_slice(bvh)
+            || bytemuck::cast_slice::<crate::scene::bvh::GpuBvhNode, u8>(&self.prev_bvh)
+                != bytemuck::cast_slice::<crate::scene::bvh::GpuBvhNode, u8>(bvh)
         {
             update_ssbo(self.bvh_ssbo, bvh);
             self.prev_bvh = bvh.to_vec();
         }
         if self.prev_tri_bvh.len() != tri_bvh.len()
-            || bytemuck::cast_slice(&self.prev_tri_bvh) != bytemuck::cast_slice(tri_bvh)
+            || bytemuck::cast_slice::<crate::scene::tri_bvh::GpuTriBvhNode, u8>(&self.prev_tri_bvh)
+                != bytemuck::cast_slice::<crate::scene::tri_bvh::GpuTriBvhNode, u8>(tri_bvh)
         {
             update_ssbo(self.tri_bvh_ssbo, tri_bvh);
             self.prev_tri_bvh = tri_bvh.to_vec();
