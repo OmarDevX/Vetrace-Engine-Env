@@ -114,6 +114,7 @@ pub struct Engine {
     pub running: bool,
     pub sky_color: [f32; 3],
     pub is_fisheye: bool,
+    pub selection_mask: i32,
     // Note: sandbox_window moved to vetrace_editor crate
     pub sdl_context: sdl2::Sdl,
     pub egui_ctx: EguiContext,
@@ -655,7 +656,7 @@ impl Engine {
                 self.sky_color[2] / 255.0,
             ],
             is_fisheye: if self.is_fisheye { 1 } else { 0 },
-            selected_index: 0, // No selection in app framework
+            selected_index: self.selection_mask,
             max_bounces,
             light_samples,
             dir_shadow_samples: dir_light_samples,

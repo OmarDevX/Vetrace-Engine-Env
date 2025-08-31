@@ -469,7 +469,7 @@ impl Engine {
                     self.sky_color[2] / 255.0,
                 ],
                 is_fisheye: if self.is_fisheye { 1 } else { 0 },
-                selected_index: 0, // No selection (moved to editor plugin)
+                selected_index: self.selection_mask,
                 max_bounces,
                 light_samples,
                 dir_shadow_samples: dir_light_samples,

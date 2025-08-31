@@ -37,8 +37,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let sample = textureLoad(color_tex, vec2<i32>(id.xy), 0);
     var color = sample.xyz;
     let obj_idx = i32(round(sample.w));
-   let mask = u32(params.selected_index);
-    if (((mask >> u32(obj_idx)) & 1u) == 1u) {        var border = false;
+    let mask = params.selected_index;
+    if (mask > 0 && ((u32(mask) >> u32(obj_idx)) & 1u) == 1u) {
+        var border = false;
         var offs = array<vec2<i32>, 8>(
             vec2<i32>(1,0),
             vec2<i32>(-1,0),
