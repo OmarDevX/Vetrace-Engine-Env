@@ -5,6 +5,7 @@ struct Params {
     camera_front: vec4<f32>,
     camera_up: vec4<f32>,
     camera_right: vec4<f32>,
+    prev_camera_pos: vec4<f32>,
     fov: f32,
     num_objects: i32,
     is_fisheye: i32,
@@ -155,7 +156,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // avoid ghosting when the view changes.
         if (params.frame_number > 0) {
             let world = get_world_pos(uv, depth);
-            let prev_pos = params.prev_view_proj * vec4<f32>(world, 1.0);
+            let cam_delta = params.camera_pos.xyz - params.prev_camera_pos.xyz;
+            let prev_pos = params.prev_view_proj * vec4<f32>(world + cam_delta, 1.0);
             let prev_ndc = prev_pos.xy / prev_pos.w;
             let prev_uv = prev_ndc * vec2<f32>(0.5, 0.5) + vec2<f32>(0.5, 0.5);
             motion = prev_uv - uv;
@@ -169,7 +171,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     } else if (params.frame_number > 0) {
         let world = get_world_pos(uv, depth);
-        let prev_pos = params.prev_view_proj * vec4<f32>(world, 1.0);
+        let cam_delta = params.camera_pos.xyz - params.prev_camera_pos.xyz;
+        let prev_pos = params.prev_view_proj * vec4<f32>(world + cam_delta, 1.0);
         let prev_ndc = prev_pos.xy / prev_pos.w;
         let prev_uv = prev_ndc * vec2<f32>(0.5, 0.5) + vec2<f32>(0.5, 0.5);
         motion = prev_uv - uv;

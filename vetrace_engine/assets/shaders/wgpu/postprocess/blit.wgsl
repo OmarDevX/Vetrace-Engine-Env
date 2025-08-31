@@ -79,6 +79,7 @@ struct PostFxUniforms {
 // --- NEW: minimal camera/jitter for reprojection ---
 struct Params {
     camera_pos: vec4<f32>,
+    prev_camera_pos: vec4<f32>,
     inv_view_proj: mat4x4<f32>,  // built with CURRENT jitter
     prev_view_proj: mat4x4<f32>, // built with PREVIOUS jitter
     taa_jitter: vec2<f32>,       // current jitter (UV)
@@ -237,8 +238,8 @@ fn reproject_prev_uv(cur_uv: vec2<f32>, cur_depth01: f32) -> vec2<f32> {
     let z_view = linearize_depth(cur_depth01, postfx.z_near, postfx.z_far);
     let dir = get_view_dir(cur_uv);
     let wpos = params.camera_pos.xyz + dir * z_view;
-
-    let prev_cs = params.prev_view_proj * vec4<f32>(wpos, 1.0);
+    let cam_delta = params.camera_pos.xyz - params.prev_camera_pos.xyz;
+    let prev_cs = params.prev_view_proj * vec4<f32>(wpos + cam_delta, 1.0);
     let prev_ndc = prev_cs.xy / prev_cs.w;
     var prev_uv = prev_ndc * 0.5 + vec2<f32>(0.5);
     // compensate jitter delta (prev built with prev jitter)

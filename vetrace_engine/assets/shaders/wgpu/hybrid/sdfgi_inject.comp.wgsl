@@ -4,6 +4,7 @@ struct Params {
     camera_front: vec4<f32>,
     camera_up: vec4<f32>,
     camera_right: vec4<f32>,
+    prev_camera_pos: vec4<f32>,
     fov: f32,
     num_objects: i32,
     is_fisheye: i32,
