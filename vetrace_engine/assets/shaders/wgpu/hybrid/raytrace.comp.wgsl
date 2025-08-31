@@ -1175,7 +1175,12 @@ fn trace_ray_base(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
             continue;
         }
         let hit_pos = origin + dir * t_total;
-        let shade_res = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        var shade_res: vec4<f32>;
+        if (d == 0) {
+            shade_res = shade(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        } else {
+            shade_res = shade_no_gi(hit_pos, hit.n, u32(hit.idx), hit.tri, hit.uv, rng);
+        }
         var surf_col = shade_res.xyz;
         let trans = shade_res.w;
         surf_col = apply_atmosphere(origin, dir, t_total, surf_col);
@@ -1188,6 +1193,14 @@ fn trace_ray_base(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
             return RayResult(col, t_total, norm, obj_idx, tri_idx);
         }
         let obj = objects[u32(hit.idx)];
+        if (d >= 1) {
+            let mat = materials[obj.material_index];
+            let rr = russian_roulette(d, mat.roughnessFactor, rng);
+            if (rr == 0.0) {
+                return RayResult(col, t_total, norm, obj_idx, tri_idx);
+            }
+            atten = atten * rr;
+        }
         let eps = surf_eps(obj);
         o = hit_pos + dir * eps;
         t_total = t_total + eps;
@@ -1235,6 +1248,14 @@ fn trace_ray_base_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<
             return RayResult(col, t_total, norm, obj_idx, tri_idx);
         }
         let obj = objects[u32(hit.idx)];
+        if (d >= 1) {
+            let mat = materials[obj.material_index];
+            let rr = russian_roulette(d, mat.roughnessFactor, rng);
+            if (rr == 0.0) {
+                return RayResult(col, t_total, norm, obj_idx, tri_idx);
+            }
+            atten = atten * rr;
+        }
         let eps = surf_eps(obj);
         o = hit_pos + dir * eps;
         t_total = t_total + eps;
