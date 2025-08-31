@@ -367,7 +367,23 @@ fn fxaa(
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cur_col = textureSample(tex, lin_samp, in.uv);
     let texel = vec2<f32>(1.0) / params.tex_size;
-    let c = bicubic_catrom_sample(in.uv);
+    var c = bicubic_catrom_sample(in.uv);
+
+    // --- History-based reprojection to reduce ghosting ---
+    let cur_depth = textureSampleLevel(depth_tex, nearest_samp, in.uv, 0.0).r;
+    let cur_norm = textureSampleLevel(normal_tex, nearest_samp, in.uv, 0.0).xyz;
+    let prev_uv = reproject_prev_uv(in.uv, cur_depth);
+    if all(prev_uv >= vec2<f32>(0.0)) && all(prev_uv <= vec2<f32>(1.0)) {
+        let prev_color = textureSampleLevel(history_tex, history_samp, prev_uv, 0.0).rgb;
+        let prev_depth = textureSampleLevel(depth_history_tex, nearest_samp, prev_uv, 0.0).r;
+        let prev_norm = textureSampleLevel(normal_history_tex, nearest_samp, prev_uv, 0.0).xyz;
+        let depth_diff = abs(prev_depth - cur_depth);
+        let norm_diff = dot(prev_norm, cur_norm);
+        if depth_diff < postfx.history_clamp_k && norm_diff > 0.9 {
+            c = mix(c, prev_color, postfx.temporal_blend);
+        }
+    }
+
     let n4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv + vec2<f32>(texel.x, 0.0)), 0.0).rgb;
     let s4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv - vec2<f32>(texel.x, 0.0)), 0.0).rgb;
     let e4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv + vec2<f32>(0.0, texel.y)), 0.0).rgb;
