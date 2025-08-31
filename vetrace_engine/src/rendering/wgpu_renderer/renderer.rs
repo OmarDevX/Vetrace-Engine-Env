@@ -10,8 +10,8 @@ use bytemuck::Zeroable;
 use egui::{ClippedPrimitive, TexturesDelta};
 use sdl2::video::Window;
 use std::num::NonZeroU64;
-use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
+use wgpu::SurfaceTargetUnsafe;
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_textures, init_wgpu};
@@ -100,9 +100,6 @@ pub struct WgpuRenderer {
     rt_denoise_bind_group_layout: BindGroupLayout,
     rt_denoise_bind_group: BindGroup,
     rt_denoise_pipeline: ComputePipeline,
-    outline_bind_group_layout: BindGroupLayout,
-    outline_bind_group: BindGroup,
-    outline_pipeline: ComputePipeline,
     render_bind_group_layout: BindGroupLayout,
     render_bind_group: BindGroup,
     render_pipeline: RenderPipeline,

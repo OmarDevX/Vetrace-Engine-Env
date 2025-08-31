@@ -1140,79 +1140,6 @@ impl WgpuRenderer {
             ],
         });
 
-        let outline_shader = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("outline"),
-            source: ShaderSource::Wgsl(
-                include_str!("../../../assets/shaders/wgpu/postprocess/outline.wgsl",).into(),
-            ),
-        });
-        let outline_bind_group_layout =
-            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("outline_bgl"),
-                entries: &[
-                    BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: TextureViewDimension::D2,
-                            sample_type: TextureSampleType::Float { filterable: false },
-                        },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::StorageTexture {
-                            access: StorageTextureAccess::WriteOnly,
-                            format: TextureFormat::Rgba16Float,
-                            view_dimension: TextureViewDimension::D2,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-        let outline_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("outline_pl"),
-            bind_group_layouts: &[&outline_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        let outline_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("outline_pipeline"),
-            layout: Some(&outline_pipeline_layout),
-            module: &outline_shader,
-            entry_point: "main",
-            compilation_options: Default::default(),
-        });
-        let outline_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("outline_bg"),
-            layout: &outline_bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&color_view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(&screen_view),
-                },
-            ],
-        });
-
         let render_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("render_shader"),
             source: ShaderSource::Wgsl(
@@ -1925,9 +1852,6 @@ impl WgpuRenderer {
             rt_denoise_bind_group_layout,
             rt_denoise_bind_group,
             rt_denoise_pipeline,
-            outline_bind_group_layout,
-            outline_bind_group,
-            outline_pipeline,
             render_bind_group_layout,
             render_bind_group,
             render_pipeline,
@@ -2331,24 +2255,6 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 3,
                     resource: self.params_buffer.as_entire_binding(),
-                },
-            ],
-        });
-        self.outline_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("outline_bg"),
-            layout: &self.outline_bind_group_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&self.color_view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: self.params_buffer.as_entire_binding(),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::TextureView(&self.screen_view),
                 },
             ],
         });
@@ -3353,16 +3259,6 @@ impl WgpuRenderer {
                 depth_or_array_layers: 1,
             },
         );
-
-        if !self.is_2d {
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("outline"),
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.outline_pipeline);
-            cpass.set_bind_group(0, &self.outline_bind_group, &[]);
-            cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
-        }
 
         {
             let mut clear = encoder.begin_render_pass(&RenderPassDescriptor {
