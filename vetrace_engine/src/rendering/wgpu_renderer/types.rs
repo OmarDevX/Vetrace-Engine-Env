@@ -194,7 +194,8 @@ pub struct BlitParams {
     pub prev_taa_jitter: [f32; 2],
     pub tex_size: [f32; 2],
     pub sharpness: f32,
-    pub _pad0: f32,
+    pub selected_index: i32,
+    pub _pad0: [i32; 2],
 }
 
 #[repr(C)]

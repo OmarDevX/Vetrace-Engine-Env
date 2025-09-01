@@ -2834,7 +2834,8 @@ impl WgpuRenderer {
             prev_taa_jitter: prev_jitter,
             tex_size: [self.width as f32, self.height as f32],
             sharpness: self.sharpness,
-            _pad0: 0.0,
+            selected_index: params.selected_index,
+            _pad0: [0; 2],
         };
         if self.prev_blit_params.map_or(true, |p| p != blit_params) {
             self.queue.write_buffer(

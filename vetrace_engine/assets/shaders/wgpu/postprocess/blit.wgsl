@@ -86,7 +86,8 @@ struct Params {
     prev_taa_jitter: vec2<f32>,  // previous jitter (UV)
     tex_size: vec2<f32>,         // source texture size
     sharpness: f32,
-    _pad: f32,
+    selected_index: i32,
+    _pad: vec2<i32>,
 };
 @group(0) @binding(13) var<uniform> params: Params;
 
@@ -565,6 +566,39 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let targetc = 0.5;
         let ratio = clamp(targetc / max(avg, 0.001), 0.25, 4.0);
         exp_scale = postfx.exposure * ratio;
+    }
+
+    // ---------- Selected object outline ----------
+    if (params.selected_index > 0) {
+        let dims = vec2<i32>(textureDimensions(tex));
+        let pix = vec2<i32>(in.uv * vec2<f32>(dims));
+        let sample = textureLoad(tex, pix, 0);
+        let obj_idx = i32(round(sample.w));
+        let mask = params.selected_index;
+        if (((u32(mask) >> u32(obj_idx)) & 1u) == 1u) {
+            var border = false;
+            var offs = array<vec2<i32>, 8>(
+                vec2<i32>(1, 0),
+                vec2<i32>(-1, 0),
+                vec2<i32>(0, 1),
+                vec2<i32>(0, -1),
+                vec2<i32>(1, 1),
+                vec2<i32>(-1, 1),
+                vec2<i32>(1, -1),
+                vec2<i32>(-1, -1),
+            );
+            for (var step: i32 = 1; step <= 4 && !border; step = step + 1) {
+                for (var i: i32 = 0; i < 8; i = i + 1) {
+                    let uv = pix + step * offs[i];
+                    if (uv.x < 0 || uv.y < 0 || uv.x >= dims.x || uv.y >= dims.y) { continue; }
+                    let n = i32(round(textureLoad(tex, uv, 0).w));
+                    if (n != obj_idx) { border = true; break; }
+                }
+            }
+            if (border) {
+                color = vec4<f32>(vec3<f32>(1.0, 1.0, 0.0), 1.0);
+            }
+        }
     }
     color = vec4<f32>(color.rgb * exp_scale, color.a);
     return color;
