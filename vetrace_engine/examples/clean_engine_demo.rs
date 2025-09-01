@@ -63,7 +63,7 @@ impl App for SimpleGame {
             current_time: 0.0,
             skycolor: [0.5, 0.7, 1.0],
             is_fisheye: 0,
-            selected_index: -1,
+            selected_index: 0,
             max_bounces: 8,
             light_samples: 1,
             dir_shadow_samples: 1,

@@ -145,7 +145,15 @@ impl Plugin for EditorPlugin {
         // Update windows
         self.main_window.update(engine, delta_time)?;
         self.sandbox_window.update(engine, delta_time)?;
-        
+        let mut mask = 0i32;
+        for &entity in &self.main_window.selected_entities {
+            if let Some(id) = engine.core.find_object_id_by_entity(entity) {
+                if id < 31 {
+                    mask |= 1 << id;
+                }
+            }
+        }
+        engine.selection_mask = mask;
         Ok(())
     }
     

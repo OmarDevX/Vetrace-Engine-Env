@@ -5,6 +5,7 @@ struct Params {
     camera_front: vec4<f32>,
     camera_up: vec4<f32>,
     camera_right: vec4<f32>,
+    prev_camera_pos: vec4<f32>,
     fov: f32,
     num_objects: i32,
     is_fisheye: i32,
@@ -114,7 +115,8 @@ fn reproject_gi(world_pos: vec3<f32>) -> vec3<f32> {
     if (params.frame_number == 0 || params.is_fisheye != 0) {
         return vec3<f32>(0.0);
     }
-    let prev_pos = params.prev_view_proj * vec4<f32>(world_pos, 1.0);
+    let cam_delta = params.camera_pos.xyz - params.prev_camera_pos.xyz;
+    let prev_pos = params.prev_view_proj * vec4<f32>(world_pos + cam_delta, 1.0);
     let ndc = prev_pos.xy / prev_pos.w;
     // Map from NDC [-1,1] to texture UV [0,1]
     let uv = ndc * vec2<f32>(0.5, 0.5) + vec2<f32>(0.5, 0.5);

@@ -1,11 +1,11 @@
+use crate::gpu::TextureHandle;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use crate::gpu::TextureHandle;
 
 use crate::ecs::Component;
+use crate::inspector::export::{ExportKind, ExportedField};
 use crate::inspector::Inspectable;
 use vetrace_engine_macros::Inspectable;
-use crate::inspector::export::{ExportedField, ExportKind};
 
 /// User-provided material with custom WGSL evaluation code.
 #[derive(Debug, Clone, Inspectable)]
@@ -38,6 +38,8 @@ pub enum MaterialParameter {
     Vec4([f32; 4]),
     Texture(TextureHandle),
     Bool(bool),
+    /// Reference to the current screen color buffer.
+    ScreenTexture,
 }
 
 impl Component for CustomMaterial {}

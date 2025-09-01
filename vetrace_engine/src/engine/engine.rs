@@ -114,6 +114,7 @@ pub struct Engine {
     pub running: bool,
     pub sky_color: [f32; 3],
     pub is_fisheye: bool,
+    pub selection_mask: i32,
     // Note: sandbox_window moved to vetrace_editor crate
     pub sdl_context: sdl2::Sdl,
     pub egui_ctx: EguiContext,
@@ -496,6 +497,7 @@ impl Engine {
         let (raw_gpu_objects, raw_triangles) = self.scene.get_gpu_buffers();
         let raw_atmos = self.scene.get_gpu_atmospheres();
         let cam_pos = cam.position;
+        let z_near = self.scene.camera_near_plane(cam_pos);
 
         // Offset all GPU objects by the camera so the camera stays at the origin
         let mut gpu_objects: Vec<_> = raw_gpu_objects.to_vec();
@@ -654,14 +656,14 @@ impl Engine {
                 self.sky_color[2] / 255.0,
             ],
             is_fisheye: if self.is_fisheye { 1 } else { 0 },
-            selected_index: 0, // No selection in app framework
+            selected_index: self.selection_mask,
             max_bounces,
             light_samples,
             dir_shadow_samples: dir_light_samples,
             inv_view_proj: {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
-                let vp = perspective(cam.fov, aspect, 0.1, 1000.0)
+                let vp = perspective(cam.fov, aspect, z_near, 1000.0)
                     * look_at(&Vec3::ZERO, &cam_front, &cam_up);
                 vp.inverse().to_cols_array_2d()
             },
@@ -711,7 +713,7 @@ impl Engine {
             let (w, h) = self.renderer.screen_dimensions();
             let aspect = w as f32 / h as f32;
             let view_mat = look_at(&Vec3::ZERO, &cam_front, &cam_up);
-            let proj_mat = perspective(cam.fov, aspect, 0.1, 1000.0);
+            let proj_mat = perspective(cam.fov, aspect, z_near, 1000.0);
 
             // Build PBR meshes from ECS world (from run.rs line 416-437)
             use crate::gpu::MeshHandle;
@@ -873,6 +875,29 @@ impl Engine {
                 self.running = false;
             }
         }
+    }
+
+    /// Change the window resolution and resize renderer accordingly.
+    pub fn set_window_size(&mut self, width: u32, height: u32) {
+        self.window.resize(width as i32, height as i32);
+        self.renderer.resize(width as i32, height as i32);
+        #[cfg(feature = "use_epi")]
+        self.egui_renderer.update_screen_rect((width, height));
+    }
+
+    /// Adjust internal rendering resolution scale (0.1-1.0).
+    pub fn set_render_scale(&mut self, scale: f32) {
+        self.renderer.set_render_scale(scale);
+    }
+
+    /// Enable AMD FSR upscaling with a given sharpness factor.
+    pub fn enable_fsr(&mut self, sharpness: f32) {
+        self.renderer.enable_fsr(sharpness);
+    }
+
+    /// Disable AMD FSR upscaling.
+    pub fn disable_fsr(&mut self) {
+        self.renderer.disable_fsr();
     }
 
     /// Render EGUI UI with a callback function

@@ -152,6 +152,7 @@ pub struct ShaderParams {
     pub camera_front: [f32; 4],
     pub camera_up: [f32; 4],
     pub camera_right: [f32; 4],
+    pub prev_camera_pos: [f32; 4],
     pub fov: f32,
     pub num_objects: i32,
     pub is_fisheye: i32,
@@ -186,10 +187,16 @@ pub struct ShaderParams {
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct BlitParams {
     pub camera_pos: [f32; 4],
+    pub prev_camera_pos: [f32; 4],
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
     pub taa_jitter: [f32; 2],
     pub prev_taa_jitter: [f32; 2],
+    pub tex_size: [f32; 2],
+    pub sharpness: f32,
+    pub selected_index: i32,
+    pub _pad0: [i32; 2],
+    pub _pad1: [f32; 2],
 }
 
 #[repr(C)]

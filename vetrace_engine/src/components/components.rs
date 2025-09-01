@@ -3285,3 +3285,77 @@ impl Inspectable for Atmosphere {
         ]
     }
 }
+
+#[derive(Debug)]
+pub struct ColorRect {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub color: [f32; 4],
+}
+
+impl Default for ColorRect {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0],
+            size: [1.0, 1.0],
+            color: [1.0, 1.0, 1.0, 1.0],
+        }
+    }
+}
+
+impl Component for ColorRect {}
+
+impl Inspectable for ColorRect {
+    fn exported_fields_mut(&mut self) -> Vec<ExportedField> {
+        vec![
+            ExportedField {
+                name: "pos_x",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.position[0] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "pos_y",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.position[1] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "size_x",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.size[0] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "size_y",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.size[1] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "color_r",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.color[0] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "color_g",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.color[1] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "color_b",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.color[2] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "color_a",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.color[3] as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+        ]
+    }
+}

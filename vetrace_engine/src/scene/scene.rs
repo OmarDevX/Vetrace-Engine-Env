@@ -1,5 +1,5 @@
 use crate::materials::PbrMaterial;
-use crate::math::vec3;
+use crate::math::{vec3, Vec3};
 use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, Object};
 
 pub struct Scene {
@@ -160,7 +160,11 @@ impl Scene {
                 }
             }
 
-            let is_cube = if renderable.is_mesh { 0 } else { shape.is_cube as u32 };
+            let is_cube = if renderable.is_mesh {
+                0
+            } else {
+                shape.is_cube as u32
+            };
             let is_mesh = renderable.is_mesh as u32;
             let radius = if renderable.is_mesh {
                 0.5 * obj_size[0].max(obj_size[1]).max(obj_size[2])
@@ -322,6 +326,47 @@ impl Scene {
 
     pub fn get_bvh_nodes(&self) -> &[crate::scene::bvh::GpuBvhNode] {
         &self.bvh_nodes
+    }
+
+    /// Calculate a conservative near plane based on the distance to the closest
+    /// object's oriented bounding box. Using an OBB instead of a bounding
+    /// sphere avoids the pathological case where large but thin meshes (e.g.
+    /// walls or sprites) force an extremely small near plane, which in turn
+    /// tanks performance when the camera moves indoors or very close to flat
+    /// geometry.
+    pub fn camera_near_plane(&self, cam_pos: Vec3) -> f32 {
+        use glam::Quat;
+
+        let mut min_dist = f32::MAX;
+        for obj in &self.objects {
+            let center = Vec3::from(obj.position);
+            let half = Vec3::from(obj.size) * 0.5;
+            let q = Quat::from_xyzw(
+                obj.orientation[0],
+                obj.orientation[1],
+                obj.orientation[2],
+                obj.orientation[3],
+            );
+
+            // Transform the camera position into the object's local space so we
+            // can compute a distance to its axis-aligned bounding box.
+            let local = q.conjugate() * (cam_pos - center);
+            let clamped = local.clamp(-half, half);
+            let dist = (local - clamped).length();
+            if dist < min_dist {
+                min_dist = dist;
+                // A near plane of 0.02 is sufficient; bail early once we know
+                // we can't get any closer than that.
+                if min_dist <= 0.04 {
+                    break;
+                }
+            }
+        }
+        if !min_dist.is_finite() {
+            0.1
+        } else {
+            (0.5 * min_dist).clamp(0.02, 0.1)
+        }
     }
 
     pub fn sync_objects_to_world(

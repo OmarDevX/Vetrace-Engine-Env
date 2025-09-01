@@ -88,6 +88,7 @@ impl Engine {
             running: true,
             sky_color: [135.0, 206.0, 235.0],
             is_fisheye: false,
+            selection_mask: 0,
             // sandbox_window moved to vetrace_editor crate
             egui_ctx,
             #[cfg(feature = "use_epi")]

@@ -61,6 +61,8 @@ pub struct AppBuilder {
     resources: HashMap<TypeId, Box<dyn Any>>,
     window_title: String,
     window_size: (u32, u32),
+    render_scale: f32,
+    fsr: Option<f32>,
     vsync: bool,
     event_bus: EventBus,
 }
@@ -72,6 +74,8 @@ impl Default for AppBuilder {
             resources: HashMap::new(),
             window_title: "Vetrace Engine Application".to_string(),
             window_size: (1280, 720),
+            render_scale: 1.0,
+            fsr: None,
             vsync: true,
             event_bus: EventBus::new(),
         }
@@ -93,6 +97,18 @@ impl AppBuilder {
     /// Set the window size
     pub fn with_size(mut self, width: u32, height: u32) -> Self {
         self.window_size = (width, height);
+        self
+    }
+
+    /// Set internal rendering scale (0.1-1.0)
+    pub fn with_render_scale(mut self, scale: f32) -> Self {
+        self.render_scale = scale;
+        self
+    }
+
+    /// Enable AMD FSR upscaling with sharpness
+    pub fn with_fsr(mut self, sharpness: f32) -> Self {
+        self.fsr = Some(sharpness);
         self
     }
 
@@ -135,6 +151,10 @@ impl AppBuilder {
             .window
             .window
             .set_size(self.window_size.0, self.window_size.1);
+        engine.set_render_scale(self.render_scale);
+        if let Some(s) = self.fsr {
+            engine.enable_fsr(s);
+        }
 
         // Create plugin manager and register plugins
         let mut plugin_manager = PluginManager::new();

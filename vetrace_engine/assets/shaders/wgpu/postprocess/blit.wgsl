@@ -79,10 +79,16 @@ struct PostFxUniforms {
 // --- NEW: minimal camera/jitter for reprojection ---
 struct Params {
     camera_pos: vec4<f32>,
+    prev_camera_pos: vec4<f32>,
     inv_view_proj: mat4x4<f32>,  // built with CURRENT jitter
     prev_view_proj: mat4x4<f32>, // built with PREVIOUS jitter
     taa_jitter: vec2<f32>,       // current jitter (UV)
     prev_taa_jitter: vec2<f32>,  // previous jitter (UV)
+    tex_size: vec2<f32>,         // source texture size
+    sharpness: f32,
+    selected_index: i32,
+    _pad: vec2<i32>,
+    _pad1: vec2<f32>,
 };
 @group(0) @binding(13) var<uniform> params: Params;
 
@@ -93,6 +99,11 @@ struct VsOut {
 
 fn luminance(c: vec3<f32>) -> f32 {
     return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+
+fn luma_gamma(c: vec3<f32>) -> f32 {
+    let cg = pow(c, vec3<f32>(1.0 / 2.2));
+    return dot(cg, vec3<f32>(0.2126, 0.7152, 0.0722));
 }
 
 @vertex
@@ -229,8 +240,8 @@ fn reproject_prev_uv(cur_uv: vec2<f32>, cur_depth01: f32) -> vec2<f32> {
     let z_view = linearize_depth(cur_depth01, postfx.z_near, postfx.z_far);
     let dir = get_view_dir(cur_uv);
     let wpos = params.camera_pos.xyz + dir * z_view;
-
-    let prev_cs = params.prev_view_proj * vec4<f32>(wpos, 1.0);
+    let cam_delta = params.camera_pos.xyz - params.prev_camera_pos.xyz;
+    let prev_cs = params.prev_view_proj * vec4<f32>(wpos + cam_delta, 1.0);
     let prev_ndc = prev_cs.xy / prev_cs.w;
     var prev_uv = prev_ndc * 0.5 + vec2<f32>(0.5);
     // compensate jitter delta (prev built with prev jitter)
@@ -238,10 +249,164 @@ fn reproject_prev_uv(cur_uv: vec2<f32>, cur_depth01: f32) -> vec2<f32> {
     return prev_uv;
 }
 
+fn catrom_weights(t: f32) -> vec4<f32> {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let w0 = -0.5 * t3 + 1.0 * t2 - 0.5 * t;
+    let w1 =  1.5 * t3 - 2.5 * t2 + 1.0;
+    let w2 = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
+    let w3 =  0.5 * t3 - 0.5 * t2;
+    return vec4<f32>(w0, w1, w2, w3);
+}
+
+fn clamp_uv01(uv: vec2<f32>) -> vec2<f32> {
+    return clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0));
+}
+
+// Catmull-Rom bicubic with luminance anti-ringing and edge clamping, LOD 0
+fn bicubic_catrom_sample(uv: vec2<f32>) -> vec3<f32> {
+    let size = params.tex_size;
+    let p = uv * size - vec2<f32>(0.5);
+    let base = floor(p);
+    let f = p - base;
+    let wx = catrom_weights(f.x);
+    let wy = catrom_weights(f.y);
+    var accum = vec3<f32>(0.0);
+    var lmin = 1e9;
+    var lmax = -1e9;
+    for (var j: i32 = 0; j < 4; j = j + 1) {
+        let wyj = wy[j];
+        for (var i: i32 = 0; i < 4; i = i + 1) {
+            let uv_s = (base + vec2<f32>(f32(i - 1), f32(j - 1)) + vec2<f32>(0.5)) / size;
+            let s = textureSampleLevel(tex, lin_samp, clamp_uv01(uv_s), 0.0).rgb;
+            let w = wx[i] * wyj;
+            accum += s * w;
+            let lum = luminance(s);
+            lmin = min(lmin, lum);
+            lmax = max(lmax, lum);
+        }
+    }
+    let lum_acc = luminance(accum);
+    let lum_clamped = clamp(lum_acc, lmin, lmax);
+    return accum + (lum_clamped - lum_acc);
+}
+
+// Higher quality FXAA pass operating on the upscaled image
+fn fxaa(
+    uv: vec2<f32>,
+    texel: vec2<f32>,
+    c: vec3<f32>,
+    luma_n: f32,
+    luma_s: f32,
+    luma_e: f32,
+    luma_w: f32,
+) -> vec3<f32> {
+    let luma_m = luma_gamma(c);
+    let luma_nw = luma_gamma(textureSampleLevel(
+        tex,
+        lin_samp,
+        clamp_uv01(uv + vec2<f32>(-texel.x, -texel.y)),
+        0.0,
+    ).rgb);
+    let luma_ne = luma_gamma(textureSampleLevel(
+        tex,
+        lin_samp,
+        clamp_uv01(uv + vec2<f32>(texel.x, -texel.y)),
+        0.0,
+    ).rgb);
+    let luma_sw = luma_gamma(textureSampleLevel(
+        tex,
+        lin_samp,
+        clamp_uv01(uv + vec2<f32>(-texel.x, texel.y)),
+        0.0,
+    ).rgb);
+    let luma_se = luma_gamma(textureSampleLevel(
+        tex,
+        lin_samp,
+        clamp_uv01(uv + vec2<f32>(texel.x, texel.y)),
+        0.0,
+    ).rgb);
+
+    var luma_min = min(luma_m, min(min(luma_n, luma_s), min(luma_e, luma_w)));
+    luma_min = min(luma_min, min(min(luma_nw, luma_ne), min(luma_sw, luma_se)));
+    var luma_max = max(luma_m, max(max(luma_n, luma_s), max(luma_e, luma_w)));
+    luma_max = max(luma_max, max(max(luma_nw, luma_ne), max(luma_sw, luma_se)));
+
+    if (luma_max - luma_min < max(0.0312, luma_max * 0.125)) {
+        return c;
+    }
+
+    let dir = vec2<f32>(
+        -((luma_nw + luma_ne) - (luma_sw + luma_se)),
+        ((luma_nw + luma_sw) - (luma_ne + luma_se)),
+    );
+
+    let dir_reduce = max(
+        (luma_nw + luma_ne + luma_sw + luma_se) * 0.25 * 0.125,
+        1.0 / 128.0,
+    );
+    let rcp_dir_min = 1.0 / (min(abs(dir.x), abs(dir.y)) + dir_reduce);
+    let dir_clamped = clamp(dir * rcp_dir_min, vec2<f32>(-8.0), vec2<f32>(8.0));
+    let dir_final = dir_clamped * texel;
+
+    let rgb_a = 0.5 * (
+        bicubic_catrom_sample(uv + dir_final * (1.0 / 3.0 - 0.5)) +
+        bicubic_catrom_sample(uv + dir_final * (2.0 / 3.0 - 0.5))
+    );
+    let rgb_b = rgb_a * 0.5 + 0.25 * (
+        bicubic_catrom_sample(uv + dir_final * -0.5) +
+        bicubic_catrom_sample(uv + dir_final * 0.5)
+    );
+    let luma_b = luminance(rgb_b);
+    if (luma_b < luma_min || luma_b > luma_max) {
+        return rgb_a;
+    } else {
+        return rgb_b;
+    }
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cur_col = textureSample(tex, lin_samp, in.uv);
-    var color   = cur_col;
+    let texel = vec2<f32>(1.0) / params.tex_size;
+    var c = bicubic_catrom_sample(in.uv);
+
+    // --- History-based reprojection to reduce ghosting ---
+    let cur_depth = textureSampleLevel(depth_tex, nearest_samp, in.uv, 0.0).r;
+    let cur_norm = textureSampleLevel(normal_tex, nearest_samp, in.uv, 0.0).xyz;
+    let prev_uv = reproject_prev_uv(in.uv, cur_depth);
+    if all(prev_uv >= vec2<f32>(0.0)) && all(prev_uv <= vec2<f32>(1.0)) {
+        let prev_color = textureSampleLevel(history_tex, history_samp, prev_uv, 0.0).rgb;
+        let prev_depth = textureSampleLevel(depth_history_tex, nearest_samp, prev_uv, 0.0).r;
+        let prev_norm = textureSampleLevel(normal_history_tex, nearest_samp, prev_uv, 0.0).xyz;
+        let depth_diff = abs(prev_depth - cur_depth);
+        let norm_diff = dot(prev_norm, cur_norm);
+        if depth_diff < postfx.history_clamp_k && norm_diff > 0.9 {
+            c = mix(c, prev_color, postfx.temporal_blend);
+        }
+    }
+
+    let n4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv + vec2<f32>(texel.x, 0.0)), 0.0).rgb;
+    let s4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv - vec2<f32>(texel.x, 0.0)), 0.0).rgb;
+    let e4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv + vec2<f32>(0.0, texel.y)), 0.0).rgb;
+    let w4 = textureSampleLevel(tex, lin_samp, clamp_uv01(in.uv - vec2<f32>(0.0, texel.y)), 0.0).rgb;
+
+    let luma_n_g = luma_gamma(n4);
+    let luma_s_g = luma_gamma(s4);
+    let luma_e_g = luma_gamma(e4);
+    let luma_w_g = luma_gamma(w4);
+
+    let aa = fxaa(in.uv, texel, c, luma_n_g, luma_s_g, luma_e_g, luma_w_g);
+
+    let luma_n = luminance(n4);
+    let luma_s = luminance(s4);
+    let luma_e = luminance(e4);
+    let luma_w = luminance(w4);
+    let luma_avg = (luma_n + luma_s + luma_e + luma_w) * 0.25;
+    let luma_aa = luminance(aa);
+    let sharpen = clamp(params.sharpness, 0.0, 1.0);
+    let sharpened = aa + vec3<f32>(sharpen * (luma_aa - luma_avg));
+    var color = vec4<f32>(sharpened, cur_col.a);
 
     // --------- simple 2D “godray” shadow (kept as-is) ----------
     if (light.intensity > 0.0) {
@@ -402,6 +567,39 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let targetc = 0.5;
         let ratio = clamp(targetc / max(avg, 0.001), 0.25, 4.0);
         exp_scale = postfx.exposure * ratio;
+    }
+
+    // ---------- Selected object outline ----------
+    if (params.selected_index > 0) {
+        let dims = vec2<i32>(textureDimensions(tex));
+        let pix = vec2<i32>(in.uv * vec2<f32>(dims));
+        let sample = textureLoad(tex, pix, 0);
+        let obj_idx = i32(round(sample.w));
+        let mask = params.selected_index;
+        if (((u32(mask) >> u32(obj_idx)) & 1u) == 1u) {
+            var border = false;
+            var offs = array<vec2<i32>, 8>(
+                vec2<i32>(1, 0),
+                vec2<i32>(-1, 0),
+                vec2<i32>(0, 1),
+                vec2<i32>(0, -1),
+                vec2<i32>(1, 1),
+                vec2<i32>(-1, 1),
+                vec2<i32>(1, -1),
+                vec2<i32>(-1, -1),
+            );
+            for (var step: i32 = 1; step <= 4 && !border; step = step + 1) {
+                for (var i: i32 = 0; i < 8; i = i + 1) {
+                    let uv = pix + step * offs[i];
+                    if (uv.x < 0 || uv.y < 0 || uv.x >= dims.x || uv.y >= dims.y) { continue; }
+                    let n = i32(round(textureLoad(tex, uv, 0).w));
+                    if (n != obj_idx) { border = true; break; }
+                }
+            }
+            if (border) {
+                color = vec4<f32>(vec3<f32>(1.0, 1.0, 0.0), 1.0);
+            }
+        }
     }
     color = vec4<f32>(color.rgb * exp_scale, color.a);
     return color;

@@ -139,6 +139,8 @@ impl Behaviour for PostProcessBehaviour {
             .map(|(e, _)| e)
             .collect();
         for entity in camera_entities {
+            let cam_pos = engine.active_camera_info().position;
+            let z_near = engine.scene.camera_near_plane(cam_pos);
             if let Some(pp) = engine.world.get_mut::<PostProcessing>(entity) {
                 uniforms.dof_enabled = 0;
                 uniforms.dof_manual = 0;
@@ -171,7 +173,7 @@ impl Behaviour for PostProcessBehaviour {
                 uniforms.dof_db_size = 1.0;
                 uniforms.dof_feather = 0.0;
                 uniforms.dof_pentagon = 0;
-                uniforms.z_near = 0.1;
+                uniforms.z_near = z_near;
                 uniforms.z_far = 1000.0;
                 if let Some(d) = &pp.dof {
                     uniforms.dof_enabled = 1;
