@@ -196,6 +196,7 @@ pub struct BlitParams {
     pub sharpness: f32,
     pub selected_index: i32,
     pub _pad0: [i32; 2],
+    pub _pad1: [f32; 2],
 }
 
 #[repr(C)]

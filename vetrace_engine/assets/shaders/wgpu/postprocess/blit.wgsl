@@ -88,6 +88,7 @@ struct Params {
     sharpness: f32,
     selected_index: i32,
     _pad: vec2<i32>,
+    _pad1: vec2<f32>,
 };
 @group(0) @binding(13) var<uniform> params: Params;
 

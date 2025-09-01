@@ -2836,6 +2836,7 @@ impl WgpuRenderer {
             sharpness: self.sharpness,
             selected_index: params.selected_index,
             _pad0: [0; 2],
+            _pad1: [0.0; 2],
         };
         if self.prev_blit_params.map_or(true, |p| p != blit_params) {
             self.queue.write_buffer(
