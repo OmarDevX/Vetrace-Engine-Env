@@ -73,7 +73,7 @@ fn resize_texture(
 /// Disabling individual options allows the engine to progressively fall back
 /// to purely rasterized techniques. When all flags are set to `false` the
 /// renderer will avoid executing any ray tracing passes.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RayTracingConfig {
     /// Master switch for the ray tracing compute pass.
     pub raytracing: bool,
