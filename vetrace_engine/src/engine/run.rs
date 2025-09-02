@@ -6,7 +6,7 @@ use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
-use crate::rendering::RenderParams;
+use crate::rendering::{RenderParams, RayTracingConfig};
 use crate::scene::object::GpuMaterial;
 #[cfg(not(feature = "wgpu"))]
 use crate::Behaviour;
@@ -513,6 +513,7 @@ impl Engine {
                 dof_enable,
                 atmos,
                 atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
+                rt: RayTracingConfig::default(),
             };
             #[cfg(feature = "wgpu")]
             self.renderer.update_scene_data(

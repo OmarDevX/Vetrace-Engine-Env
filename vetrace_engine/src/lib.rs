@@ -16,7 +16,7 @@ pub use engine::{
 
 // Core systems
 pub mod rendering;
-pub use rendering::{Renderer, RenderParams};
+pub use rendering::{Renderer, RenderParams, RayTracingConfig};
 
 // ECS
 pub mod ecs;

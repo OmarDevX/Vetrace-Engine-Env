@@ -3047,7 +3047,8 @@ impl WgpuRenderer {
                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
             }
         }
-        if !self.is_2d
+        if params.rt.sdfgi
+            && !self.is_2d
             && params.gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
             && params.gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDF
         {
@@ -3124,7 +3125,7 @@ impl WgpuRenderer {
                 );
             }
         }
-        {
+        if params.rt.raytracing {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("raytrace"),
                 timestamp_writes: None,
@@ -3138,7 +3139,7 @@ impl WgpuRenderer {
             };
             cpass.dispatch_workgroups(x, y, 1);
         }
-        if !self.is_2d {
+        if params.rt.raytracing && params.rt.rt_denoise && !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -3147,10 +3148,10 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d {
-            // Propagate the denoised frame to the color texture so subsequent
-            // passes operate on filtered pixels rather than the raw noisy
-            // output.
+        if params.rt.raytracing && !self.is_2d {
+            // Propagate the (possibly denoised) frame to the color texture so
+            // subsequent passes operate on filtered pixels rather than the raw
+            // noisy output.
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {
                     texture: &self.screen_texture,
@@ -3171,7 +3172,7 @@ impl WgpuRenderer {
                 },
             );
         }
-        if !self.is_2d {
+        if params.rt.raytracing && params.rt.denoise && !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("denoise"),
                 timestamp_writes: None,

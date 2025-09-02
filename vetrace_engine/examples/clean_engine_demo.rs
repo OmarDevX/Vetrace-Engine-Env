@@ -1,6 +1,6 @@
 use vetrace_engine::{Engine};
 use vetrace_engine::components::components::Transform;
-use vetrace_engine::rendering::RenderParams;
+use vetrace_engine::rendering::{RenderParams, RayTracingConfig};
 use vetrace_engine::app::App;
 /// Simple game application demonstrating the new clean engine API
 struct SimpleGame {
@@ -91,6 +91,7 @@ impl App for SimpleGame {
             dof_enable: 0,
             atmos: Vec::new(),
             atmosphere: 0,
+            rt: RayTracingConfig::default(),
         };
 
         // Render with empty sprite and PBR data for now

@@ -28,7 +28,7 @@ use crate::inspector::Inspectable;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
 use crate::rendering::EguiRenderer;
-use crate::rendering::RenderParams;
+use crate::rendering::{RenderParams, RayTracingConfig};
 use crate::rendering::Renderer;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
@@ -684,6 +684,7 @@ impl Engine {
             dof_enable,
             atmos,
             atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
+            rt: RayTracingConfig::default(),
         };
 
         // Update renderer with scene data (from run.rs line 395-406)
