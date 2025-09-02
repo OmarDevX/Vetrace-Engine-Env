@@ -3047,6 +3047,48 @@ impl WgpuRenderer {
                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
             }
         }
+        if !params.rt.raytracing && !self.is_2d {
+            // Without ray tracing, fall back to the raw albedo so movement
+            // and other updates remain visible when all ray-traced effects are off.
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.gbuf_albedo_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.color_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         if params.rt.sdfgi
             && !self.is_2d
             && params.gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
@@ -3270,7 +3312,7 @@ impl WgpuRenderer {
                     view: &self.screen_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: if self.is_2d {
+                        load: if self.is_2d || !params.rt.raytracing {
                             LoadOp::Clear(Color {
                                 r: params.skycolor[0] as f64,
                                 g: params.skycolor[1] as f64,
