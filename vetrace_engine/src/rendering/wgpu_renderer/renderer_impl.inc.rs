@@ -668,10 +668,10 @@ impl WgpuRenderer {
                     BindGroupLayoutEntry {
                         binding: 1,
                         visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::StorageTexture {
-                            access: StorageTextureAccess::WriteOnly,
-                            format: TextureFormat::Rgba16Float,
+                        ty: BindingType::Texture {
+                            multisampled: false,
                             view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
                         },
                         count: None,
                     },
@@ -682,6 +682,26 @@ impl WgpuRenderer {
                             access: StorageTextureAccess::WriteOnly,
                             format: TextureFormat::Rgba16Float,
                             view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
                         count: None,
                     },
@@ -982,11 +1002,19 @@ impl WgpuRenderer {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&screen_view),
+                    resource: BindingResource::TextureView(&gbuf_normal_view),
                 },
                 BindGroupEntry {
                     binding: 2,
+                    resource: BindingResource::TextureView(&screen_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
                     resource: BindingResource::TextureView(&color_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: light_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -2263,11 +2291,19 @@ impl WgpuRenderer {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&self.screen_view),
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
                 },
                 BindGroupEntry {
                     binding: 2,
+                    resource: BindingResource::TextureView(&self.screen_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
                     resource: BindingResource::TextureView(&self.color_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: self.light_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -3408,17 +3444,6 @@ impl WgpuRenderer {
                 timestamp_writes: None,
             });
         }
-        if !params.rt.raytracing && !self.is_2d {
-            // Without ray tracing, fall back to the raw albedo so movement
-            // and other updates remain visible when all ray-traced effects are off.
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("raster_copy"),
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.raster_copy_pipeline);
-            cpass.set_bind_group(0, &self.raster_copy_bind_group, &[]);
-            cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
-        }
         let light_data = LightUniform {
             dir: [-params.dir_light_dir[0], -params.dir_light_dir[1]],
             _pad: [0.0; 2],
@@ -3433,6 +3458,16 @@ impl WgpuRenderer {
             self.queue
                 .write_buffer(&self.light_buffer, 0, bytemuck::bytes_of(&light_data));
             self.prev_light_data = Some(light_data);
+        }
+        if !params.rt.raytracing && !self.is_2d {
+            // Without ray tracing, run a simple PBR shading pass on the g-buffer.
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("raster_copy"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.raster_copy_pipeline);
+            cpass.set_bind_group(0, &self.raster_copy_bind_group, &[]);
+            cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
         let sprite_stride = (6 * std::mem::size_of::<[f32; 5]>()) as u64;
         let mut vertex_data: Vec<[f32; 5]> = Vec::with_capacity(sprites.len() * 6);
