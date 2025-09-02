@@ -3144,17 +3144,6 @@ impl WgpuRenderer {
                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
             }
         }
-        if !params.rt.raytracing && !self.is_2d {
-            // Without ray tracing, fall back to the raw albedo so movement
-            // and other updates remain visible when all ray-traced effects are off.
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("raster_copy"),
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.raster_copy_pipeline);
-            cpass.set_bind_group(0, &self.raster_copy_bind_group, &[]);
-            cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
-        }
         if params.rt.sdfgi
             && !self.is_2d
             && params.gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
@@ -3418,6 +3407,17 @@ impl WgpuRenderer {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+        }
+        if !params.rt.raytracing && !self.is_2d {
+            // Without ray tracing, fall back to the raw albedo so movement
+            // and other updates remain visible when all ray-traced effects are off.
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("raster_copy"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.raster_copy_pipeline);
+            cpass.set_bind_group(0, &self.raster_copy_bind_group, &[]);
+            cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
         let light_data = LightUniform {
             dir: [-params.dir_light_dir[0], -params.dir_light_dir[1]],
