@@ -13,7 +13,7 @@ pub mod egui_wgpu;
 pub use wgpu_renderer::WgpuRenderer as Renderer;
 #[cfg(not(feature = "wgpu"))]
 pub use renderer::Renderer;
-pub use renderer::RenderParams;
+pub use renderer::{RenderParams, RayTracingConfig};
 pub use resource::{compile_shader, link_program, load_obj_file, Vec3, Triangle};
 pub use ssbo::{create_ssbo, update_ssbo};
 pub use texture::{TextureHandle, TextureStorage};

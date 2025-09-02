@@ -645,6 +645,82 @@ impl WgpuRenderer {
             compilation_options: Default::default(),
         });
 
+        let raster_copy_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("raster_copy"),
+            source: ShaderSource::Wgsl(
+                include_str!("../../../assets/shaders/wgpu/hybrid/raster_copy.comp.wgsl").into(),
+            ),
+        });
+        let raster_copy_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("raster_copy_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let raster_copy_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("raster_copy_pl"),
+                bind_group_layouts: &[&raster_copy_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let raster_copy_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("raster_copy_pipe"),
+            layout: Some(&raster_copy_pipeline_layout),
+            module: &raster_copy_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+        });
+
         let denoise_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("denoise"),
             source: ShaderSource::Wgsl(
@@ -912,6 +988,33 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 11,
                     resource: object_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let raster_copy_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("raster_copy_bg"),
+            layout: &raster_copy_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&screen_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&color_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: light_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -1852,6 +1955,9 @@ impl WgpuRenderer {
             rt_denoise_bind_group_layout,
             rt_denoise_bind_group,
             rt_denoise_pipeline,
+            raster_copy_bind_group_layout,
+            raster_copy_bind_group,
+            raster_copy_pipeline,
             render_bind_group_layout,
             render_bind_group,
             render_pipeline,
@@ -1883,6 +1989,7 @@ impl WgpuRenderer {
             prev_gi_params: None,
             prev_blit_params: None,
             prev_post_fx_uniforms: None,
+            prev_rt_config: None,
             prev_sprite_view_proj: None,
             prev_light_data: None,
             sprite_vertices_cache: Vec::new(),
@@ -2171,6 +2278,33 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 11,
                     resource: self.object_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        self.raster_copy_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("raster_copy_bg"),
+            layout: &self.raster_copy_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.screen_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.color_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: self.light_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -2704,6 +2838,10 @@ impl WgpuRenderer {
             }
             r
         };
+        if self.prev_rt_config.map_or(true, |p| p != params.rt) {
+            self.reset_frame();
+            self.prev_rt_config = Some(params.rt);
+        }
         let prev_jitter = self.prev_taa_jitter;
         let jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.width as f32;
         let jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.height as f32;
@@ -3047,7 +3185,8 @@ impl WgpuRenderer {
                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
             }
         }
-        if !self.is_2d
+        if params.rt.sdfgi
+            && !self.is_2d
             && params.gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
             && params.gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDF
         {
@@ -3124,7 +3263,7 @@ impl WgpuRenderer {
                 );
             }
         }
-        {
+        if params.rt.raytracing {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("raytrace"),
                 timestamp_writes: None,
@@ -3138,7 +3277,7 @@ impl WgpuRenderer {
             };
             cpass.dispatch_workgroups(x, y, 1);
         }
-        if !self.is_2d {
+        if params.rt.raytracing && params.rt.rt_denoise && !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -3147,10 +3286,10 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d {
-            // Propagate the denoised frame to the color texture so subsequent
-            // passes operate on filtered pixels rather than the raw noisy
-            // output.
+        if params.rt.raytracing && !self.is_2d {
+            // Propagate the (possibly denoised) frame to the color texture so
+            // subsequent passes operate on filtered pixels rather than the raw
+            // noisy output.
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {
                     texture: &self.screen_texture,
@@ -3171,7 +3310,7 @@ impl WgpuRenderer {
                 },
             );
         }
-        if !self.is_2d {
+        if params.rt.raytracing && params.rt.denoise && !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("denoise"),
                 timestamp_writes: None,
@@ -3180,87 +3319,89 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
-        // Preserve the denoised image and G-buffer data before subsequent
-        // post-processing passes overwrite the alpha channel or otherwise
-        // modify these textures. The history copies occur here so the temporal
-        // accumulator sees the correct object IDs and depth information on the
-        // next frame.
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.gi_buffer_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.gi_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.screen_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.screen_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.depth_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.depth_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.normal_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.normal_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
+        if params.rt.raytracing {
+            // Preserve the denoised image and G-buffer data before subsequent
+            // post-processing passes overwrite the alpha channel or otherwise
+            // modify these textures. When ray tracing is enabled the history
+            // copies occur here so the temporal accumulator sees the correct
+            // object IDs and depth information on the next frame.
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.gi_buffer_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.gi_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.depth_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.depth_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.normal_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.normal_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
 
         {
             let mut clear = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -3269,7 +3410,7 @@ impl WgpuRenderer {
                     view: &self.screen_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: if self.is_2d {
+                        load: if self.is_2d || !params.rt.raytracing {
                             LoadOp::Clear(Color {
                                 r: params.skycolor[0] as f64,
                                 g: params.skycolor[1] as f64,
@@ -3324,6 +3465,78 @@ impl WgpuRenderer {
             self.queue
                 .write_buffer(&self.light_buffer, 0, bytemuck::bytes_of(&light_data));
             self.prev_light_data = Some(light_data);
+        }
+        if !params.rt.raytracing && !self.is_2d {
+            // Without ray tracing, resolve the g-buffer albedo into the HDR targets.
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("raster_copy"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.raster_copy_pipeline);
+            cpass.set_bind_group(0, &self.raster_copy_bind_group, &[]);
+            cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
+            drop(cpass);
+
+            // Update history buffers with the rasterized output so temporal
+            // effects blend against the latest frame rather than stale data
+            // from a previous ray traced pass.
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.depth_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.depth_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.normal_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.normal_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
         let sprite_stride = (6 * std::mem::size_of::<[f32; 5]>()) as u64;
         let mut vertex_data: Vec<[f32; 5]> = Vec::with_capacity(sprites.len() * 6);

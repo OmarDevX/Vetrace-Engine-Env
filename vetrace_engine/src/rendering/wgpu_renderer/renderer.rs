@@ -1,6 +1,6 @@
 use crate::custom_material::RaytraceShaderCompiler;
 use crate::math::*;
-use crate::rendering::renderer::RenderParams;
+use crate::rendering::renderer::{RenderParams, RayTracingConfig};
 use crate::rendering::texture::set_wgpu_device_queue;
 use crate::scene::object::{
     GpuAtmosphere, GpuCustomMaterial, GpuMaterial, GpuObject, GpuTriangle, MAX_ATMOSPHERES,
@@ -100,6 +100,9 @@ pub struct WgpuRenderer {
     rt_denoise_bind_group_layout: BindGroupLayout,
     rt_denoise_bind_group: BindGroup,
     rt_denoise_pipeline: ComputePipeline,
+    raster_copy_bind_group_layout: BindGroupLayout,
+    raster_copy_bind_group: BindGroup,
+    raster_copy_pipeline: ComputePipeline,
     render_bind_group_layout: BindGroupLayout,
     render_bind_group: BindGroup,
     render_pipeline: RenderPipeline,
@@ -142,6 +145,7 @@ pub struct WgpuRenderer {
     prev_gi_params: Option<GiParams>,
     prev_blit_params: Option<BlitParams>,
     prev_post_fx_uniforms: Option<PostFxUniforms>,
+    prev_rt_config: Option<RayTracingConfig>,
     prev_sprite_view_proj: Option<[f32; 16]>,
     prev_light_data: Option<LightUniform>,
     sprite_vertices_cache: Vec<[f32; 5]>,

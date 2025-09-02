@@ -2363,6 +2363,10 @@ pub struct PostProcessing {
     pub exposure: f32,
     pub auto_exposure: bool,
     pub atmosphere: bool,
+    pub raytracing: bool,
+    pub sdfgi: bool,
+    pub rt_denoise: bool,
+    pub denoise: bool,
 }
 
 impl Default for PostProcessing {
@@ -2384,6 +2388,10 @@ impl Default for PostProcessing {
             exposure: 1.0,
             auto_exposure: false,
             atmosphere: true,
+            raytracing: true,
+            sdfgi: true,
+            rt_denoise: true,
+            denoise: true,
         }
     }
 }
@@ -2402,6 +2410,13 @@ impl Inspectable for PostProcessing {
         ui.add(egui::Slider::new(&mut self.exposure, 0.0..=20.0));
         ui.checkbox(&mut self.auto_exposure, "Auto Exposure");
         ui.checkbox(&mut self.atmosphere, "Atmosphere");
+
+        ui.collapsing("Ray Tracing", |ui| {
+            ui.checkbox(&mut self.raytracing, "Ray Tracing");
+            ui.checkbox(&mut self.sdfgi, "SDF GI");
+            ui.checkbox(&mut self.rt_denoise, "RT Denoiser");
+            ui.checkbox(&mut self.denoise, "Denoiser");
+        });
 
         ui.collapsing("Global Illumination", |ui| {
             ui.checkbox(&mut self.gi_enabled, "Enabled");

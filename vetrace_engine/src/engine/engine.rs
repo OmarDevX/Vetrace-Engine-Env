@@ -28,8 +28,8 @@ use crate::inspector::Inspectable;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
 use crate::rendering::EguiRenderer;
-use crate::rendering::RenderParams;
 use crate::rendering::Renderer;
+use crate::rendering::{RayTracingConfig, RenderParams};
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
 use crate::scene::{
@@ -616,6 +616,7 @@ impl Engine {
         let mut dof_focus_dist = 0.0f32;
         let mut dof_enable = 0u32;
         let mut atmosphere = true;
+        let mut rt = RayTracingConfig::default();
         for (ent, _cam_att) in self
             .world
             .query::<crate::components::components::CameraAttachment>()
@@ -631,6 +632,10 @@ impl Engine {
                 dir_light_samples = pp.dir_light_samples as i32;
                 max_bounces = pp.max_bounces as i32;
                 atmosphere = pp.atmosphere;
+                rt.raytracing = pp.raytracing;
+                rt.sdfgi = pp.sdfgi;
+                rt.rt_denoise = pp.rt_denoise;
+                rt.denoise = pp.denoise;
                 if let Some(d) = &pp.dof {
                     dof_enable = 1;
                     dof_aperture = d.aperture();
@@ -684,6 +689,7 @@ impl Engine {
             dof_enable,
             atmos,
             atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
+            rt,
         };
 
         // Update renderer with scene data (from run.rs line 395-406)
@@ -768,7 +774,6 @@ impl Engine {
                 });
             }
 
-
             // Handle EGUI rendering for wgpu
             #[cfg(feature = "use_epi")]
             {
@@ -818,8 +823,7 @@ impl Engine {
             #[cfg(not(feature = "use_epi"))]
             {
                 // Render with wgpu without EGUI
-                self.renderer
-                    .render(&render_params, &[], &pbr_meshes, None);
+                self.renderer.render(&render_params, &[], &pbr_meshes, None);
             }
         }
         #[cfg(not(feature = "wgpu"))]
@@ -1498,9 +1502,7 @@ impl Engine {
                             ("clearcoat_roughness", MaterialParameter::Float(f)) => {
                                 gpu.coat_aniso[1] = *f
                             }
-                            ("anisotropy", MaterialParameter::Float(f)) => {
-                                gpu.coat_aniso[2] = *f
-                            }
+                            ("anisotropy", MaterialParameter::Float(f)) => gpu.coat_aniso[2] = *f,
                             ("anisotropy_rotation", MaterialParameter::Float(f)) => {
                                 gpu.coat_aniso[3] = *f
                             }

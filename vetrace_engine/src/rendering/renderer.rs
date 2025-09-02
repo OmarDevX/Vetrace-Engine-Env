@@ -68,6 +68,29 @@ fn resize_texture(
     }
 }
 
+/// Controls which ray tracing related features are active during rendering.
+///
+/// Disabling individual options allows the engine to progressively fall back
+/// to purely rasterized techniques. When all flags are set to `false` the
+/// renderer will avoid executing any ray tracing passes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct RayTracingConfig {
+    /// Master switch for the ray tracing compute pass.
+    pub raytracing: bool,
+    /// Enables the SDF global illumination pre-pass.
+    pub sdfgi: bool,
+    /// Enables the ray traced denoiser after the main ray tracing pass.
+    pub rt_denoise: bool,
+    /// Enables the general screen-space denoiser.
+    pub denoise: bool,
+}
+
+impl Default for RayTracingConfig {
+    fn default() -> Self {
+        Self { raytracing: true, sdfgi: true, rt_denoise: true, denoise: true }
+    }
+}
+
 pub struct RenderParams {
     pub camera_pos: [f32; 3],
     pub camera_front: [f32; 3],
@@ -97,6 +120,8 @@ pub struct RenderParams {
     pub dof_enable: u32,
     pub atmos: Vec<GpuAtmosphere>,
     pub atmosphere: u32,
+    /// Ray tracing feature toggles.
+    pub rt: RayTracingConfig,
 }
 
 struct Uniforms {
