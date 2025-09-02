@@ -645,6 +645,62 @@ impl WgpuRenderer {
             compilation_options: Default::default(),
         });
 
+        let raster_copy_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("raster_copy"),
+            source: ShaderSource::Wgsl(
+                include_str!("../../../assets/shaders/wgpu/hybrid/raster_copy.comp.wgsl").into(),
+            ),
+        });
+        let raster_copy_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("raster_copy_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let raster_copy_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("raster_copy_pl"),
+                bind_group_layouts: &[&raster_copy_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let raster_copy_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("raster_copy_pipe"),
+            layout: Some(&raster_copy_pipeline_layout),
+            module: &raster_copy_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+        });
+
         let denoise_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("denoise"),
             source: ShaderSource::Wgsl(
@@ -912,6 +968,25 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 11,
                     resource: object_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let raster_copy_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("raster_copy_bg"),
+            layout: &raster_copy_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&screen_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&color_view),
                 },
             ],
         });
@@ -1852,6 +1927,9 @@ impl WgpuRenderer {
             rt_denoise_bind_group_layout,
             rt_denoise_bind_group,
             rt_denoise_pipeline,
+            raster_copy_bind_group_layout,
+            raster_copy_bind_group,
+            raster_copy_pipeline,
             render_bind_group_layout,
             render_bind_group,
             render_pipeline,
@@ -2171,6 +2249,25 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 11,
                     resource: self.object_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        self.raster_copy_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("raster_copy_bg"),
+            layout: &self.raster_copy_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.screen_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.color_view),
                 },
             ],
         });
@@ -3050,44 +3147,13 @@ impl WgpuRenderer {
         if !params.rt.raytracing && !self.is_2d {
             // Without ray tracing, fall back to the raw albedo so movement
             // and other updates remain visible when all ray-traced effects are off.
-            encoder.copy_texture_to_texture(
-                ImageCopyTexture {
-                    texture: &self.gbuf_albedo_texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                ImageCopyTexture {
-                    texture: &self.screen_texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                Extent3d {
-                    width: self.width,
-                    height: self.height,
-                    depth_or_array_layers: 1,
-                },
-            );
-            encoder.copy_texture_to_texture(
-                ImageCopyTexture {
-                    texture: &self.screen_texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                ImageCopyTexture {
-                    texture: &self.color_texture,
-                    mip_level: 0,
-                    origin: Origin3d::ZERO,
-                    aspect: TextureAspect::All,
-                },
-                Extent3d {
-                    width: self.width,
-                    height: self.height,
-                    depth_or_array_layers: 1,
-                },
-            );
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("raster_copy"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.raster_copy_pipeline);
+            cpass.set_bind_group(0, &self.raster_copy_bind_group, &[]);
+            cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
         if params.rt.sdfgi
             && !self.is_2d
