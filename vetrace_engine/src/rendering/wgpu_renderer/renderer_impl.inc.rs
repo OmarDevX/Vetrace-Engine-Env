@@ -1961,6 +1961,7 @@ impl WgpuRenderer {
             prev_gi_params: None,
             prev_blit_params: None,
             prev_post_fx_uniforms: None,
+            prev_rt_config: None,
             prev_sprite_view_proj: None,
             prev_light_data: None,
             sprite_vertices_cache: Vec::new(),
@@ -2801,6 +2802,10 @@ impl WgpuRenderer {
             }
             r
         };
+        if self.prev_rt_config.map_or(true, |p| p != params.rt) {
+            self.reset_frame();
+            self.prev_rt_config = Some(params.rt);
+        }
         let prev_jitter = self.prev_taa_jitter;
         let jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.width as f32;
         let jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.height as f32;
@@ -3278,87 +3283,89 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
         }
-        // Preserve the denoised image and G-buffer data before subsequent
-        // post-processing passes overwrite the alpha channel or otherwise
-        // modify these textures. The history copies occur here so the temporal
-        // accumulator sees the correct object IDs and depth information on the
-        // next frame.
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.gi_buffer_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.gi_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.screen_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.screen_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.depth_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.depth_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.normal_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.normal_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
+        if params.rt.raytracing {
+            // Preserve the denoised image and G-buffer data before subsequent
+            // post-processing passes overwrite the alpha channel or otherwise
+            // modify these textures. When ray tracing is enabled the history
+            // copies occur here so the temporal accumulator sees the correct
+            // object IDs and depth information on the next frame.
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.gi_buffer_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.gi_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.depth_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.depth_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.normal_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.normal_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
 
         {
             let mut clear = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -3432,6 +3439,68 @@ impl WgpuRenderer {
             cpass.set_pipeline(&self.raster_copy_pipeline);
             cpass.set_bind_group(0, &self.raster_copy_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
+            drop(cpass);
+
+            // Update history buffers with the rasterized output so temporal
+            // effects blend against the latest frame rather than stale data
+            // from a previous ray traced pass.
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.depth_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.depth_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.normal_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.normal_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
         let sprite_stride = (6 * std::mem::size_of::<[f32; 5]>()) as u64;
         let mut vertex_data: Vec<[f32; 5]> = Vec::with_capacity(sprites.len() * 6);
