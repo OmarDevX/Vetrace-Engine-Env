@@ -6,7 +6,7 @@ use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
-use crate::rendering::{RenderParams, RayTracingConfig};
+use crate::rendering::{RayTracingConfig, RenderParams};
 use crate::scene::object::GpuMaterial;
 #[cfg(not(feature = "wgpu"))]
 use crate::Behaviour;
@@ -421,6 +421,7 @@ impl Engine {
             let mut dof_focus_dist = 0.0f32;
             let mut dof_enable = 0u32;
             let mut atmosphere = true;
+            let mut rt = RayTracingConfig::default();
             for (ent, _cam_att) in self
                 .world
                 .query::<crate::components::components::CameraAttachment>()
@@ -436,6 +437,10 @@ impl Engine {
                     dir_light_samples = pp.dir_light_samples as i32;
                     max_bounces = pp.max_bounces as i32;
                     atmosphere = pp.atmosphere;
+                    rt.raytracing = pp.raytracing;
+                    rt.sdfgi = pp.sdfgi;
+                    rt.rt_denoise = pp.rt_denoise;
+                    rt.denoise = pp.denoise;
                     if let Some(d) = &pp.dof {
                         dof_enable = 1;
                         dof_aperture = d.aperture();
@@ -513,7 +518,7 @@ impl Engine {
                 dof_enable,
                 atmos,
                 atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
-                rt: RayTracingConfig::default(),
+                rt,
             };
             #[cfg(feature = "wgpu")]
             self.renderer.update_scene_data(
@@ -601,8 +606,7 @@ impl Engine {
                     Some((&mut self.egui_renderer, &paint_jobs, &textures_delta)),
                 );
                 #[cfg(not(feature = "use_epi"))]
-                self.renderer
-                    .render(&render_params, &[], &pbr_meshes, None);
+                self.renderer.render(&render_params, &[], &pbr_meshes, None);
             }
             #[cfg(not(feature = "wgpu"))]
             {
