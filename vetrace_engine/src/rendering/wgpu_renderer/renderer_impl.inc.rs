@@ -3132,20 +3132,18 @@ impl WgpuRenderer {
         let simple_mode = self
             .prev_shader_params
             .map_or(false, |p| p.simple_raytracing == 1);
-        if !simple_mode {
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("raytrace"),
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.compute_pipeline);
-            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            let (x, y) = if self.is_2d {
-                ((self.width + 15) / 16, (self.height + 15) / 16)
-            } else {
-                ((self.width + 7) / 8, (self.height + 7) / 8)
-            };
-            cpass.dispatch_workgroups(x, y, 1);
-        }
+        let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("raytrace"),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&self.compute_pipeline);
+        cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+        let (x, y) = if self.is_2d {
+            ((self.width + 15) / 16, (self.height + 15) / 16)
+        } else {
+            ((self.width + 7) / 8, (self.height + 7) / 8)
+        };
+        cpass.dispatch_workgroups(x, y, 1);
         if !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
