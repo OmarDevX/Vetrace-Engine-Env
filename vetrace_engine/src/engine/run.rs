@@ -433,9 +433,7 @@ impl Engine {
                     gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
                     gi_debug_mode = pp.gi_debug_mode;
                     ray_tracing_enabled = if pp.ray_tracing_enabled { 1 } else { 0 };
-                    gi_mode = if !pp.ray_tracing_enabled {
-                        2
-                    } else if pp.path_traced_gi {
+                    gi_mode = if pp.path_traced_gi && pp.ray_tracing_enabled {
                         1
                     } else {
                         0
@@ -443,6 +441,10 @@ impl Engine {
                     light_samples = pp.light_samples as i32;
                     dir_light_samples = pp.dir_light_samples as i32;
                     max_bounces = pp.max_bounces as i32;
+                    if !pp.ray_tracing_enabled {
+                        gi_quality = 3;
+                        max_bounces = 1;
+                    }
                     atmosphere = pp.atmosphere;
                     if let Some(d) = &pp.dof {
                         dof_enable = 1;
