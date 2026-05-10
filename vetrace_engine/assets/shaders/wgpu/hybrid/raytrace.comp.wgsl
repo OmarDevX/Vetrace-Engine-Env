@@ -1473,11 +1473,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         view_dir = cos(theta) * fwd + sin(theta) * (cos(phi) * rvec + sin(phi) * upv);
 
         let cam_ray = sample_camera_ray(view_dir, &rng_state);
-        let primary = if (gi_params.mode == 2u) {
-            trace_ray_no_gi(cam_ray.ro, cam_ray.rd, 0, &rng_state)
+        var primary: RayResult;
+        if (gi_params.mode == 2u) {
+            primary = trace_ray_no_gi(cam_ray.ro, cam_ray.rd, 0, &rng_state);
         } else {
-            trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state)
-        };
+            primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
+        }
         hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
         view_dir = cam_ray.rd;
 
@@ -1529,11 +1530,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         view_dir = normalize(world.xyz);
 
         let cam_ray = sample_camera_ray(view_dir, &rng_state);
-        let primary = if (gi_params.mode == 2u) {
-            trace_ray_no_gi(cam_ray.ro, cam_ray.rd, 0, &rng_state)
+        var primary: RayResult;
+        if (gi_params.mode == 2u) {
+            primary = trace_ray_no_gi(cam_ray.ro, cam_ray.rd, 0, &rng_state);
         } else {
-            trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state)
-        };
+            primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
+        }
         hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
         view_dir = cam_ray.rd;
 
