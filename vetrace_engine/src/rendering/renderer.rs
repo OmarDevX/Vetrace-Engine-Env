@@ -95,6 +95,7 @@ pub struct RenderParams {
     pub dof_aperture: f32,
     pub dof_focus_dist: f32,
     pub dof_enable: u32,
+    pub simple_raytracing: u32,
     pub atmos: Vec<GpuAtmosphere>,
     pub atmosphere: u32,
 }

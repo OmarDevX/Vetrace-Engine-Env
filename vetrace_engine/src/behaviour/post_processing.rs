@@ -219,8 +219,12 @@ impl Behaviour for PostProcessBehaviour {
                 uniforms.auto_exposure = if pp.auto_exposure { 1 } else { 0 };
                 uniforms.sky_occlusion = 0.0;
                 uniforms.history_clamp_k = pp.history_clamp_k;
-                uniforms.temporal_blend = pp.temporal_blend;
-                uniforms.gi_temporal_blend = pp.gi_temporal_blend;
+                uniforms.temporal_blend = if pp.raytracing { pp.temporal_blend } else { 0.0 };
+                uniforms.gi_temporal_blend = if pp.raytracing {
+                    pp.gi_temporal_blend
+                } else {
+                    0.0
+                };
             }
             if let Some(fog) = engine.world.get::<VolumetricFog>(entity) {
                 uniforms.fog_density = fog.density;

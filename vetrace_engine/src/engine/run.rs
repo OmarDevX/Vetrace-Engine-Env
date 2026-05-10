@@ -421,6 +421,7 @@ impl Engine {
             let mut dof_focus_dist = 0.0f32;
             let mut dof_enable = 0u32;
             let mut atmosphere = true;
+            let mut simple_raytracing = 0u32;
             for (ent, _cam_att) in self
                 .world
                 .query::<crate::components::components::CameraAttachment>()
@@ -436,6 +437,7 @@ impl Engine {
                     dir_light_samples = pp.dir_light_samples as i32;
                     max_bounces = pp.max_bounces as i32;
                     atmosphere = pp.atmosphere;
+                    simple_raytracing = if pp.raytracing { 0 } else { 1 };
                     if let Some(d) = &pp.dof {
                         dof_enable = 1;
                         dof_aperture = d.aperture();
@@ -511,6 +513,7 @@ impl Engine {
                 dof_aperture,
                 dof_focus_dist,
                 dof_enable,
+                simple_raytracing,
                 atmos,
                 atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
             };

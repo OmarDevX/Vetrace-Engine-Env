@@ -148,7 +148,7 @@ struct Params {
     dof_aperture: f32,      // lens diameter in world units (0 = off)
     dof_focus_dist: f32,    // distance along +camera_front to focus plane
     dof_enable: u32,        // 0 off / 1 on
-    _pad_dof: u32,
+    simple_raytracing: u32, // 1 = low-end simplified shading mode
     atmosphere: u32,
     atmo_count: u32,
     _pad_atmos: vec2<u32>,
@@ -1489,7 +1489,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             var mat_idx = obj.material_index;
             if (primary.tri_idx != 0xffffffffu) { mat_idx = triangles[primary.tri_idx].material_index; }
             let mat = materials[mat_idx];
-            if (obj.is_glass > 0u) {
+            if (params.simple_raytracing == 1u) {
+                let l = normalize(-params.dir_light_dir.xyz);
+                let lambert = max(dot(surf_normal, l), 0.0);
+                let shade = 0.2 + 0.8 * lambert;
+                final_col = primary.color * shade;
+            } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
                     let rr = russian_roulette(1, rough, &rng_state);
@@ -1539,7 +1544,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             var mat_idx = obj.material_index;
             if (primary.tri_idx != 0xffffffffu) { mat_idx = triangles[primary.tri_idx].material_index; }
             let mat = materials[mat_idx];
-            if (obj.is_glass > 0u) {
+            if (params.simple_raytracing == 1u) {
+                let l = normalize(-params.dir_light_dir.xyz);
+                let lambert = max(dot(surf_normal, l), 0.0);
+                let shade = 0.2 + 0.8 * lambert;
+                final_col = primary.color * shade;
+            } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
                     let rr = russian_roulette(1, rough, &rng_state);
@@ -1570,7 +1580,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     var gi = vec3<f32>(0.0);
-    if (gi_params.quality != 3u) {
+    if (gi_params.quality != 3u && params.simple_raytracing == 0u) {
         gi = sample_diffuse_gi(gi_pos + gi_normal * 0.01, gi_normal, &rng_state);
     }
 

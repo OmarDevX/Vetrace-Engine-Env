@@ -2348,6 +2348,7 @@ impl Inspectable for DirectionalLight {
 
 #[derive(Clone, Debug)]
 pub struct PostProcessing {
+    pub raytracing: bool,
     pub bloom: Option<Bloom>,
     pub dof: Option<DepthOfField>,
     pub gi_quality: u32,
@@ -2368,6 +2369,7 @@ pub struct PostProcessing {
 impl Default for PostProcessing {
     fn default() -> Self {
         Self {
+            raytracing: true,
             bloom: None,
             dof: None,
             gi_quality: 0,
@@ -2402,6 +2404,7 @@ impl Inspectable for PostProcessing {
         ui.add(egui::Slider::new(&mut self.exposure, 0.0..=20.0));
         ui.checkbox(&mut self.auto_exposure, "Auto Exposure");
         ui.checkbox(&mut self.atmosphere, "Atmosphere");
+        ui.checkbox(&mut self.raytracing, "Raytracing (Full Quality)");
 
         ui.collapsing("Global Illumination", |ui| {
             ui.checkbox(&mut self.gi_enabled, "Enabled");

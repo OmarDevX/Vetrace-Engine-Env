@@ -176,7 +176,7 @@ pub struct ShaderParams {
     pub dof_aperture: f32,
     pub dof_focus_dist: f32,
     pub dof_enable: u32,
-    pub _pad_dof: u32,
+    pub simple_raytracing: u32,
     pub atmosphere: u32,
     pub atmo_count: u32,
     pub _pad_atmos: [u32; 2],
