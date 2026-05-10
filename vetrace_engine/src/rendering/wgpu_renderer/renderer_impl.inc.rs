@@ -3146,7 +3146,7 @@ impl WgpuRenderer {
         let simple_mode = self
             .prev_shader_params
             .map_or(false, |p| p.simple_raytracing == 1);
-        if !self.is_2d && !simple_mode {
+        if !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -3155,13 +3155,17 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d && !simple_mode {
+        if !self.is_2d {
             // Propagate the denoised frame to the color texture so subsequent
             // passes operate on filtered pixels rather than the raw noisy
             // output.
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {
-                    texture: &self.screen_texture,
+                    texture: if simple_mode {
+                        &self.color_texture
+                    } else {
+                        &self.screen_texture
+                    },
                     mip_level: 0,
                     origin: Origin3d::ZERO,
                     aspect: TextureAspect::All,
