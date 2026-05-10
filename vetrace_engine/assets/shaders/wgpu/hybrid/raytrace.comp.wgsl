@@ -1589,9 +1589,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     let L = final_col;
-    let max_lum = 10.0;
-    let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
-    let final_tone = L * min(1.0, max_lum / (lum + 1e-4));
+    var final_tone = L;
+    if (gi_params.mode != 2u) {
+        let max_lum = 10.0;
+        let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
+        final_tone = L * min(1.0, max_lum / (lum + 1e-4));
+    }
 
     textureStore(color_tex,  vec2<i32>(id.xy), vec4(final_tone, f32(out_obj)));
     textureStore(depth_tex,  vec2<i32>(id.xy), vec4(out_depth, 0.0, 0.0, 1.0));
