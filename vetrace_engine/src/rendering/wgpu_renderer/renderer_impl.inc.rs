@@ -3129,7 +3129,10 @@ impl WgpuRenderer {
                 );
             }
         }
-        {
+        let simple_mode = self
+            .prev_shader_params
+            .map_or(false, |p| p.simple_raytracing == 1);
+        if !simple_mode {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("raytrace"),
                 timestamp_writes: None,
@@ -3143,9 +3146,6 @@ impl WgpuRenderer {
             };
             cpass.dispatch_workgroups(x, y, 1);
         }
-        let simple_mode = self
-            .prev_shader_params
-            .map_or(false, |p| p.simple_raytracing == 1);
         if !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
