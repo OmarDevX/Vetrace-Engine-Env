@@ -2704,9 +2704,23 @@ impl WgpuRenderer {
             }
             r
         };
-        let prev_jitter = self.prev_taa_jitter;
-        let jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.width as f32;
-        let jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.height as f32;
+        let rt_enabled = params.ray_tracing_enabled != 0;
+        let prev_jitter = if rt_enabled {
+            self.prev_taa_jitter
+        } else {
+            [0.0, 0.0]
+        };
+        let jitter_x = if rt_enabled {
+            (halton(self.frame_number + 1, 2) - 0.5) / self.width as f32
+        } else {
+            0.0
+        };
+        let jitter_y = if rt_enabled {
+            (halton(self.frame_number + 1, 3) - 0.5) / self.height as f32
+        } else {
+            0.0
+        };
+        let frame_number = if rt_enabled { self.frame_number } else { 0 };
         let current_vp = Mat4::from_cols_array_2d(&params.inv_view_proj).inverse();
         let shader_params = ShaderParams {
             camera_pos: [
@@ -2751,7 +2765,7 @@ impl WgpuRenderer {
             ],
             taa_jitter: [jitter_x, jitter_y],
             current_time: params.current_time,
-            frame_number: self.frame_number,
+            frame_number,
             selected_index: params.selected_index,
             max_bounces: params.max_bounces,
             light_samples: params.light_samples,
