@@ -1074,7 +1074,7 @@ fn shade_base(
     let sky_tint = params.skycolor.xyz;
     let sky = max(dot(surface_normal, vec3<f32>(0.0, 1.0, 0.0)), 0.0);
     let sky_mix = mix(1.0, sky, params.sky_occlusion);
-    var col = base * sky_tint * 0.2 * sky_mix;
+    var col = base * sky_tint * 1.0 * sky_mix;
 
     col += gi * base * sky_mix;
 
@@ -1473,7 +1473,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         view_dir = cos(theta) * fwd + sin(theta) * (cos(phi) * rvec + sin(phi) * upv);
 
         let cam_ray = sample_camera_ray(view_dir, &rng_state);
-        let primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
+        let primary = if (gi_params.mode == 2u) {
+            trace_ray_no_gi(cam_ray.ro, cam_ray.rd, 0, &rng_state)
+        } else {
+            trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state)
+        };
         hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
         view_dir = cam_ray.rd;
 
@@ -1489,7 +1493,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             var mat_idx = obj.material_index;
             if (primary.tri_idx != 0xffffffffu) { mat_idx = triangles[primary.tri_idx].material_index; }
             let mat = materials[mat_idx];
-            if (obj.is_glass > 0u) {
+            if (gi_params.mode == 2u) {
+                final_col = primary.color;
+            } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
                     let rr = russian_roulette(1, rough, &rng_state);
@@ -1523,7 +1529,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         view_dir = normalize(world.xyz);
 
         let cam_ray = sample_camera_ray(view_dir, &rng_state);
-        let primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
+        let primary = if (gi_params.mode == 2u) {
+            trace_ray_no_gi(cam_ray.ro, cam_ray.rd, 0, &rng_state)
+        } else {
+            trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state)
+        };
         hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
         view_dir = cam_ray.rd;
 
@@ -1539,7 +1549,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             var mat_idx = obj.material_index;
             if (primary.tri_idx != 0xffffffffu) { mat_idx = triangles[primary.tri_idx].material_index; }
             let mat = materials[mat_idx];
-            if (obj.is_glass > 0u) {
+            if (gi_params.mode == 2u) {
+                final_col = primary.color;
+            } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
                     let rr = russian_roulette(1, rough, &rng_state);
@@ -1570,7 +1582,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     var gi = vec3<f32>(0.0);
-    if (gi_params.quality != 3u) {
+    if (gi_params.quality != 3u && gi_params.mode != 2u) {
         gi = sample_diffuse_gi(gi_pos + gi_normal * 0.01, gi_normal, &rng_state);
     }
 

@@ -433,7 +433,9 @@ impl Engine {
                     gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
                     gi_debug_mode = pp.gi_debug_mode;
                     ray_tracing_enabled = if pp.ray_tracing_enabled { 1 } else { 0 };
-                    gi_mode = if pp.ray_tracing_enabled && pp.path_traced_gi {
+                    gi_mode = if !pp.ray_tracing_enabled {
+                        2
+                    } else if pp.path_traced_gi {
                         1
                     } else {
                         0
