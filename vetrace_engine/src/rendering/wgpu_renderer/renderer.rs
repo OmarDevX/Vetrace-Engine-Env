@@ -120,6 +120,7 @@ pub struct WgpuRenderer {
     pbr_pipeline: RenderPipeline,
     pub prev_view_proj: [[f32; 4]; 4],
     prev_taa_jitter: [f32; 2],
+    prev_rt_enabled: bool,
     triangle_buffer: Buffer,
     bvh_buffer: Buffer,
     tri_bvh_buffer: Buffer,

@@ -1873,6 +1873,7 @@ impl WgpuRenderer {
             post_fx_uniforms: PostFxUniforms::default(),
             prev_view_proj: Mat4::IDENTITY.to_cols_array_2d(),
             prev_taa_jitter: [0.0, 0.0],
+            prev_rt_enabled: true,
             frame_number: 0,
             prev_cam_pos: [0.0; 3],
             prev_cam_front: [0.0; 3],
@@ -2705,6 +2706,15 @@ impl WgpuRenderer {
             r
         };
         let rt_enabled = params.ray_tracing_enabled != 0;
+        if rt_enabled != self.prev_rt_enabled {
+            self.reset_frame();
+            self.prev_shader_params = None;
+            self.prev_gi_params = None;
+            self.prev_blit_params = None;
+            self.prev_post_fx_uniforms = None;
+            self.resize(self.width as i32, self.height as i32);
+            self.prev_rt_enabled = rt_enabled;
+        }
         let prev_jitter = if rt_enabled {
             self.prev_taa_jitter
         } else {
