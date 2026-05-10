@@ -3138,7 +3138,7 @@ impl WgpuRenderer {
             };
             cpass.dispatch_workgroups(x, y, 1);
         }
-        if !self.is_2d && self.post_fx_uniforms.temporal_blend > 0.0 {
+        if !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -3147,7 +3147,7 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d && self.post_fx_uniforms.gi_temporal_blend > 0.0 {
+        if !self.is_2d {
             // Propagate the denoised frame to the color texture so subsequent
             // passes operate on filtered pixels rather than the raw noisy
             // output.
