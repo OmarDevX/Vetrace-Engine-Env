@@ -1459,20 +1459,23 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let g_albedo = textureLoad(gbuf_albedo, coord, 0).rgb;
         var g_normal = textureLoad(gbuf_normal, coord, 0).xyz;
         var g_depth = textureLoad(gbuf_normal, coord, 0).w;
+        let gbuf_valid = (length(g_albedo) > 1e-4) && (g_depth > 0.0) && (g_depth < 1.0);
         if (length(g_normal) < 1e-4 || g_depth <= 0.0) {
             g_normal = vec3<f32>(0.0, 0.0, 1.0);
             g_depth = 1.0;
         }
-        let l = normalize(-params.dir_light_dir.xyz);
-        let lambert = max(dot(normalize(g_normal), l), 0.0);
-        let shade = 0.2 + 0.8 * lambert;
-        let lit = mix(params.skycolor.rgb, g_albedo * shade, select(0.0, 1.0, g_depth < 1.0));
+        if (gbuf_valid) {
+            let l = normalize(-params.dir_light_dir.xyz);
+            let lambert = max(dot(normalize(g_normal), l), 0.0);
+            let shade = 0.2 + 0.8 * lambert;
+            let lit = g_albedo * shade;
 
-        textureStore(color_tex,  coord, vec4(lit, 0.0));
-        textureStore(depth_tex,  coord, vec4(g_depth, 0.0, 0.0, 1.0));
-        textureStore(normal_tex, coord, vec4(normalize(g_normal), g_depth));
-        textureStore(gi_noisy,   coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
-        return;
+            textureStore(color_tex,  coord, vec4(lit, 0.0));
+            textureStore(depth_tex,  coord, vec4(g_depth, 0.0, 0.0, 1.0));
+            textureStore(normal_tex, coord, vec4(normalize(g_normal), g_depth));
+            textureStore(gi_noisy,   coord, vec4<f32>(0.0, 0.0, 0.0, 0.0));
+            return;
+        }
     }
 
     var view_dir: vec3<f32>;
