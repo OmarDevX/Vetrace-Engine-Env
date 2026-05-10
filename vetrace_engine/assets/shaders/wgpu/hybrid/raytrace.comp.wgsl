@@ -1459,7 +1459,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let g_albedo = textureLoad(gbuf_albedo, coord, 0).rgb;
         var g_normal = textureLoad(gbuf_normal, coord, 0).xyz;
         var g_depth = textureLoad(gbuf_normal, coord, 0).w;
-        let gbuf_valid = (length(g_albedo) > 1e-4) && (g_depth > 0.0) && (g_depth < 1.0);
+        let gbuf_valid = (g_depth > 0.0) && (g_depth < 1.0) && (length(g_normal) > 1e-4);
         if (length(g_normal) < 1e-4 || g_depth <= 0.0) {
             g_normal = vec3<f32>(0.0, 0.0, 1.0);
             g_depth = 1.0;
