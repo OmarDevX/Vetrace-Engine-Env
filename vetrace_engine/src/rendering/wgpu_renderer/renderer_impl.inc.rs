@@ -3171,7 +3171,11 @@ impl WgpuRenderer {
                     aspect: TextureAspect::All,
                 },
                 ImageCopyTexture {
-                    texture: &self.color_texture,
+                    texture: if simple_mode {
+                        &self.screen_texture
+                    } else {
+                        &self.color_texture
+                    },
                     mip_level: 0,
                     origin: Origin3d::ZERO,
                     aspect: TextureAspect::All,
