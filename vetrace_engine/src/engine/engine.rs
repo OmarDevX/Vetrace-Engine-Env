@@ -616,6 +616,7 @@ impl Engine {
         let mut dof_focus_dist = 0.0f32;
         let mut dof_enable = 0u32;
         let mut atmosphere = true;
+        let mut ray_tracing_enabled = 1u32;
         for (ent, _cam_att) in self
             .world
             .query::<crate::components::components::CameraAttachment>()
@@ -626,7 +627,12 @@ impl Engine {
             {
                 gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
                 gi_debug_mode = pp.gi_debug_mode;
-                gi_mode = if pp.path_traced_gi { 1 } else { 0 };
+                ray_tracing_enabled = if pp.ray_tracing_enabled { 1 } else { 0 };
+                gi_mode = if pp.ray_tracing_enabled && pp.path_traced_gi {
+                    1
+                } else {
+                    0
+                };
                 light_samples = pp.light_samples as i32;
                 dir_light_samples = pp.dir_light_samples as i32;
                 max_bounces = pp.max_bounces as i32;
@@ -671,6 +677,7 @@ impl Engine {
             gi_quality,
             gi_debug_mode,
             gi_mode,
+            ray_tracing_enabled,
             dir_light_dir,
             dir_light_color: [
                 dir_light_color[0] / 255.0,

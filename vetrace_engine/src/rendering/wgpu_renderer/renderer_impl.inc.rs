@@ -3124,21 +3124,62 @@ impl WgpuRenderer {
                 );
             }
         }
-        {
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("raytrace"),
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.compute_pipeline);
-            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            let (x, y) = if self.is_2d {
-                ((self.width + 15) / 16, (self.height + 15) / 16)
-            } else {
-                ((self.width + 7) / 8, (self.height + 7) / 8)
-            };
-            cpass.dispatch_workgroups(x, y, 1);
+        if params.ray_tracing_enabled != 0 {
+            {
+                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("raytrace"),
+                    timestamp_writes: None,
+                });
+                cpass.set_pipeline(&self.compute_pipeline);
+                cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+                let (x, y) = if self.is_2d {
+                    ((self.width + 15) / 16, (self.height + 15) / 16)
+                } else {
+                    ((self.width + 7) / 8, (self.height + 7) / 8)
+                };
+                cpass.dispatch_workgroups(x, y, 1);
+            }
+        } else {
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.gbuf_albedo_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.gbuf_albedo_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.color_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
-        if !self.is_2d {
+        if !self.is_2d && params.ray_tracing_enabled != 0 {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -3147,7 +3188,7 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d {
+        if !self.is_2d && params.ray_tracing_enabled != 0 {
             // Propagate the denoised frame to the color texture so subsequent
             // passes operate on filtered pixels rather than the raw noisy
             // output.
@@ -3171,7 +3212,7 @@ impl WgpuRenderer {
                 },
             );
         }
-        if !self.is_2d {
+        if !self.is_2d && params.ray_tracing_enabled != 0 {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("denoise"),
                 timestamp_writes: None,

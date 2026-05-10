@@ -2353,6 +2353,7 @@ pub struct PostProcessing {
     pub gi_quality: u32,
     pub gi_debug_mode: u32,
     pub gi_enabled: bool,
+    pub ray_tracing_enabled: bool,
     pub path_traced_gi: bool,
     pub light_samples: u32,
     pub dir_light_samples: u32,
@@ -2373,13 +2374,14 @@ impl Default for PostProcessing {
             gi_quality: 0,
             gi_debug_mode: 0,
             gi_enabled: true,
+            ray_tracing_enabled: true,
             path_traced_gi: false,
             light_samples: 1,
             dir_light_samples: 1,
             max_bounces: 3,
             history_clamp_k: 1.5,
             // Higher values accumulate more history in the temporal filter
-            temporal_blend: 1.0,
+            temporal_blend: 0.15,
             gi_temporal_blend: 0.1,
             exposure: 1.0,
             auto_exposure: false,
@@ -2405,6 +2407,7 @@ impl Inspectable for PostProcessing {
 
         ui.collapsing("Global Illumination", |ui| {
             ui.checkbox(&mut self.gi_enabled, "Enabled");
+            ui.checkbox(&mut self.ray_tracing_enabled, "Ray Tracing");
 
             ui.label("GI Quality");
             egui::ComboBox::from_id_source("gi_quality_pp")
@@ -2421,7 +2424,9 @@ impl Inspectable for PostProcessing {
                     ui.selectable_value(&mut self.gi_quality, 3, "Off");
                 });
 
-            ui.checkbox(&mut self.path_traced_gi, "Path Traced GI");
+            ui.add_enabled_ui(self.ray_tracing_enabled, |ui| {
+                ui.checkbox(&mut self.path_traced_gi, "Path Traced GI");
+            });
 
             ui.label("GI Debug");
             egui::ComboBox::from_id_source("gi_debug_pp")

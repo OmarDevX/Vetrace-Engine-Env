@@ -88,6 +88,7 @@ pub struct RenderParams {
     pub gi_quality: u32,
     pub gi_debug_mode: u32,
     pub gi_mode: u32,
+    pub ray_tracing_enabled: u32,
     pub dir_light_dir: [f32; 3],
     pub dir_light_color: [f32; 3],
     pub dir_light_intensity: f32,
