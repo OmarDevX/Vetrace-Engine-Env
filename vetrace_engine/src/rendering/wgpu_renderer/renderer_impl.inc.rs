@@ -2704,9 +2704,14 @@ impl WgpuRenderer {
             }
             r
         };
-        let prev_jitter = self.prev_taa_jitter;
-        let jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.width as f32;
-        let jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.height as f32;
+        let mut prev_jitter = self.prev_taa_jitter;
+        let mut jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.width as f32;
+        let mut jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.height as f32;
+        if params.simple_raytracing == 1 {
+            jitter_x = 0.0;
+            jitter_y = 0.0;
+            prev_jitter = [0.0, 0.0];
+        }
         let current_vp = Mat4::from_cols_array_2d(&params.inv_view_proj).inverse();
         let shader_params = ShaderParams {
             camera_pos: [
