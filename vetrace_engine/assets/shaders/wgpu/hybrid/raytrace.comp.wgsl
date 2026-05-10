@@ -1493,8 +1493,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 let l = normalize(-params.dir_light_dir.xyz);
                 let lambert = max(dot(surf_normal, l), 0.0);
                 let shade = 0.2 + 0.8 * lambert;
-                let base_albedo = textureLoad(gbuf_albedo, vec2<i32>(id.xy), 0).rgb;
-                final_col = base_albedo * shade;
+                let base_albedo = mat.baseColorFactor.rgb;
+                let emissive = mat.emissiveFactor * mat.emissiveStrength;
+                final_col = (base_albedo + emissive) * shade;
             } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
@@ -1549,8 +1550,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 let l = normalize(-params.dir_light_dir.xyz);
                 let lambert = max(dot(surf_normal, l), 0.0);
                 let shade = 0.2 + 0.8 * lambert;
-                let base_albedo = textureLoad(gbuf_albedo, vec2<i32>(id.xy), 0).rgb;
-                final_col = base_albedo * shade;
+                let base_albedo = mat.baseColorFactor.rgb;
+                let emissive = mat.emissiveFactor * mat.emissiveStrength;
+                final_col = (base_albedo + emissive) * shade;
             } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
