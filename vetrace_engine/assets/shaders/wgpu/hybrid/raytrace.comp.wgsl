@@ -1498,7 +1498,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 let ldir = normalize(-params.dir_light_dir.xyz);
                 let ndl = max(dot(surf_normal, ldir), 0.0);
                 let lambert = 0.25 + 0.75 * ndl * max(params.dir_light_dir.w, 0.0);
-                final_col = mat.baseColorFactor.rgb * lambert;
+                let min_vis = mat.baseColorFactor.rgb * 0.2;
+                final_col = max(primary.color, min_vis) * lambert;
             } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
@@ -1558,7 +1559,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 let ldir = normalize(-params.dir_light_dir.xyz);
                 let ndl = max(dot(surf_normal, ldir), 0.0);
                 let lambert = 0.25 + 0.75 * ndl * max(params.dir_light_dir.w, 0.0);
-                final_col = mat.baseColorFactor.rgb * lambert;
+                let min_vis = mat.baseColorFactor.rgb * 0.2;
+                final_col = max(primary.color, min_vis) * lambert;
             } else if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
