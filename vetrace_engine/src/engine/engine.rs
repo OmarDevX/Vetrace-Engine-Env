@@ -625,7 +625,11 @@ impl Engine {
                 .world
                 .get::<crate::components::components::PostProcessing>(ent)
             {
-                gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
+                gi_quality = if pp.raytracing {
+                    if pp.gi_enabled { pp.gi_quality } else { 3 }
+                } else {
+                    3
+                };
                 gi_debug_mode = pp.gi_debug_mode;
                 gi_mode = if pp.path_traced_gi { 1 } else { 0 };
                 light_samples = pp.light_samples as i32;

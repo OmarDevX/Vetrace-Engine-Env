@@ -3143,7 +3143,10 @@ impl WgpuRenderer {
             };
             cpass.dispatch_workgroups(x, y, 1);
         }
-        if !self.is_2d {
+        let simple_mode = self
+            .prev_shader_params
+            .map_or(false, |p| p.simple_raytracing == 1);
+        if !self.is_2d && !simple_mode {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -3158,7 +3161,11 @@ impl WgpuRenderer {
             // output.
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {
-                    texture: &self.screen_texture,
+                    texture: if simple_mode {
+                        &self.color_texture
+                    } else {
+                        &self.screen_texture
+                    },
                     mip_level: 0,
                     origin: Origin3d::ZERO,
                     aspect: TextureAspect::All,
@@ -3176,7 +3183,7 @@ impl WgpuRenderer {
                 },
             );
         }
-        if !self.is_2d {
+        if !self.is_2d && !simple_mode {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("denoise"),
                 timestamp_writes: None,
