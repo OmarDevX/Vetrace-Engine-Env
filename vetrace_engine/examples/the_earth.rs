@@ -3,7 +3,7 @@
 //! One world unit is exactly one metre in this example. The Earth sphere uses
 //! the mean real Earth radius, and the camera is a first-person player standing
 //! on the surface. A small boat remains gravity-attached to the spherical
-//! surface and continuously moves away so its lower half disappears first.
+//! surface and continuously moves away so its lower hull disappears first.
 //!
 //! Controls:
 //! - Mouse: look around (captured automatically)
@@ -30,14 +30,21 @@ const PLAYER_EYE_HEIGHT_METRES: f32 = 1.8;
 const WALK_SPEED_METRES_PER_SECOND: f32 = 6.0;
 const SPRINT_SPEED_METRES_PER_SECOND: f32 = 35.0;
 const MOUSE_SENSITIVITY_DEGREES_PER_PIXEL: f32 = 0.08;
-const BOAT_START_DISTANCE_METRES: f32 = 500.0;
-const BOAT_RESET_DISTANCE_METRES: f32 = 35_000.0;
+const BOAT_START_DISTANCE_METRES: f32 = 3_500.0;
+const BOAT_RESET_DISTANCE_METRES: f32 = 28_000.0;
 // Faster than a real boat so the real-scale curvature demonstration happens quickly.
-const BOAT_SPEED_METRES_PER_SECOND: f32 = 280.0;
+const BOAT_SPEED_METRES_PER_SECOND: f32 = 90.0;
+// A cruise-ship-sized target stays visible long enough for the real 1:1 Earth
+// curvature to hide the bottom before perspective shrink makes the test useless.
+const SHIP_HULL_SIZE_METRES: Vec3 = Vec3::new(240.0, 20.0, 36.0);
+const SHIP_SUPERSTRUCTURE_SIZE_METRES: Vec3 = Vec3::new(130.0, 35.0, 25.0);
+const SHIP_MAST_SIZE_METRES: Vec3 = Vec3::new(5.0, 95.0, 5.0);
+const SHIP_FLAG_SIZE_METRES: Vec3 = Vec3::new(45.0, 20.0, 2.0);
 
 struct TheEarthExample {
     camera: Option<Entity>,
     boat_hull: Option<Entity>,
+    boat_superstructure: Option<Entity>,
     boat_mast: Option<Entity>,
     boat_flag: Option<Entity>,
     earth_center: Vec3,
@@ -54,6 +61,7 @@ impl Default for TheEarthExample {
         Self {
             camera: None,
             boat_hull: None,
+            boat_superstructure: None,
             boat_mast: None,
             boat_flag: None,
             earth_center: Vec3::new(0.0, -EARTH_RADIUS_METRES, 0.0),
@@ -171,9 +179,10 @@ impl TheEarthExample {
         let tangent = (Vec3::X - normal * Vec3::X.dot(normal)).normalize();
         let orientation = Self::orientation_from_axes(tangent, normal).to_array();
 
-        let hull_size = Vec3::new(12.0, 3.0, 4.0);
-        let mast_size = Vec3::new(0.45, 18.0, 0.45);
-        let flag_size = Vec3::new(4.0, 2.2, 0.25);
+        let hull_size = SHIP_HULL_SIZE_METRES;
+        let superstructure_size = SHIP_SUPERSTRUCTURE_SIZE_METRES;
+        let mast_size = SHIP_MAST_SIZE_METRES;
+        let flag_size = SHIP_FLAG_SIZE_METRES;
 
         if let Some(entity) = self.boat_hull {
             if let Some(transform) = engine.world.get_mut::<Transform>(entity) {
@@ -182,10 +191,22 @@ impl TheEarthExample {
                 transform.size = hull_size.to_array();
             }
         }
+        if let Some(entity) = self.boat_superstructure {
+            if let Some(transform) = engine.world.get_mut::<Transform>(entity) {
+                transform.position = self
+                    .point_on_earth(normal, hull_size.y + superstructure_size.y * 0.5)
+                    .to_array();
+                transform.orientation = orientation;
+                transform.size = superstructure_size.to_array();
+            }
+        }
         if let Some(entity) = self.boat_mast {
             if let Some(transform) = engine.world.get_mut::<Transform>(entity) {
                 transform.position = self
-                    .point_on_earth(normal, hull_size.y + mast_size.y * 0.5)
+                    .point_on_earth(
+                        normal,
+                        hull_size.y + superstructure_size.y + mast_size.y * 0.5,
+                    )
                     .to_array();
                 transform.orientation = orientation;
                 transform.size = mast_size.to_array();
@@ -193,7 +214,12 @@ impl TheEarthExample {
         }
         if let Some(entity) = self.boat_flag {
             if let Some(transform) = engine.world.get_mut::<Transform>(entity) {
-                transform.position = self.point_on_earth(normal, 16.0).to_array();
+                transform.position = self
+                    .point_on_earth(
+                        normal,
+                        hull_size.y + superstructure_size.y + mast_size.y * 0.8,
+                    )
+                    .to_array();
                 transform.orientation = orientation;
                 transform.size = flag_size.to_array();
             }
@@ -257,27 +283,49 @@ impl App for TheEarthExample {
 
         self.boat_hull = Some(Self::spawn_box(
             engine,
-            "gravity-attached boat hull",
-            self.point_on_earth(self.boat_surface_normal(), 1.5),
-            Vec3::new(12.0, 3.0, 4.0),
+            "gravity-attached ship hull (bottom reference)",
+            self.point_on_earth(self.boat_surface_normal(), SHIP_HULL_SIZE_METRES.y * 0.5),
+            SHIP_HULL_SIZE_METRES,
             [0.72, 0.18, 0.08],
             0.45,
             0.0,
         ));
+        self.boat_superstructure = Some(Self::spawn_box(
+            engine,
+            "white upper deck stays visible after hull drops",
+            self.point_on_earth(
+                self.boat_surface_normal(),
+                SHIP_HULL_SIZE_METRES.y + SHIP_SUPERSTRUCTURE_SIZE_METRES.y * 0.5,
+            ),
+            SHIP_SUPERSTRUCTURE_SIZE_METRES,
+            [0.92, 0.92, 0.86],
+            0.35,
+            0.0,
+        ));
         self.boat_mast = Some(Self::spawn_box(
             engine,
-            "gravity-attached boat mast",
-            self.point_on_earth(self.boat_surface_normal(), 12.0),
-            Vec3::new(0.45, 18.0, 0.45),
+            "gravity-attached tall mast",
+            self.point_on_earth(
+                self.boat_surface_normal(),
+                SHIP_HULL_SIZE_METRES.y
+                    + SHIP_SUPERSTRUCTURE_SIZE_METRES.y
+                    + SHIP_MAST_SIZE_METRES.y * 0.5,
+            ),
+            SHIP_MAST_SIZE_METRES,
             [0.92, 0.86, 0.62],
             0.55,
             0.0,
         ));
         self.boat_flag = Some(Self::spawn_box(
             engine,
-            "high flag visible after hull disappears",
-            self.point_on_earth(self.boat_surface_normal(), 16.0),
-            Vec3::new(4.0, 2.2, 0.25),
+            "huge flag visible after hull disappears",
+            self.point_on_earth(
+                self.boat_surface_normal(),
+                SHIP_HULL_SIZE_METRES.y
+                    + SHIP_SUPERSTRUCTURE_SIZE_METRES.y
+                    + SHIP_MAST_SIZE_METRES.y * 0.8,
+            ),
+            SHIP_FLAG_SIZE_METRES,
             [1.0, 1.0, 1.0],
             0.25,
             0.0,
@@ -288,7 +336,9 @@ impl App for TheEarthExample {
         engine.world.insert(
             camera,
             CameraAttachment {
-                fov: 65.0_f32.to_radians(),
+                // Slightly narrowed like a built-in binocular view so the horizon
+                // target remains readable while still using real metre distances.
+                fov: 45.0_f32.to_radians(),
                 local_offset: [0.0, 0.0, 0.0],
             },
         );
@@ -369,7 +419,7 @@ impl App for TheEarthExample {
         if (self.elapsed_seconds % 5.0) < delta_time {
             let horizon = (2.0 * EARTH_RADIUS_METRES * PLAYER_EYE_HEIGHT_METRES).sqrt();
             println!(
-                "Boat arc distance: {:.0} m. Eye-level geometric horizon: {:.0} m.",
+                "Ship arc distance: {:.0} m. Eye-level geometric horizon: {:.0} m.",
                 self.boat_distance_metres, horizon
             );
         }
@@ -406,7 +456,7 @@ impl App for TheEarthExample {
                 );
             } else if *key == Keycode::R {
                 self.boat_distance_metres = BOAT_START_DISTANCE_METRES;
-                println!("Boat reset to {BOAT_START_DISTANCE_METRES} m away.");
+                println!("Ship reset to {BOAT_START_DISTANCE_METRES} m away.");
             }
         }
     }
