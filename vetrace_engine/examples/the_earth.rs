@@ -7,6 +7,7 @@
 //!
 //! Controls:
 //! - Mouse: look around (captured automatically)
+//! - F1: toggle captured mouse so the editor UI can be used for debugging
 //! - W/A/S/D: walk along the curved Earth surface
 //! - Left Shift: sprint
 //! - R: reset the boat near the player
@@ -14,6 +15,7 @@
 
 use glam::{Mat3, Quat, Vec3};
 use sdl2::keyboard::Keycode;
+use vetrace_editor::EditorPlugin;
 use vetrace_engine::app::app;
 use vetrace_engine::app::{App, InputEvent};
 use vetrace_engine::components::components::{
@@ -44,6 +46,7 @@ struct TheEarthExample {
     pitch_degrees: f32,
     boat_distance_metres: f32,
     elapsed_seconds: f32,
+    mouse_captured: bool,
 }
 
 impl Default for TheEarthExample {
@@ -59,6 +62,7 @@ impl Default for TheEarthExample {
             pitch_degrees: 0.0,
             boat_distance_metres: BOAT_START_DISTANCE_METRES,
             elapsed_seconds: 0.0,
+            mouse_captured: true,
         }
     }
 }
@@ -220,14 +224,14 @@ impl TheEarthExample {
 impl App for TheEarthExample {
     fn setup(&mut self, engine: &mut Engine) {
         engine.sky_color = [92.0, 148.0, 220.0];
-        engine.capture_mouse(true);
+        engine.capture_mouse(self.mouse_captured);
 
         println!("The Earth example: 1 unit = 1 metre.");
         println!(
             "Earth radius: {EARTH_RADIUS_METRES} m. Eye height: {PLAYER_EYE_HEIGHT_METRES} m."
         );
         println!(
-            "Mouse is captured. Use WASD to walk, Left Shift to sprint, R to reset the boat, Escape to quit."
+            "Mouse is captured. Use WASD to walk, Left Shift to sprint, F1 to toggle editor mouse, R to reset the boat, Escape to quit."
         );
 
         Self::spawn_sphere(
@@ -288,7 +292,19 @@ impl App for TheEarthExample {
                 local_offset: [0.0, 0.0, 0.0],
             },
         );
-        engine.world.insert(camera, PostProcessing::default());
+        engine.world.insert(
+            camera,
+            PostProcessing {
+                // Keep temporal denoising active and bias it toward history so
+                // the large, low-sample ray-traced scene does not shimmer.
+                temporal_blend: 0.12,
+                gi_temporal_blend: 0.9,
+                history_clamp_k: 2.0,
+                light_samples: 4,
+                dir_light_samples: 4,
+                ..Default::default()
+            },
+        );
         self.camera = Some(camera);
 
         let light = engine.spawn_empty("sun directional light");
@@ -308,16 +324,18 @@ impl App for TheEarthExample {
     fn update(&mut self, engine: &mut Engine, delta_time: f32) {
         self.elapsed_seconds += delta_time;
 
-        let (mouse_dx, mouse_dy) = engine.input.mouse_delta();
         let up = self.surface_normal.normalize();
-        let yaw_delta = -(mouse_dx as f32) * MOUSE_SENSITIVITY_DEGREES_PER_PIXEL;
-        if yaw_delta != 0.0 {
-            self.heading =
-                (Quat::from_axis_angle(up, yaw_delta.to_radians()) * self.heading).normalize();
+        if self.mouse_captured {
+            let (mouse_dx, mouse_dy) = engine.input.mouse_delta();
+            let yaw_delta = -(mouse_dx as f32) * MOUSE_SENSITIVITY_DEGREES_PER_PIXEL;
+            if yaw_delta != 0.0 {
+                self.heading =
+                    (Quat::from_axis_angle(up, yaw_delta.to_radians()) * self.heading).normalize();
+            }
+            self.pitch_degrees = (self.pitch_degrees
+                - mouse_dy as f32 * MOUSE_SENSITIVITY_DEGREES_PER_PIXEL)
+                .clamp(-88.0, 88.0);
         }
-        self.pitch_degrees = (self.pitch_degrees
-            - mouse_dy as f32 * MOUSE_SENSITIVITY_DEGREES_PER_PIXEL)
-            .clamp(-88.0, 88.0);
         self.heading = (self.heading - up * self.heading.dot(up)).normalize();
 
         let mut input = Vec3::ZERO;
@@ -370,7 +388,23 @@ impl App for TheEarthExample {
 
     fn on_input(&mut self, _engine: &mut Engine, event: &InputEvent) {
         if let InputEvent::KeyPressed { key } = event {
-            if *key == Keycode::R {
+            if *key == Keycode::F1 {
+                self.mouse_captured = !self.mouse_captured;
+                _engine.capture_mouse(self.mouse_captured);
+                println!(
+                    "Mouse capture {}. {}",
+                    if self.mouse_captured {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    },
+                    if self.mouse_captured {
+                        "First-person look is active."
+                    } else {
+                        "Use the editor UI for debugging."
+                    }
+                );
+            } else if *key == Keycode::R {
                 self.boat_distance_metres = BOAT_START_DISTANCE_METRES;
                 println!("Boat reset to {BOAT_START_DISTANCE_METRES} m away.");
             }
@@ -383,6 +417,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_title("The Earth - 1:1 Scale Horizon Demo")
         .with_size(1280, 720)
         .with_vsync(true)
+        .add_plugin(EditorPlugin::new())
         .run(TheEarthExample::default())?;
     Ok(())
 }

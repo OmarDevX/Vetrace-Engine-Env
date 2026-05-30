@@ -3,12 +3,12 @@
 //! This module provides a clean application framework similar to Bevy's App system,
 //! allowing users to create applications without dealing with engine internals.
 
-use crate::ecs::behaviour::Behaviour;
 use crate::ecs::World;
+use crate::ecs::behaviour::Behaviour;
 use crate::engine::engine::Engine;
+use sdl2::keyboard::Keycode;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use sdl2::keyboard::Keycode;
 
 pub mod events;
 pub mod plugin;
@@ -198,6 +198,10 @@ impl AppBuilder {
             let current_time = std::time::Instant::now();
             let delta_time = (current_time - last_time).as_secs_f32();
             last_time = current_time;
+
+            // Reset per-frame input state before polling events so mouse
+            // deltas, key presses, and releases do not accumulate forever.
+            engine.input.begin_frame();
 
             // Handle SDL events manually since engine doesn't have a simple update method
             // Clear EGUI events from previous frame
