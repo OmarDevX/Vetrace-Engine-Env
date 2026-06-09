@@ -32,6 +32,41 @@ struct BlurParams {
 
 const MAX_BLUR_REGIONS: usize = 16;
 
+fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 3] {
+    [
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::StorageTexture {
+                access: StorageTextureAccess::WriteOnly,
+                format: TextureFormat::Rgba16Float,
+                view_dimension: TextureViewDimension::D2,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 2,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Texture {
+                multisampled: false,
+                view_dimension: TextureViewDimension::D2,
+                sample_type: TextureSampleType::Float { filterable: true },
+            },
+            count: None,
+        },
+    ]
+}
+
 impl WgpuRenderer {
     fn texture_array_limit(device: &Device) -> u32 {
         const RESERVED_TEXTURE_SLOTS: u32 = 7;
@@ -100,6 +135,17 @@ impl WgpuRenderer {
             sampler,
             linear_sampler,
         ) = create_textures(&device, config.format, render_width, render_height);
+        let (
+            sky_view_lut_texture,
+            sky_view_lut_view,
+            sky_view_lut_storage_view,
+            multi_scattering_lut_texture,
+            multi_scattering_lut_view,
+            multi_scattering_lut_storage_view,
+            aerial_perspective_lut_texture,
+            aerial_perspective_lut_view,
+            aerial_perspective_lut_storage_view,
+        ) = create_atmosphere_lut_textures(&device);
         let blur_src_texture = device.create_texture(&TextureDescriptor {
             label: Some("blur_src"),
             size: Extent3d {
@@ -484,6 +530,26 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 24,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 25,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D3,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -498,6 +564,162 @@ impl WgpuRenderer {
             module: &compute_shader,
             entry_point: "main",
             compilation_options: Default::default(),
+        });
+
+        let sky_view_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("sky_view_lut"),
+            source: ShaderSource::Wgsl(
+                include_str!("../../../assets/shaders/wgpu/atmosphere/sky_view_lut.comp.wgsl")
+                    .into(),
+            ),
+        });
+        let multi_scattering_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("multi_scattering_lut"),
+            source: ShaderSource::Wgsl(
+                include_str!(
+                    "../../../assets/shaders/wgpu/atmosphere/multi_scattering_lut.comp.wgsl"
+                )
+                .into(),
+            ),
+        });
+        let aerial_perspective_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("aerial_perspective_lut"),
+            source: ShaderSource::Wgsl(
+                include_str!(
+                    "../../../assets/shaders/wgpu/atmosphere/aerial_perspective_lut.comp.wgsl"
+                )
+                .into(),
+            ),
+        });
+        let atmosphere_lut_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("atmosphere_lut_bgl"),
+                entries: &atmosphere_lut_bind_group_entries(),
+            });
+        let aerial_perspective_lut_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("aerial_perspective_lut_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D3,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let atmosphere_lut_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("atmosphere_lut_pl"),
+                bind_group_layouts: &[&atmosphere_lut_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let aerial_perspective_lut_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("aerial_perspective_lut_pl"),
+                bind_group_layouts: &[&aerial_perspective_lut_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let sky_view_lut_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("sky_view_lut_pipeline"),
+            layout: Some(&atmosphere_lut_pipeline_layout),
+            module: &sky_view_lut_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+        });
+        let multi_scattering_lut_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("multi_scattering_lut_pipeline"),
+                layout: Some(&atmosphere_lut_pipeline_layout),
+                module: &multi_scattering_lut_shader,
+                entry_point: "main",
+                compilation_options: Default::default(),
+            });
+        let aerial_perspective_lut_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("aerial_perspective_lut_pipeline"),
+                layout: Some(&aerial_perspective_lut_pipeline_layout),
+                module: &aerial_perspective_lut_shader,
+                entry_point: "main",
+                compilation_options: Default::default(),
+            });
+        let sky_view_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("sky_view_lut_bg"),
+            layout: &atmosphere_lut_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&sky_view_lut_storage_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&multi_scattering_lut_view),
+                },
+            ],
+        });
+        let multi_scattering_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("multi_scattering_lut_bg"),
+            layout: &atmosphere_lut_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&multi_scattering_lut_storage_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&sky_view_lut_view),
+                },
+            ],
+        });
+        let aerial_perspective_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("aerial_perspective_lut_bg"),
+            layout: &aerial_perspective_lut_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&aerial_perspective_lut_storage_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&multi_scattering_lut_view),
+                },
+            ],
         });
 
         let rt_denoise_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -857,6 +1079,14 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 23,
                     resource: custom_material_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 24,
+                    resource: BindingResource::TextureView(&sky_view_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 25,
+                    resource: BindingResource::TextureView(&aerial_perspective_lut_view),
                 },
             ],
         });
@@ -1840,6 +2070,13 @@ impl WgpuRenderer {
             sdfgi_inject_pipeline,
             sdfgi_mip_bind_group_layout,
             sdfgi_mip_pipeline,
+            atmosphere_lut_bind_group_layout,
+            sky_view_lut_bind_group,
+            sky_view_lut_pipeline,
+            multi_scattering_lut_bind_group,
+            multi_scattering_lut_pipeline,
+            aerial_perspective_lut_bind_group,
+            aerial_perspective_lut_pipeline,
             sampler,
             linear_sampler,
             shader_compiler,
@@ -1948,6 +2185,17 @@ impl WgpuRenderer {
             sampler,
             linear_sampler,
         ) = create_textures(&self.device, self.config.format, self.width, self.height);
+        let (
+            sky_view_lut_texture,
+            sky_view_lut_view,
+            sky_view_lut_storage_view,
+            multi_scattering_lut_texture,
+            multi_scattering_lut_view,
+            multi_scattering_lut_storage_view,
+            aerial_perspective_lut_texture,
+            aerial_perspective_lut_view,
+            aerial_perspective_lut_storage_view,
+        ) = create_atmosphere_lut_textures(&self.device);
         let blur_src_texture = self.device.create_texture(&TextureDescriptor {
             label: Some("blur_src"),
             size: Extent3d {
@@ -1999,6 +2247,15 @@ impl WgpuRenderer {
         self.variance_view = variance_view;
         self.lightmap_texture = lightmap_texture;
         self.lightmap_view = lightmap_view;
+        self.sky_view_lut_texture = sky_view_lut_texture;
+        self.sky_view_lut_view = sky_view_lut_view;
+        self.sky_view_lut_storage_view = sky_view_lut_storage_view;
+        self.multi_scattering_lut_texture = multi_scattering_lut_texture;
+        self.multi_scattering_lut_view = multi_scattering_lut_view;
+        self.multi_scattering_lut_storage_view = multi_scattering_lut_storage_view;
+        self.aerial_perspective_lut_texture = aerial_perspective_lut_texture;
+        self.aerial_perspective_lut_view = aerial_perspective_lut_view;
+        self.aerial_perspective_lut_storage_view = aerial_perspective_lut_storage_view;
         self.depth_history_texture = depth_history_texture;
         self.depth_history_view = depth_history_view;
         self.normal_history_texture = normal_history_texture;
@@ -2010,6 +2267,68 @@ impl WgpuRenderer {
         self.sampler = sampler;
         self.linear_sampler = linear_sampler;
         self.prev_view_proj = Mat4::IDENTITY.to_cols_array_2d();
+        self.sky_view_lut_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("sky_view_lut_bg"),
+            layout: &self.atmosphere_lut_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.sky_view_lut_storage_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.multi_scattering_lut_view),
+                },
+            ],
+        });
+        self.multi_scattering_lut_bind_group =
+            self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("multi_scattering_lut_bg"),
+                layout: &self.atmosphere_lut_bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(
+                            &self.multi_scattering_lut_storage_view,
+                        ),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: self.params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&self.sky_view_lut_view),
+                    },
+                ],
+            });
+        self.aerial_perspective_lut_bind_group =
+            self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("aerial_perspective_lut_bg"),
+                layout: &self
+                    .aerial_perspective_lut_pipeline
+                    .get_bind_group_layout(0),
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(
+                            &self.aerial_perspective_lut_storage_view,
+                        ),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: self.params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&self.multi_scattering_lut_view),
+                    },
+                ],
+            });
         let tex_limit = Self::texture_array_limit(&self.device) as usize;
         let tex_views: Vec<&TextureView> = self
             .material_textures
@@ -2116,6 +2435,14 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 23,
                     resource: self.custom_material_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 24,
+                    resource: BindingResource::TextureView(&self.sky_view_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 25,
+                    resource: BindingResource::TextureView(&self.aerial_perspective_lut_view),
                 },
             ],
         });
@@ -2603,6 +2930,14 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 23,
                     resource: self.custom_material_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 24,
+                    resource: BindingResource::TextureView(&self.sky_view_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 25,
+                    resource: BindingResource::TextureView(&self.aerial_perspective_lut_view),
                 },
             ],
         });
@@ -3123,6 +3458,33 @@ impl WgpuRenderer {
                     (GI_SDF_RES + 3) / 4,
                 );
             }
+        }
+        if !self.is_2d {
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("atmosphere_luts"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.multi_scattering_lut_pipeline);
+            cpass.set_bind_group(0, &self.multi_scattering_lut_bind_group, &[]);
+            cpass.dispatch_workgroups(
+                (super::setup::MULTI_SCATTERING_LUT_WIDTH + 7) / 8,
+                (super::setup::MULTI_SCATTERING_LUT_HEIGHT + 7) / 8,
+                1,
+            );
+            cpass.set_pipeline(&self.sky_view_lut_pipeline);
+            cpass.set_bind_group(0, &self.sky_view_lut_bind_group, &[]);
+            cpass.dispatch_workgroups(
+                (super::setup::SKY_VIEW_LUT_WIDTH + 7) / 8,
+                (super::setup::SKY_VIEW_LUT_HEIGHT + 7) / 8,
+                1,
+            );
+            cpass.set_pipeline(&self.aerial_perspective_lut_pipeline);
+            cpass.set_bind_group(0, &self.aerial_perspective_lut_bind_group, &[]);
+            cpass.dispatch_workgroups(
+                (super::setup::AERIAL_PERSPECTIVE_LUT_WIDTH + 7) / 8,
+                (super::setup::AERIAL_PERSPECTIVE_LUT_HEIGHT + 7) / 8,
+                (super::setup::AERIAL_PERSPECTIVE_LUT_DEPTH + 3) / 4,
+            );
         }
         {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {

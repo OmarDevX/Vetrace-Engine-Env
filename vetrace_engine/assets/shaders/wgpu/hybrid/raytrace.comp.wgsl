@@ -173,6 +173,8 @@ struct Params {
 @group(0) @binding(21) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(22) var tex_sampler: sampler;
 @group(0) @binding(23) var<storage, read> custom_materials: array<CustomMaterialParams>;
+@group(0) @binding(24) var sky_view_lut: texture_2d<f32>;
+@group(0) @binding(25) var aerial_perspective_lut: texture_3d<f32>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -259,6 +261,24 @@ fn random_in_unit_disk(state: ptr<function, u32>) -> vec2<f32> {
 }
 
 // ---- Atmospheric scattering helpers ----
+
+fn atmosphere_lut_uv(dir: vec3<f32>) -> vec2<f32> {
+    let d = normalize(dir);
+    let u = atan2(d.x, d.z) / TAU + 0.5;
+    let v = clamp(d.y * 0.5 + 0.5, 0.0, 1.0);
+    return vec2<f32>(u, v);
+}
+
+fn sample_sky_view_lut(dir: vec3<f32>) -> vec3<f32> {
+    return textureSampleLevel(sky_view_lut, tex_sampler, atmosphere_lut_uv(dir), 0.0).xyz;
+}
+
+fn sample_aerial_perspective_lut(dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
+    let uv = atmosphere_lut_uv(dir);
+    let z = clamp(sqrt(clamp((max_t - 2.0) / 998.0, 0.0, 1.0)), 0.0, 1.0);
+    let sample = textureSampleLevel(aerial_perspective_lut, tex_sampler, vec3<f32>(uv, z), 0.0);
+    return sample.xyz + background * vec3<f32>(sample.w);
+}
 
 fn ray_sphere_intersect(start: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f32> {
     let a = dot(dir, dir);
@@ -385,6 +405,10 @@ fn calculate_scattering(
 
 fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
     if (params.atmosphere == 0u || params.atmo_count == 0u) { return background; }
+    if (max_t >= 1e8) {
+        return sample_sky_view_lut(dir);
+    }
+    return sample_aerial_perspective_lut(dir, max_t, background);
 
     let sun_dir = normalize(-params.dir_light_dir.xyz);
     let sun_I   = params.dir_light_color.xyz * params.dir_light_dir.w;
