@@ -14,7 +14,7 @@ use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::SurfaceTargetUnsafe;
 use wgpu::{util::DeviceExt, *};
 
-use super::setup::{create_textures, init_wgpu};
+use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
 use super::types::*;
 
 pub struct WgpuRenderer {
@@ -68,6 +68,15 @@ pub struct WgpuRenderer {
     variance_view: TextureView,
     lightmap_texture: Texture,
     lightmap_view: TextureView,
+    sky_view_lut_texture: Texture,
+    sky_view_lut_view: TextureView,
+    sky_view_lut_storage_view: TextureView,
+    multi_scattering_lut_texture: Texture,
+    multi_scattering_lut_view: TextureView,
+    multi_scattering_lut_storage_view: TextureView,
+    aerial_perspective_lut_texture: Texture,
+    aerial_perspective_lut_view: TextureView,
+    aerial_perspective_lut_storage_view: TextureView,
     depth_history_texture: Texture,
     depth_history_view: TextureView,
     normal_history_texture: Texture,
@@ -88,6 +97,13 @@ pub struct WgpuRenderer {
     sdfgi_inject_pipeline: ComputePipeline,
     sdfgi_mip_bind_group_layout: BindGroupLayout,
     sdfgi_mip_pipeline: ComputePipeline,
+    atmosphere_lut_bind_group_layout: BindGroupLayout,
+    sky_view_lut_bind_group: BindGroup,
+    sky_view_lut_pipeline: ComputePipeline,
+    multi_scattering_lut_bind_group: BindGroup,
+    multi_scattering_lut_pipeline: ComputePipeline,
+    aerial_perspective_lut_bind_group: BindGroup,
+    aerial_perspective_lut_pipeline: ComputePipeline,
     sampler: Sampler,
     linear_sampler: Sampler,
     shader_compiler: RaytraceShaderCompiler,

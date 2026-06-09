@@ -1,7 +1,7 @@
 use super::types::GI_SDF_RES;
 use sdl2::video::Window;
-use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
+use wgpu::SurfaceTargetUnsafe;
 use wgpu::{util::DeviceExt, *};
 
 pub async fn init_wgpu(
@@ -73,6 +73,106 @@ pub async fn init_wgpu(
     };
     surface.configure(&device, &config);
     (device, queue, surface, config)
+}
+
+pub const SKY_VIEW_LUT_WIDTH: u32 = 192;
+pub const SKY_VIEW_LUT_HEIGHT: u32 = 108;
+pub const MULTI_SCATTERING_LUT_WIDTH: u32 = 32;
+pub const MULTI_SCATTERING_LUT_HEIGHT: u32 = 32;
+pub const AERIAL_PERSPECTIVE_LUT_WIDTH: u32 = 160;
+pub const AERIAL_PERSPECTIVE_LUT_HEIGHT: u32 = 90;
+pub const AERIAL_PERSPECTIVE_LUT_DEPTH: u32 = 32;
+
+pub fn create_atmosphere_lut_textures(
+    device: &Device,
+) -> (
+    Texture,
+    TextureView,
+    TextureView,
+    Texture,
+    TextureView,
+    TextureView,
+    Texture,
+    TextureView,
+    TextureView,
+) {
+    let lut_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING;
+    let sky_view_lut_texture = device.create_texture(&TextureDescriptor {
+        label: Some("sky_view_lut"),
+        size: Extent3d {
+            width: SKY_VIEW_LUT_WIDTH,
+            height: SKY_VIEW_LUT_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba16Float,
+        usage: lut_usage,
+        view_formats: &[],
+    });
+    let sky_view_lut_view = sky_view_lut_texture.create_view(&TextureViewDescriptor::default());
+    let sky_view_lut_storage_view = sky_view_lut_texture.create_view(&TextureViewDescriptor {
+        label: Some("sky_view_lut_write"),
+        ..Default::default()
+    });
+
+    let multi_scattering_lut_texture = device.create_texture(&TextureDescriptor {
+        label: Some("multi_scattering_lut"),
+        size: Extent3d {
+            width: MULTI_SCATTERING_LUT_WIDTH,
+            height: MULTI_SCATTERING_LUT_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba16Float,
+        usage: lut_usage,
+        view_formats: &[],
+    });
+    let multi_scattering_lut_view =
+        multi_scattering_lut_texture.create_view(&TextureViewDescriptor::default());
+    let multi_scattering_lut_storage_view =
+        multi_scattering_lut_texture.create_view(&TextureViewDescriptor {
+            label: Some("multi_scattering_lut_write"),
+            ..Default::default()
+        });
+
+    let aerial_perspective_lut_texture = device.create_texture(&TextureDescriptor {
+        label: Some("aerial_perspective_lut"),
+        size: Extent3d {
+            width: AERIAL_PERSPECTIVE_LUT_WIDTH,
+            height: AERIAL_PERSPECTIVE_LUT_HEIGHT,
+            depth_or_array_layers: AERIAL_PERSPECTIVE_LUT_DEPTH,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba16Float,
+        usage: lut_usage,
+        view_formats: &[],
+    });
+    let aerial_perspective_lut_view =
+        aerial_perspective_lut_texture.create_view(&TextureViewDescriptor::default());
+    let aerial_perspective_lut_storage_view =
+        aerial_perspective_lut_texture.create_view(&TextureViewDescriptor {
+            label: Some("aerial_perspective_lut_write"),
+            dimension: Some(TextureViewDimension::D3),
+            ..Default::default()
+        });
+
+    (
+        sky_view_lut_texture,
+        sky_view_lut_view,
+        sky_view_lut_storage_view,
+        multi_scattering_lut_texture,
+        multi_scattering_lut_view,
+        multi_scattering_lut_storage_view,
+        aerial_perspective_lut_texture,
+        aerial_perspective_lut_view,
+        aerial_perspective_lut_storage_view,
+    )
 }
 
 pub fn create_textures(
