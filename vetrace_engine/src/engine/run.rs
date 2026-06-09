@@ -1,16 +1,15 @@
-use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
+use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
+use crate::Behaviour;
+use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
+use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
-use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
-#[cfg(not(feature = "wgpu"))]
-use crate::Behaviour;
-use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -600,8 +599,7 @@ impl Engine {
                     Some((&mut self.egui_renderer, &paint_jobs, &textures_delta)),
                 );
                 #[cfg(not(feature = "use_epi"))]
-                self.renderer
-                    .render(&render_params, &[], &pbr_meshes, None);
+                self.renderer.render(&render_params, &[], &pbr_meshes, None);
             }
             #[cfg(not(feature = "wgpu"))]
             {
