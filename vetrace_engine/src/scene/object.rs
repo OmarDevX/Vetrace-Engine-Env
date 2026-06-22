@@ -157,6 +157,7 @@ pub struct GpuAtmosphere {
     pub ambient_beta: [f32; 4],
     pub absorption_beta: [f32; 4],
     pub absorb_params: [f32; 4],
+    pub ozone_params: [f32; 4],
     pub multi_scatter_params: [f32; 4],
 }
 
@@ -170,6 +171,7 @@ impl Default for GpuAtmosphere {
             ambient_beta: [0.0; 4],
             absorption_beta: [0.0; 4],
             absorb_params: [0.0; 4],
+            ozone_params: [0.0; 4],
             multi_scatter_params: [0.0; 4],
         }
     }

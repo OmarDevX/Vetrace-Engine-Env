@@ -3128,6 +3128,9 @@ pub struct Atmosphere {
     pub height_mie: f32,
     pub height_absorption: f32,
     pub absorption_falloff: f32,
+    pub ozone_center_altitude: f32,
+    pub ozone_thickness: f32,
+    pub ozone_strength: f32,
     pub primary_steps: i32,
     pub light_steps: i32,
 }
@@ -3150,6 +3153,9 @@ impl Default for Atmosphere {
             height_mie: 1.2,
             height_absorption: 30.0,
             absorption_falloff: 4.0,
+            ozone_center_altitude: 30.0,
+            ozone_thickness: 10.0,
+            ozone_strength: 1.0,
             primary_steps: 16,
             light_steps: 8,
         }
@@ -3294,6 +3300,30 @@ impl Inspectable for Atmosphere {
                     max: 100.0,
                 },
                 value: &mut self.absorption_falloff as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "ozone_center_altitude",
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 100.0,
+                },
+                value: &mut self.ozone_center_altitude as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "ozone_thickness",
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 100.0,
+                },
+                value: &mut self.ozone_thickness as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "ozone_strength",
+                kind: ExportKind::Slider { min: 0.0, max: 8.0 },
+                value: &mut self.ozone_strength as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
