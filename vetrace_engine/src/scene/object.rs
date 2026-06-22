@@ -119,13 +119,13 @@ impl Default for GpuMaterial {
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GpuCustomMaterial {
     pub color_tint: [f32; 4],
-    pub base_props: [f32; 4],            // roughness, metallic, noise_scale, emission_strength
-    pub custom_floats: [f32; 4],         // custom_float_1..4
-    pub transparency_params: [f32; 4],   // transparency, transmission, transmission_roughness, refraction_ior
-    pub subsurface_params: [f32; 4],     // subsurface_strength, subsurface_radius.rgb
-    pub coat_aniso: [f32; 4],            // clearcoat_strength, clearcoat_roughness, anisotropy, anisotropy_rotation
-    pub sheen_params: [f32; 4],          // sheen_strength, sheen_tint.rgb
-    pub normal_disp: [f32; 4],           // normal_strength, displacement_strength, unused, unused
+    pub base_props: [f32; 4], // roughness, metallic, noise_scale, emission_strength
+    pub custom_floats: [f32; 4], // custom_float_1..4
+    pub transparency_params: [f32; 4], // transparency, transmission, transmission_roughness, refraction_ior
+    pub subsurface_params: [f32; 4],   // subsurface_strength, subsurface_radius.rgb
+    pub coat_aniso: [f32; 4], // clearcoat_strength, clearcoat_roughness, anisotropy, anisotropy_rotation
+    pub sheen_params: [f32; 4], // sheen_strength, sheen_tint.rgb
+    pub normal_disp: [f32; 4], // normal_strength, displacement_strength, unused, unused
     pub texture_index: u32,
     pub _pad: [u32; 3],
 }
@@ -157,6 +157,7 @@ pub struct GpuAtmosphere {
     pub ambient_beta: [f32; 4],
     pub absorption_beta: [f32; 4],
     pub absorb_params: [f32; 4],
+    pub multi_scatter_params: [f32; 4],
 }
 
 impl Default for GpuAtmosphere {
@@ -169,6 +170,7 @@ impl Default for GpuAtmosphere {
             ambient_beta: [0.0; 4],
             absorption_beta: [0.0; 4],
             absorb_params: [0.0; 4],
+            multi_scatter_params: [0.0; 4],
         }
     }
 }

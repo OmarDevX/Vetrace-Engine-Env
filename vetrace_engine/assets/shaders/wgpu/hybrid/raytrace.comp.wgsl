@@ -99,6 +99,7 @@ struct Atmosphere {
     ambient_beta: vec4<f32>,
     absorption_beta: vec4<f32>,
     absorb_params: vec4<f32>,
+    multi_scatter_params: vec4<f32>,
 };
 
 struct Scattering {
@@ -290,6 +291,37 @@ fn ray_sphere_intersect(start: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f
     return vec2<f32>((-b - sqrt_d) / (2.0 * a), (-b + sqrt_d) / (2.0 * a));
 }
 
+fn estimate_multi_scattering(
+    atmo: Atmosphere,
+    tauR: f32,
+    tauM: f32,
+    tauA: f32,
+    dir: vec3<f32>,
+    light_dir: vec3<f32>,
+    light_intensity: vec3<f32>
+) -> vec3<f32> {
+    // Low-cost higher-order scattering approximation.  It treats light that was
+    // already scattered once as a broad, mostly isotropic source whose energy is
+    // limited by single-scattering albedo and view optical depth.
+    let strength = max(atmo.multi_scatter_params.x, 0.0);
+    if (strength <= 0.0) { return vec3<f32>(0.0); }
+
+    let falloff = max(atmo.multi_scatter_params.y, 1e-3);
+    let phase_boost = atmo.multi_scatter_params.z;
+    let ambient_mix = clamp(atmo.multi_scatter_params.w, 0.0, 1.0);
+
+    let scatter_depth = atmo.ray_beta.xyz * vec3<f32>(tauR) + atmo.mie_beta.xyz * vec3<f32>(tauM);
+    let extinction_depth = scatter_depth + atmo.absorption_beta.xyz * vec3<f32>(tauA);
+    let albedo = scatter_depth / max(extinction_depth, vec3<f32>(1e-5));
+
+    let view_energy = vec3<f32>(1.0) - exp(-extinction_depth * falloff);
+    let mu = clamp(dot(dir, light_dir), -1.0, 1.0);
+    let forward_fill = mix(1.0, pow(max(0.0, mu) + 0.25, 2.0), clamp(phase_boost, 0.0, 1.0));
+    let ambient_source = mix(light_intensity, atmo.ambient_beta.xyz, ambient_mix);
+
+    return strength * ambient_source * albedo * view_energy * forward_fill;
+}
+
 fn calculate_scattering(
     atmo: Atmosphere,
     start: vec3<f32>,          // camera-relative
@@ -392,15 +424,16 @@ fn calculate_scattering(
         t += dt;
     }
 
-    let result = phase_ray * atmo.ray_beta.xyz * acc_ray
-    + phase_mie * atmo.mie_beta.xyz * acc_mie
-    + tauR * atmo.ambient_beta.xyz;
+    let multi_scatter = estimate_multi_scattering(atmo, tauR, tauM, tauA, dir, light_dir, light_intensity);
+
+    let single_scatter = phase_ray * atmo.ray_beta.xyz * acc_ray
+    + phase_mie * atmo.mie_beta.xyz * acc_mie;
 
     let trans = exp(-(atmo.ray_beta.xyz * vec3<f32>(tauR)
     + atmo.mie_beta.xyz * vec3<f32>(tauM)
     + atmo.absorption_beta.xyz * vec3<f32>(tauA)));
 
-    return Scattering(result * light_intensity, trans);
+    return Scattering(single_scatter * light_intensity + multi_scatter, trans);
 }
 
 fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
