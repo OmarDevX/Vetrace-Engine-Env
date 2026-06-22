@@ -56,6 +56,12 @@ struct PostFxUniforms {
     fog_color_r: f32,
     fog_color_g: f32,
     fog_color_b: f32,
+    fog_base_height: f32,
+    fog_height_falloff: f32,
+    fog_max_opacity: f32,
+    fog_inscatter_r: f32,
+    fog_inscatter_g: f32,
+    fog_inscatter_b: f32,
     history_clamp_k: f32,
     temporal_blend: f32,
     gi_temporal_blend: f32,
@@ -116,6 +122,12 @@ impl Default for PostFxUniforms {
             fog_color_r: 1.0,
             fog_color_g: 1.0,
             fog_color_b: 1.0,
+            fog_base_height: 0.0,
+            fog_height_falloff: 0.0,
+            fog_max_opacity: 1.0,
+            fog_inscatter_r: 1.0,
+            fog_inscatter_g: 1.0,
+            fog_inscatter_b: 1.0,
             history_clamp_k: 1.5,
             temporal_blend: 1.0,
             gi_temporal_blend: 0.1,
@@ -221,6 +233,12 @@ impl Behaviour for PostProcessBehaviour {
                 uniforms.history_clamp_k = pp.history_clamp_k;
                 uniforms.temporal_blend = pp.temporal_blend;
                 uniforms.gi_temporal_blend = pp.gi_temporal_blend;
+                uniforms.fog_base_height = pp.fog_base_height;
+                uniforms.fog_height_falloff = pp.fog_height_falloff;
+                uniforms.fog_max_opacity = pp.fog_max_opacity;
+                uniforms.fog_inscatter_r = pp.fog_inscattering_tint[0];
+                uniforms.fog_inscatter_g = pp.fog_inscattering_tint[1];
+                uniforms.fog_inscatter_b = pp.fog_inscattering_tint[2];
             }
             if let Some(fog) = engine.world.get::<VolumetricFog>(entity) {
                 uniforms.fog_density = fog.density;

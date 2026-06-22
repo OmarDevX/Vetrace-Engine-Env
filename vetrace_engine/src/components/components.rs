@@ -2363,6 +2363,10 @@ pub struct PostProcessing {
     pub exposure: f32,
     pub auto_exposure: bool,
     pub atmosphere: bool,
+    pub fog_base_height: f32,
+    pub fog_height_falloff: f32,
+    pub fog_max_opacity: f32,
+    pub fog_inscattering_tint: [f32; 3],
 }
 
 impl Default for PostProcessing {
@@ -2384,6 +2388,10 @@ impl Default for PostProcessing {
             exposure: 1.0,
             auto_exposure: false,
             atmosphere: true,
+            fog_base_height: 0.0,
+            fog_height_falloff: 0.0,
+            fog_max_opacity: 1.0,
+            fog_inscattering_tint: [1.0, 1.0, 1.0],
         }
     }
 }
