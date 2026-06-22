@@ -228,6 +228,12 @@ impl Scene {
                         atmo.primary_steps as f32,
                         atmo.light_steps as f32,
                     ],
+                    multi_scatter_params: [
+                        atmo.multi_scatter_strength,
+                        atmo.multi_scatter_falloff,
+                        atmo.multi_scatter_phase_boost,
+                        atmo.multi_scatter_ambient_mix,
+                    ],
                 };
                 self.atmospheres.push(g_atmo);
             }
