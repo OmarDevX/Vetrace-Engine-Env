@@ -69,6 +69,12 @@ struct PostFxUniforms {
     fog_color_r: f32,
     fog_color_g: f32,
     fog_color_b: f32,
+    fog_base_height: f32,
+    fog_height_falloff: f32,
+    fog_max_opacity: f32,
+    fog_inscatter_r: f32,
+    fog_inscatter_g: f32,
+    fog_inscatter_b: f32,
     history_clamp_k: f32,
     temporal_blend: f32,
     gi_temporal_blend: f32,
@@ -235,11 +241,39 @@ fn get_view_dir(uv: vec2<f32>) -> vec3<f32> {
     return normalize(b - a);
 }
 
+fn reconstruct_world_pos(uv: vec2<f32>, depth01: f32) -> vec3<f32> {
+    let uvj = uv * 2.0 - vec2<f32>(1.0) + vec2<f32>(params.taa_jitter * 2.0);
+    let clip = vec4<f32>(uvj, depth01, 1.0);
+    let world = params.inv_view_proj * clip;
+    return world.xyz / world.w;
+}
+
+fn height_fog_amount(camera_pos: vec3<f32>, world_pos: vec3<f32>) -> f32 {
+    let ray = world_pos - camera_pos;
+    let dist = length(ray);
+    if (dist <= 1e-4 || postfx.fog_density <= 0.0) {
+        return 0.0;
+    }
+
+    let falloff = max(postfx.fog_height_falloff, 0.0);
+    let height0 = camera_pos.y - postfx.fog_base_height;
+    let height_delta = world_pos.y - camera_pos.y;
+    var density_scale = 1.0;
+    if (falloff > 1e-4) {
+        let x = falloff * height_delta;
+        var segment_average = 1.0;
+        if (abs(x) > 1e-3) {
+            segment_average = (1.0 - exp(-x)) / x;
+        }
+        density_scale = exp(-falloff * height0) * segment_average;
+    }
+
+    let optical_depth = max(postfx.fog_density * dist * density_scale, 0.0);
+    return min(1.0 - exp(-optical_depth), clamp(postfx.fog_max_opacity, 0.0, 1.0));
+}
+
 fn reproject_prev_uv(cur_uv: vec2<f32>, cur_depth01: f32) -> vec2<f32> {
-    // approximate world pos along the view ray using linearized depth
-    let z_view = linearize_depth(cur_depth01, postfx.z_near, postfx.z_far);
-    let dir = get_view_dir(cur_uv);
-    let wpos = params.camera_pos.xyz + dir * z_view;
+    let wpos = reconstruct_world_pos(cur_uv, cur_depth01);
     let cam_delta = params.camera_pos.xyz - params.prev_camera_pos.xyz;
     let prev_cs = params.prev_view_proj * vec4<f32>(wpos + cam_delta, 1.0);
     let prev_ndc = prev_cs.xy / prev_cs.w;
@@ -549,12 +583,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
     }
 
-    // ---------- Fog (unchanged) ----------
+    // ---------- Height fog ----------
     if (postfx.fog_density > 0.0) {
         let depth01 = textureSample(depth_tex, nearest_samp, in.uv).r;
-        let fog = 1.0 - exp(-depth01 * postfx.fog_density);
-        let fog_color = vec4<f32>(postfx.fog_color_r, postfx.fog_color_g, postfx.fog_color_b, color.a);
-        color = mix(color, fog_color, fog);
+        if (depth01 < 0.999999) {
+            let world_pos = reconstruct_world_pos(in.uv, depth01);
+            let fog = height_fog_amount(params.camera_pos.xyz, world_pos);
+            let fog_color = vec3<f32>(postfx.fog_color_r, postfx.fog_color_g, postfx.fog_color_b) *
+                vec3<f32>(postfx.fog_inscatter_r, postfx.fog_inscatter_g, postfx.fog_inscatter_b);
+            color = vec4<f32>(mix(color.rgb, fog_color, fog), color.a);
+        }
     }
 
     // ---------- Exposure (unchanged) ----------
