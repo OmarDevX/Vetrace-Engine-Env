@@ -228,6 +228,12 @@ impl Scene {
                         atmo.primary_steps as f32,
                         atmo.light_steps as f32,
                     ],
+                    ozone_params: [
+                        atmo.ozone_center_altitude,
+                        atmo.ozone_thickness,
+                        atmo.ozone_strength,
+                        0.0,
+                    ],
                     multi_scatter_params: [
                         atmo.multi_scatter_strength,
                         atmo.multi_scatter_falloff,

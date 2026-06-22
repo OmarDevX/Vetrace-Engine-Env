@@ -99,6 +99,7 @@ struct Atmosphere {
     ambient_beta: vec4<f32>,
     absorption_beta: vec4<f32>,
     absorb_params: vec4<f32>,
+    ozone_params: vec4<f32>,
     multi_scatter_params: vec4<f32>,
 };
 
@@ -291,6 +292,15 @@ fn ray_sphere_intersect(start: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f
     return vec2<f32>((-b - sqrt_d) / (2.0 * a), (-b + sqrt_d) / (2.0 * a));
 }
 
+
+fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
+    let center_altitude = atmo.ozone_params.x;
+    let thickness = max(atmo.ozone_params.y, 1e-3);
+    let strength = max(atmo.ozone_params.z, 0.0);
+    let normalized_altitude = (height - center_altitude) / thickness;
+    return strength * exp(-normalized_altitude * normalized_altitude);
+}
+
 fn estimate_multi_scattering(
     atmo: Atmosphere,
     tauR: f32,
@@ -375,8 +385,7 @@ fn calculate_scattering(
 
         let dR = exp(-h * invHR);
         let dM = exp(-h * invHM);
-        let denom = (atmo.absorb_params.x - h) / atmo.absorb_params.y;
-        let dA = (1.0 / (denom * denom + 1.0)) * dR;
+        let dA = ozone_density(atmo, h);
 
         tauR += dR * dt;
         tauM += dM * dt;
@@ -401,8 +410,7 @@ fn calculate_scattering(
                 let hl = length(sl) - atmo.center_radius.w;
                 let dRl = exp(-hl * invHR);
                 let dMl = exp(-hl * invHM);
-                let denl = (atmo.absorb_params.x - hl) / atmo.absorb_params.y;
-                let dAl = (1.0 / (denl * denl + 1.0)) * dRl;
+                let dAl = ozone_density(atmo, hl);
                 iR += dRl * ldt; iM += dMl * ldt; iA += dAl * ldt;
                 lt += ldt;
             }
