@@ -85,6 +85,7 @@ pub struct WgpuRenderer {
     occluder_texture: Texture,
     occluder_view: TextureView,
     white_texture: crate::gpu::TextureHandle,
+    blue_noise_texture: crate::gpu::TextureHandle,
     material_textures: Vec<crate::gpu::TextureHandle>,
     gi_params_buffer: Buffer,
     postfx_buffer: Buffer,

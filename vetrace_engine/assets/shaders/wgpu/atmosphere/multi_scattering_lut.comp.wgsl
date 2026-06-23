@@ -70,7 +70,15 @@ fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
     return strength * exp(-normalized_altitude * normalized_altitude);
 }
 
-fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: vec3<f32>) -> Scattering {
+fn sample_blue_noise(pixel: vec2<u32>, frame_number: i32) -> f32 {
+    let dims = vec2<u32>(textureDimensions(blue_noise_tex, 0));
+    let frame = u32(max(frame_number, 0));
+    let offset = vec2<u32>((frame * 5u + frame / 3u) % dims.x, (frame * 7u + frame / 5u) % dims.y);
+    let coord = (pixel + offset) % dims;
+    return textureSampleLevel(blue_noise_tex, blue_noise_sampler, (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims), 0.0).r;
+}
+
+fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: vec3<f32>, pixel: vec2<u32>, frame_number: i32) -> Scattering {
     if (params.atmosphere == 0u || params.atmo_count == 0u) {
         return Scattering(vec3<f32>(0.0), vec3<f32>(1.0));
     }
@@ -85,7 +93,7 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
     if (t0 > t1) { return Scattering(vec3<f32>(0.0), vec3<f32>(1.0)); }
     let steps = 18;
     let dt = (t1 - t0) / f32(steps);
-    var t = t0 + 0.5 * dt;
+    var t = t0 + (0.25 + 0.5 * sample_blue_noise(pixel, frame_number)) * dt;
     let inv_hr = 1.0 / max(atmo.atmo_g_height.z, 1e-3);
     let inv_hm = 1.0 / max(atmo.atmo_g_height.w, 1e-3);
     let mu = dot(dir, sun_dir);
@@ -126,6 +134,8 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
 @group(0) @binding(0) var multi_scattering_lut: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(1) var<uniform> params: Params;
 @group(0) @binding(2) var unused_lut: texture_2d<f32>;
+@group(0) @binding(3) var blue_noise_tex: texture_2d<f32>;
+@group(0) @binding(4) var blue_noise_sampler: sampler;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(multi_scattering_lut);
