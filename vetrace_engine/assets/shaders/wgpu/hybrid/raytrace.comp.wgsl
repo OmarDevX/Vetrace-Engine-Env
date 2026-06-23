@@ -704,10 +704,85 @@ fn calculate_scattering(
 
 fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
     if (params.atmosphere == 0u || params.atmo_count == 0u) { return background; }
-    if (max_t >= 1e8) {
-        return sample_sky_view_lut(dir);
+
+    // Keep the inline atmosphere integration as the authoritative path until
+    // the sky-view and aerial-perspective LUTs are actually populated by
+    // precompute passes. Sampling placeholder LUT textures here makes surface
+    // fog/aerial perspective disappear and can replace the sky with an
+    // uninitialized lookup.
+    let sun_dir = normalize(-params.dir_light_dir.xyz);
+    let sun_I   = params.dir_light_color.xyz * params.dir_light_dir.w;
+
+    // Find atmospheres intersected (small N)
+    var count: u32 = 0u;
+    var tvals: array<f32, MAX_ATMOSPHERES>;
+    var idx:   array<u32, MAX_ATMOSPHERES>;
+    for (var i: u32 = 0u; i < params.atmo_count; i = i + 1u) {
+        let atmo = params.atmos[i];
+        let center = atmo.center_radius.xyz;
+        let pos = origin - center;
+        let rl = ray_sphere_intersect(pos, dir, atmo.atmo_g_height.x);
+        let t0 = max(rl.x, 0.0);
+        let t1 = min(rl.y, max_t);
+        if (t0 <= t1) { tvals[count] = t0; idx[count] = i; count = count + 1u; }
     }
-    return sample_aerial_perspective_lut(dir, max_t, background);
+    // tiny selection sort
+    for (var i: u32 = 0u; i < count; i = i + 1u) {
+        var k = i; var j = i + 1u;
+        while (j < count) { if (tvals[j] < tvals[k]) { k = j; } j = j + 1u; }
+        if (k != i) {
+            let tt = tvals[i]; tvals[i] = tvals[k]; tvals[k] = tt;
+            let ii = idx[i];   idx[i]   = idx[k];   idx[k]   = ii;
+        }
+    }
+
+    var col   = vec3<f32>(0.0);
+    var trans = vec3<f32>(1.0);
+
+    for (var i: u32 = 0u; i < count; i = i + 1u) {
+        let atmo = params.atmos[idx[i]];
+
+        // Sun
+        let sc = calculate_scattering(atmo, origin, dir, max_t, sun_dir, sun_I, vec2<u32>(0u));
+        col += trans * sc.color;
+
+        // A few emissive lights (bounded)
+        let max_lights: u32 = min(MAX_ATMO_LIGHTS, light_header.count);
+        for (var l: u32 = 0u; l < max_lights; l = l + 1u) {
+            let obj_idx = light_indices[l];
+            let obj = objects[obj_idx];
+            let mat = materials[obj.material_index];
+            if (mat.emissiveStrength > 0.0) {
+                let ldir = normalize(obj.position - origin);
+                var lintensity = mat.baseColorFactor.rgb * mat.emissiveStrength;
+                if (obj.is_cube > 0u) {
+                    let size = obj.size * obj.scale;
+                    let area = 2.0 * (size.x * size.y + size.y * size.z + size.z * size.x);
+                    lintensity *= area;
+                } else {
+                    let r = obj.radius * obj.scale.x;
+                    let area = 4.0 * PI * r * r;
+                    lintensity *= area;
+                }
+                let sc_l = calculate_scattering(atmo, origin, dir, max_t, ldir, lintensity, vec2<u32>(0u));
+                col += trans * sc_l.color;
+            }
+        }
+
+        trans *= sc.transmittance;
+        if (trans.x + trans.y + trans.z < T_EARLY_OUT) { break; }
+    }
+
+    col += trans * background;
+
+    // Sun glow only for sky rays
+    let sun_cos = dot(dir, sun_dir);
+    let sun_size = 0.9995;
+    if (max_t >= 1e9 && sun_cos > sun_size) {
+        let glow = (sun_cos - sun_size) / (1.0 - sun_size);
+        col += trans * sun_I * glow * 50.0;
+    }
+    return col;
 }
 
 fn quat_normalize(q: vec4<f32>) -> vec4<f32> { return q * inverseSqrt(dot(q, q)); }
@@ -1824,7 +1899,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         gi = sample_diffuse_gi(gi_pos + gi_normal * 0.01, gi_normal, &rng_state);
     }
 
-    let L = composite_clouds(vec3<f32>(0.0), view_dir, out_depth, final_col, id.xy);
+    let cloud_scene_depth = select(out_depth, 1e9, out_obj < 0);
+    let L = composite_clouds(vec3<f32>(0.0), view_dir, cloud_scene_depth, final_col, id.xy);
     let max_lum = 10.0;
     let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
     let final_tone = L * min(1.0, max_lum / (lum + 1e-4));
