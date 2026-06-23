@@ -1,5 +1,5 @@
 use crate::materials::PbrMaterial;
-use crate::math::{Vec3, vec3};
+use crate::math::{vec3, Vec3};
 use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, GpuVolumetricCloud, Object};
 
 pub struct Scene {
@@ -272,6 +272,12 @@ impl Scene {
                         cloud.shadow_strength,
                         cloud.planet_shadow_penumbra,
                         0.0,
+                    ],
+                    multi_scatter: [
+                        cloud.multi_scatter_strength,
+                        cloud.multi_scatter_octaves as f32,
+                        cloud.multi_scatter_attenuation,
+                        cloud.multi_scatter_eccentricity,
                     ],
                 });
             }

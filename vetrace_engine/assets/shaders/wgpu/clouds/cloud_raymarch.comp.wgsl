@@ -7,6 +7,7 @@ struct VolumetricCloud {
     coverage_density_noise_phase: vec4<f32>,
     wind_steps: vec4<f32>,
     light_padding: vec4<f32>,
+    multi_scatter: vec4<f32>,
 };
 
 struct GpuAtmosphere {
@@ -38,6 +39,29 @@ fn hash31(p: vec3<f32>) -> f32 {
     let q = fract(p * 0.1031);
     let d = dot(q, q.yzx + vec3<f32>(33.33));
     return fract((q.x + q.y) * (q.z + d));
+}
+
+fn phase_lobe(g: f32, mu: f32) -> f32 {
+    let gg = g * g;
+    return (1.0 - gg) / max(0.001, pow(1.0 + gg - 2.0 * g * mu, 1.5));
+}
+
+fn multi_scatter_lighting(cloud: VolumetricCloud, sigma: f32, mu: f32, light_t: f32) -> vec3<f32> {
+    let strength = clamp(cloud.multi_scatter.x, 0.0, 2.0);
+    let octaves = min(max(u32(cloud.multi_scatter.y), 0u), 6u);
+    let attenuation = clamp(cloud.multi_scatter.z, 0.0, 1.0);
+    let eccentricity = clamp(cloud.multi_scatter.w, 0.0, 1.0);
+    let density_lift = 1.0 - exp(-max(sigma, 0.0) * 0.75);
+    var energy = 0.0;
+    var phase_scale = attenuation;
+    var g_scale = eccentricity;
+    for (var octave: u32 = 0u; octave < octaves; octave = octave + 1u) {
+        energy += phase_scale * phase_lobe(clamp(cloud.coverage_density_noise_phase.w * g_scale, -0.95, 0.95), mu);
+        phase_scale *= attenuation;
+        g_scale *= eccentricity;
+    }
+    let ambient_energy = density_lift * (0.25 + 0.75 * (1.0 - light_t)) * mix(0.35, 1.0, light_t);
+    return params.sun_color_count.xyz * params.sun_dir_intensity.w * clamp(strength * (energy * 0.045 + ambient_energy * 0.18), 0.0, 0.75);
 }
 
 fn density(cloud: VolumetricCloud, p: vec3<f32>) -> f32 {
@@ -116,9 +140,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let sigma = density(cloud, p);
             let absorb = exp(-sigma);
             let jitter = blue_noise_jitter(id.xy, u32(params.camera_pos_time.w * 60.0) + si);
-            let light_t = light_transmittance(cloud, p, normalize(params.sun_dir_intensity.xyz), jitter);
+            let sun_dir = normalize(params.sun_dir_intensity.xyz);
+            let light_t = light_transmittance(cloud, p, sun_dir, jitter);
+            let mu = clamp(dot(rd, sun_dir), -1.0, 1.0);
+            let single_scatter = light_t * params.sun_color_count.xyz * params.sun_dir_intensity.w;
+            let multi_scatter = multi_scatter_lighting(cloud, sigma, mu, light_t);
             let scatter = (1.0 - absorb) * transmittance;
-            radiance += scatter * light_t * params.sun_color_count.xyz * params.sun_dir_intensity.w;
+            radiance += scatter * min(single_scatter + multi_scatter, params.sun_color_count.xyz * params.sun_dir_intensity.w * 1.25 + vec3<f32>(0.08));
             transmittance *= absorb;
         }
     }

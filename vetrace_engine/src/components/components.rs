@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::Inspectable;
 use crate::inspector::export::{ExportKind, ExportedField};
+use crate::inspector::Inspectable;
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -3136,6 +3136,14 @@ pub struct VolumetricCloud {
     pub shadow_strength: f32,
     /// Softens planet/sphere shadow terminators on cloud direct lighting in world units.
     pub planet_shadow_penumbra: f32,
+    /// Adds a cheap higher-order scattering lift to dense/self-shadowed cloud regions.
+    pub multi_scatter_strength: f32,
+    /// Number of attenuated phase lobes used by the approximation.
+    pub multi_scatter_octaves: i32,
+    /// Per-octave energy falloff for the higher-order approximation.
+    pub multi_scatter_attenuation: f32,
+    /// Per-octave anisotropy falloff for repeated forward-scattering lobes.
+    pub multi_scatter_eccentricity: f32,
 }
 
 impl Default for VolumetricCloud {
@@ -3153,6 +3161,10 @@ impl Default for VolumetricCloud {
             cloud_light_steps: 6,
             shadow_strength: 1.0,
             planet_shadow_penumbra: 1.0,
+            multi_scatter_strength: 0.35,
+            multi_scatter_octaves: 3,
+            multi_scatter_attenuation: 0.55,
+            multi_scatter_eccentricity: 0.65,
         }
     }
 }
@@ -3256,6 +3268,30 @@ impl Inspectable for VolumetricCloud {
                     max: 100.0,
                 },
                 value: &mut self.planet_shadow_penumbra as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "multi_scatter_strength",
+                kind: ExportKind::Slider { min: 0.0, max: 2.0 },
+                value: &mut self.multi_scatter_strength as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "multi_scatter_octaves",
+                kind: ExportKind::Slider { min: 0.0, max: 6.0 },
+                value: &mut self.multi_scatter_octaves as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<i32>(),
+            },
+            ExportedField {
+                name: "multi_scatter_attenuation",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.multi_scatter_attenuation as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "multi_scatter_eccentricity",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.multi_scatter_eccentricity as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
         ]

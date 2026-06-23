@@ -184,6 +184,7 @@ pub struct GpuVolumetricCloud {
     pub coverage_density_noise_phase: [f32; 4],
     pub wind_steps: [f32; 4],
     pub light_padding: [f32; 4],
+    pub multi_scatter: [f32; 4],
 }
 
 impl Default for GpuVolumetricCloud {
@@ -193,6 +194,7 @@ impl Default for GpuVolumetricCloud {
             coverage_density_noise_phase: [0.0; 4],
             wind_steps: [0.0; 4],
             light_padding: [0.0; 4],
+            multi_scatter: [0.0; 4],
         }
     }
 }
