@@ -1,7 +1,7 @@
 use crate::rendering::resource::{compile_shader, link_program};
 use crate::rendering::ssbo::{create_ssbo, update_ssbo};
 use crate::scene::bvh::GpuBvhNode;
-use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle};
+use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, GpuVolumetricCloud};
 use crate::scene::tri_bvh::GpuTriBvhNode;
 use gl::types::*;
 use sdl2::video::Window;
@@ -97,6 +97,7 @@ pub struct RenderParams {
     pub dof_enable: u32,
     pub atmos: Vec<GpuAtmosphere>,
     pub atmosphere: u32,
+    pub clouds: Vec<GpuVolumetricCloud>,
 }
 
 struct Uniforms {
@@ -649,10 +650,16 @@ impl Renderer {
                 println!("Warning: Uniform 'screenTex' not found");
             }
             gl::Uniform1i(tex_loc, 0);
-            let size_loc =
-                gl::GetUniformLocation(self.quad_program, CString::new("texSize").unwrap().as_ptr());
+            let size_loc = gl::GetUniformLocation(
+                self.quad_program,
+                CString::new("texSize").unwrap().as_ptr(),
+            );
             if size_loc >= 0 {
-                gl::Uniform2f(size_loc, self.render_width as f32, self.render_height as f32);
+                gl::Uniform2f(
+                    size_loc,
+                    self.render_width as f32,
+                    self.render_height as f32,
+                );
             }
             let sharp_loc = gl::GetUniformLocation(
                 self.quad_program,

@@ -496,6 +496,7 @@ impl Engine {
         // Prepare GPU data (from run.rs line 161-170)
         let (raw_gpu_objects, raw_triangles) = self.scene.get_gpu_buffers();
         let raw_atmos = self.scene.get_gpu_atmospheres();
+        let raw_clouds = self.scene.get_gpu_clouds();
         let cam_pos = cam.position;
         let z_near = self.scene.camera_near_plane(cam_pos);
 
@@ -593,6 +594,16 @@ impl Engine {
         }
 
         // Translate atmospheres relative to the camera
+        let clouds: Vec<_> = raw_clouds
+            .iter()
+            .map(|c| {
+                let mut cloud = *c;
+                cloud.center_base_thickness[0] -= cam_pos.x;
+                cloud.center_base_thickness[1] -= cam_pos.y;
+                cloud.center_base_thickness[2] -= cam_pos.z;
+                cloud
+            })
+            .collect();
         let atmos: Vec<_> = raw_atmos
             .iter()
             .map(|a| {
@@ -684,6 +695,7 @@ impl Engine {
             dof_enable,
             atmos,
             atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
+            clouds,
         };
 
         // Update renderer with scene data (from run.rs line 395-406)
@@ -768,7 +780,6 @@ impl Engine {
                 });
             }
 
-
             // Handle EGUI rendering for wgpu
             #[cfg(feature = "use_epi")]
             {
@@ -818,8 +829,7 @@ impl Engine {
             #[cfg(not(feature = "use_epi"))]
             {
                 // Render with wgpu without EGUI
-                self.renderer
-                    .render(&render_params, &[], &pbr_meshes, None);
+                self.renderer.render(&render_params, &[], &pbr_meshes, None);
             }
         }
         #[cfg(not(feature = "wgpu"))]
@@ -1498,9 +1508,7 @@ impl Engine {
                             ("clearcoat_roughness", MaterialParameter::Float(f)) => {
                                 gpu.coat_aniso[1] = *f
                             }
-                            ("anisotropy", MaterialParameter::Float(f)) => {
-                                gpu.coat_aniso[2] = *f
-                            }
+                            ("anisotropy", MaterialParameter::Float(f)) => gpu.coat_aniso[2] = *f,
                             ("anisotropy_rotation", MaterialParameter::Float(f)) => {
                                 gpu.coat_aniso[3] = *f
                             }

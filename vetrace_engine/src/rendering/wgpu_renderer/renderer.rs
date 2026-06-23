@@ -30,6 +30,7 @@ pub struct WgpuRenderer {
     sharpness: f32,
     is_2d: bool,
     object_buffer: Buffer,
+    cloud_buffer: Buffer,
     params_buffer: Buffer,
     blit_params_buffer: Buffer,
     screen_texture: Texture,

@@ -177,6 +177,29 @@ impl Default for GpuAtmosphere {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable, PartialEq)]
+pub struct GpuVolumetricCloud {
+    pub center_base_thickness: [f32; 4],
+    pub coverage_density_noise_phase: [f32; 4],
+    pub wind_steps: [f32; 4],
+    pub light_padding: [f32; 4],
+}
+
+impl Default for GpuVolumetricCloud {
+    fn default() -> Self {
+        Self {
+            center_base_thickness: [0.0; 4],
+            coverage_density_noise_phase: [0.0; 4],
+            wind_steps: [0.0; 4],
+            light_padding: [0.0; 4],
+        }
+    }
+}
+
+/// Maximum number of volumetric cloud volumes supported in the scene and shader.
+pub const MAX_VOLUMETRIC_CLOUDS: usize = 8;
+
 /// Maximum number of atmospheres supported in the scene and shader.
 pub const MAX_ATMOSPHERES: usize = 8;
 

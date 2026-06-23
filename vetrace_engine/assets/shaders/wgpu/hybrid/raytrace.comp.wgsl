@@ -109,6 +109,14 @@ struct Scattering {
 };
 
 const MAX_ATMOSPHERES: u32 = 8u;
+const MAX_VOLUMETRIC_CLOUDS: u32 = 8u;
+
+struct VolumetricCloud {
+    center_base_thickness: vec4<f32>,
+    coverage_density_noise_phase: vec4<f32>,
+    wind_steps: vec4<f32>,
+    light_padding: vec4<f32>,
+};
 
 // --- runtime safety caps ---
 const MAX_TLAS_ITERS          : u32 = 8u;
@@ -153,7 +161,8 @@ struct Params {
     _pad_dof: u32,
     atmosphere: u32,
     atmo_count: u32,
-    _pad_atmos: vec2<u32>,
+    cloud_count: u32,
+    _pad_atmos: u32,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 
@@ -177,6 +186,7 @@ struct Params {
 @group(0) @binding(23) var<storage, read> custom_materials: array<CustomMaterialParams>;
 @group(0) @binding(24) var sky_view_lut: texture_2d<f32>;
 @group(0) @binding(25) var aerial_perspective_lut: texture_3d<f32>;
+@group(0) @binding(26) var<storage, read> clouds: array<VolumetricCloud>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -191,6 +201,60 @@ struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
 struct LightListHeader { count: u32, };
 @group(0) @binding(19) var<uniform> light_header: LightListHeader;
 @group(0) @binding(20) var<storage, read> light_indices: array<u32>;
+
+
+fn hash31(p: vec3<f32>) -> f32 {
+    let q = fract(p * 0.1031);
+    let d = dot(q, q.yzx + vec3<f32>(33.33));
+    return fract((q.x + q.y) * (q.z + d));
+}
+
+fn cloud_density(cloud: VolumetricCloud, p: vec3<f32>) -> f32 {
+    let base_y = cloud.center_base_thickness.y;
+    let thickness = max(cloud.center_base_thickness.w, 0.001);
+    let height01 = clamp((p.y - base_y) / thickness, 0.0, 1.0);
+    let height_shape = smoothstep(0.0, 0.18, height01) * (1.0 - smoothstep(0.75, 1.0, height01));
+    let wind = vec3<f32>(cloud.wind_steps.x, 0.0, cloud.wind_steps.y) * cloud.wind_steps.z * params.current_time;
+    let noise_p = (p + wind) * max(cloud.coverage_density_noise_phase.z, 0.001);
+    let n = 0.55 * hash31(floor(noise_p)) + 0.30 * hash31(floor(noise_p * 2.03)) + 0.15 * hash31(floor(noise_p * 4.01));
+    let coverage = clamp(cloud.coverage_density_noise_phase.x, 0.0, 1.0);
+    return max(0.0, n - (1.0 - coverage)) * height_shape * max(cloud.coverage_density_noise_phase.y, 0.0);
+}
+
+fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: vec3<f32>) -> vec3<f32> {
+    var radiance = vec3<f32>(0.0);
+    var transmittance = 1.0;
+    let sun_dir = normalize(-params.dir_light_dir.xyz);
+    let sun_col = params.dir_light_color.xyz * max(params.dir_light_dir.w, 0.0);
+    for (var ci: u32 = 0u; ci < params.cloud_count && ci < MAX_VOLUMETRIC_CLOUDS; ci = ci + 1u) {
+        let cloud = clouds[ci];
+        let base_y = cloud.center_base_thickness.y;
+        let top_y = base_y + max(cloud.center_base_thickness.w, 0.001);
+        let inv_y = 1.0 / max(abs(rd.y), 1e-4);
+        var t0 = min((base_y - ro.y) / rd.y, (top_y - ro.y) / rd.y);
+        var t1 = max((base_y - ro.y) / rd.y, (top_y - ro.y) / rd.y);
+        t0 = max(t0, 0.0);
+        t1 = min(t1, scene_depth);
+        if (t1 <= t0) { continue; }
+        let steps = max(1u, min(u32(cloud.wind_steps.w), 96u));
+        let dt = (t1 - t0) / f32(steps);
+        for (var sidx: u32 = 0u; sidx < steps; sidx = sidx + 1u) {
+            let t = t0 + (f32(sidx) + 0.5) * dt;
+            let p = ro + rd * t;
+            let sigma = cloud_density(cloud, p);
+            if (sigma <= 0.0) { continue; }
+            let g = clamp(cloud.coverage_density_noise_phase.w, -0.95, 0.95);
+            let mu = clamp(dot(rd, sun_dir), -1.0, 1.0);
+            let phase = (1.0 - g * g) / max(0.001, pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+            let absorb = exp(-sigma * dt);
+            let scatter = (1.0 - absorb) * transmittance;
+            radiance += scatter * (sun_col * phase * 0.08 + vec3<f32>(0.04, 0.05, 0.06));
+            transmittance *= absorb;
+            if (transmittance < 0.01) { break; }
+        }
+    }
+    return radiance + base_color * transmittance;
+}
 
 // -----------------------------
 // RNG / Math helpers
@@ -1639,7 +1703,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         gi = sample_diffuse_gi(gi_pos + gi_normal * 0.01, gi_normal, &rng_state);
     }
 
-    let L = final_col;
+    let L = composite_clouds(vec3<f32>(0.0), view_dir, out_depth, final_col);
     let max_lum = 10.0;
     let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
     let final_tone = L * min(1.0, max_lum / (lum + 1e-4));
