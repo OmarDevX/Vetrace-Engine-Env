@@ -1,5 +1,5 @@
 use crate::materials::PbrMaterial;
-use crate::math::{vec3, Vec3};
+use crate::math::{Vec3, vec3};
 use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, GpuVolumetricCloud, Object};
 
 pub struct Scene {
@@ -270,7 +270,7 @@ impl Scene {
                     light_padding: [
                         cloud.cloud_light_steps as f32,
                         cloud.shadow_strength,
-                        0.0,
+                        cloud.planet_shadow_penumbra,
                         0.0,
                     ],
                 });

@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::export::{ExportKind, ExportedField};
 use crate::inspector::Inspectable;
+use crate::inspector::export::{ExportKind, ExportedField};
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -3134,6 +3134,8 @@ pub struct VolumetricCloud {
     /// Scales cloud optical depth when clouds attenuate direct sun lighting on surfaces.
     /// Set to 0.0 to disable surface cloud shadows.
     pub shadow_strength: f32,
+    /// Softens planet/sphere shadow terminators on cloud direct lighting in world units.
+    pub planet_shadow_penumbra: f32,
 }
 
 impl Default for VolumetricCloud {
@@ -3150,6 +3152,7 @@ impl Default for VolumetricCloud {
             primary_steps: 48,
             cloud_light_steps: 6,
             shadow_strength: 1.0,
+            planet_shadow_penumbra: 1.0,
         }
     }
 }
@@ -3244,6 +3247,15 @@ impl Inspectable for VolumetricCloud {
                 name: "shadow_strength",
                 kind: ExportKind::Slider { min: 0.0, max: 4.0 },
                 value: &mut self.shadow_strength as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "planet_shadow_penumbra",
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 100.0,
+                },
+                value: &mut self.planet_shadow_penumbra as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
         ]

@@ -226,20 +226,74 @@ fn cloud_blue_noise_jitter(pixel: vec2<u32>, frame: u32, sample_index: u32) -> f
     return hash31(vec3<f32>(tile * vec2<f32>(0.75487766, 0.56984029), f32((frame + sample_index * 37u) & 255u) * 0.61803399));
 }
 
-fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
-    let steps = max(1u, min(u32(cloud.light_padding.x), 32u));
+fn ray_sphere_forward_interval(ro: vec3<f32>, rd: vec3<f32>, center: vec3<f32>, radius: f32) -> vec2<f32> {
+    let oc = ro - center;
+    let b = dot(oc, rd);
+    let c = dot(oc, oc) - radius * radius;
+    let h = b * b - c;
+    if (h < 0.0) {
+        return vec2<f32>(1e20, -1e20);
+    }
+    let sqrt_h = sqrt(h);
+    return vec2<f32>(-b - sqrt_h, -b + sqrt_h);
+}
+
+fn cloud_planar_exit_distance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>) -> f32 {
     let base_y = cloud.center_base_thickness.y;
     let top_y = base_y + max(cloud.center_base_thickness.w, 0.001);
     let exit_y = select(base_y, top_y, light_dir.y >= 0.0);
     let denom = select(light_dir.y, select(-1e-4, 1e-4, light_dir.y >= 0.0), abs(light_dir.y) < 1e-4);
-    let max_dist = max((exit_y - p.y) / denom, 0.0);
+    return max((exit_y - p.y) / denom, 0.0);
+}
+
+fn cloud_planet_shadow_for_atmosphere(atmo: Atmosphere, cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, cloud_exit_dist: f32) -> f32 {
+    let planet_center = atmo.center_radius.xyz;
+    let planet_radius = max(atmo.center_radius.w, 0.0);
+    let atmosphere_radius = max(atmo.atmo_g_height.x, planet_radius);
+    if (planet_radius <= 0.0 || atmosphere_radius <= 0.0) {
+        return 1.0;
+    }
+
+    let atmosphere_hit = ray_sphere_forward_interval(p, light_dir, planet_center, atmosphere_radius);
+    let atmosphere_exit_dist = select(atmosphere_hit.y, 1e20, atmosphere_hit.y <= 0.0);
+    let max_shadow_dist = min(cloud_exit_dist, atmosphere_exit_dist);
+    if (max_shadow_dist <= 0.0) {
+        return 1.0;
+    }
+
+    let to_sample = p - planet_center;
+    let dist_to_axis = length(cross(to_sample, light_dir));
+    let penumbra = max(cloud.light_padding.z, 0.0);
+    let soft_radius = max(penumbra, 1e-3);
+    let soft_shadow = smoothstep(planet_radius - soft_radius, planet_radius + soft_radius, dist_to_axis);
+
+    let planet_hit = ray_sphere_forward_interval(p, light_dir, planet_center, planet_radius);
+    let hits_planet_before_exit = planet_hit.y >= 0.0 && max(planet_hit.x, 0.0) <= max_shadow_dist;
+    return select(1.0, soft_shadow, hits_planet_before_exit);
+}
+
+fn cloud_planet_shadow(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, cloud_exit_dist: f32) -> f32 {
+    var shadow = 1.0;
+    for (var ai: u32 = 0u; ai < params.atmo_count && ai < MAX_ATMOSPHERES; ai = ai + 1u) {
+        shadow = min(shadow, cloud_planet_shadow_for_atmosphere(params.atmos[ai], cloud, p, light_dir, cloud_exit_dist));
+    }
+    return shadow;
+}
+
+fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
+    let steps = max(1u, min(u32(cloud.light_padding.x), 32u));
+    let max_dist = cloud_planar_exit_distance(cloud, p, light_dir);
+    let planet_shadow = cloud_planet_shadow(cloud, p, light_dir, max_dist);
+    if (planet_shadow <= 0.0) {
+        return 0.0;
+    }
     let dt = max_dist / f32(steps);
     var optical_depth = 0.0;
     for (var li: u32 = 0u; li < steps; li = li + 1u) {
         let lp = p + light_dir * ((f32(li) + jitter) * dt);
         optical_depth += cloud_density(cloud, lp) * dt;
     }
-    return exp(-optical_depth * max(cloud.light_padding.y, 0.0));
+    return exp(-optical_depth * max(cloud.light_padding.y, 0.0)) * planet_shadow;
 }
 
 fn cloud_shadow_transmittance_for_volume(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
