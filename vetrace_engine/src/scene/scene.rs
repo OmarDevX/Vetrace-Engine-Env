@@ -253,13 +253,16 @@ impl Scene {
                 } else {
                     Vec3::new(1.0, 0.0, 0.0)
                 };
+                let planet_radius = if let Some(atmo) =
+                    world.get::<crate::components::components::Atmosphere>(entity)
+                {
+                    atmo.planet_radius
+                } else {
+                    radius * obj_scale[0].max(obj_scale[1]).max(obj_scale[2])
+                };
+                let cloud_base_radius = (planet_radius + cloud.base_height).max(0.001);
                 self.clouds.push(GpuVolumetricCloud {
-                    center_base_thickness: [
-                        pos[0],
-                        pos[1] + cloud.base_height,
-                        pos[2],
-                        cloud.thickness,
-                    ],
+                    center_base_thickness: [pos[0], pos[1], pos[2], cloud_base_radius],
                     coverage_density_noise_phase: [
                         cloud.coverage,
                         cloud.density,
@@ -278,6 +281,12 @@ impl Scene {
                         cloud.multi_scatter_octaves as f32,
                         cloud.multi_scatter_attenuation,
                         cloud.multi_scatter_eccentricity,
+                    ],
+                    shape_params: [
+                        cloud.thickness.max(0.001),
+                        cloud.primary_steps as f32,
+                        0.0,
+                        0.0,
                     ],
                 });
             }

@@ -193,7 +193,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     textureStore(motion_tex, coord, vec4<f32>(motion, 0.0, 0.0));
     var alpha: f32;
     if (use_history) {
-        alpha = clamp(postfx.temporal_blend, 0.0, 1.0);
+        // `temporal_blend` is exposed to users as an accumulation strength
+        // slider where larger values should keep more history. Convert it to
+        // the current-frame weight used by mix(prev, current, alpha).
+        alpha = 1.0 / (max(postfx.temporal_blend, 0.0) + 1.0);
     } else {
         alpha = 1.0;
     }
