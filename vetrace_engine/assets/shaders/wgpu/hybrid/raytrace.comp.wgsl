@@ -221,7 +221,28 @@ fn cloud_density(cloud: VolumetricCloud, p: vec3<f32>) -> f32 {
     return max(0.0, n - (1.0 - coverage)) * height_shape * max(cloud.coverage_density_noise_phase.y, 0.0);
 }
 
-fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: vec3<f32>) -> vec3<f32> {
+fn cloud_blue_noise_jitter(pixel: vec2<u32>, frame: u32, sample_index: u32) -> f32 {
+    let tile = vec2<f32>(pixel & vec2<u32>(127u));
+    return hash31(vec3<f32>(tile * vec2<f32>(0.75487766, 0.56984029), f32((frame + sample_index * 37u) & 255u) * 0.61803399));
+}
+
+fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
+    let steps = max(1u, min(u32(cloud.light_padding.x), 32u));
+    let base_y = cloud.center_base_thickness.y;
+    let top_y = base_y + max(cloud.center_base_thickness.w, 0.001);
+    let exit_y = select(base_y, top_y, light_dir.y >= 0.0);
+    let denom = select(light_dir.y, select(-1e-4, 1e-4, light_dir.y >= 0.0), abs(light_dir.y) < 1e-4);
+    let max_dist = max((exit_y - p.y) / denom, 0.0);
+    let dt = max_dist / f32(steps);
+    var optical_depth = 0.0;
+    for (var li: u32 = 0u; li < steps; li = li + 1u) {
+        let lp = p + light_dir * ((f32(li) + jitter) * dt);
+        optical_depth += cloud_density(cloud, lp) * dt;
+    }
+    return exp(-optical_depth * max(cloud.light_padding.y, 0.0));
+}
+
+fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: vec3<f32>, pixel: vec2<u32>) -> vec3<f32> {
     var radiance = vec3<f32>(0.0);
     var transmittance = 1.0;
     let sun_dir = normalize(-params.dir_light_dir.xyz);
@@ -246,9 +267,11 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
             let g = clamp(cloud.coverage_density_noise_phase.w, -0.95, 0.95);
             let mu = clamp(dot(rd, sun_dir), -1.0, 1.0);
             let phase = (1.0 - g * g) / max(0.001, pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+            let jitter = cloud_blue_noise_jitter(pixel, u32(params.frame_number), sidx + ci * 97u);
+            let light_t = cloud_light_transmittance(cloud, p, sun_dir, jitter);
             let absorb = exp(-sigma * dt);
             let scatter = (1.0 - absorb) * transmittance;
-            radiance += scatter * (sun_col * phase * 0.08 + vec3<f32>(0.04, 0.05, 0.06));
+            radiance += scatter * (sun_col * phase * 0.08 * light_t + vec3<f32>(0.04, 0.05, 0.06));
             transmittance *= absorb;
             if (transmittance < 0.01) { break; }
         }
@@ -1703,7 +1726,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         gi = sample_diffuse_gi(gi_pos + gi_normal * 0.01, gi_normal, &rng_state);
     }
 
-    let L = composite_clouds(vec3<f32>(0.0), view_dir, out_depth, final_col);
+    let L = composite_clouds(vec3<f32>(0.0), view_dir, out_depth, final_col, id.xy);
     let max_lum = 10.0;
     let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
     let final_tone = L * min(1.0, max_lum / (lum + 1e-4));
