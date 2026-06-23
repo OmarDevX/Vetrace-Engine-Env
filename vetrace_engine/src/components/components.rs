@@ -3131,6 +3131,8 @@ pub struct VolumetricCloud {
     pub phase_anisotropy: f32,
     pub primary_steps: i32,
     pub cloud_light_steps: i32,
+    /// Scales cloud optical depth when clouds attenuate direct sun lighting on surfaces.
+    /// Set to 0.0 to disable surface cloud shadows.
     pub shadow_strength: f32,
 }
 
