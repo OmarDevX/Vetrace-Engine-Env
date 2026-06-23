@@ -116,6 +116,7 @@ struct VolumetricCloud {
     coverage_density_noise_phase: vec4<f32>,
     wind_steps: vec4<f32>,
     light_padding: vec4<f32>,
+    multi_scatter: vec4<f32>,
 };
 
 // --- runtime safety caps ---
@@ -219,6 +220,36 @@ fn cloud_density(cloud: VolumetricCloud, p: vec3<f32>) -> f32 {
     let n = 0.55 * hash31(floor(noise_p)) + 0.30 * hash31(floor(noise_p * 2.03)) + 0.15 * hash31(floor(noise_p * 4.01));
     let coverage = clamp(cloud.coverage_density_noise_phase.x, 0.0, 1.0);
     return max(0.0, n - (1.0 - coverage)) * height_shape * max(cloud.coverage_density_noise_phase.y, 0.0);
+}
+
+fn cloud_phase_lobe(g: f32, mu: f32) -> f32 {
+    let gg = g * g;
+    return (1.0 - gg) / max(0.001, pow(1.0 + gg - 2.0 * g * mu, 1.5));
+}
+
+fn cloud_multi_scatter_lighting(cloud: VolumetricCloud, sigma: f32, mu: f32, light_t: f32, sun_col: vec3<f32>) -> vec3<f32> {
+    let strength = clamp(cloud.multi_scatter.x, 0.0, 2.0);
+    if (strength <= 0.0) { return vec3<f32>(0.0); }
+
+    let octaves = min(max(u32(cloud.multi_scatter.y), 0u), 6u);
+    let attenuation = clamp(cloud.multi_scatter.z, 0.0, 1.0);
+    let eccentricity = clamp(cloud.multi_scatter.w, 0.0, 1.0);
+    let density_lift = 1.0 - exp(-max(sigma, 0.0) * 0.75);
+    let self_shadow_lift = 1.0 - light_t;
+    let ambient_visibility = mix(0.35, 1.0, light_t);
+
+    var energy = 0.0;
+    var phase_scale = attenuation;
+    var g_scale = eccentricity;
+    for (var octave: u32 = 0u; octave < octaves; octave = octave + 1u) {
+        let octave_g = clamp(cloud.coverage_density_noise_phase.w * g_scale, -0.95, 0.95);
+        energy += phase_scale * cloud_phase_lobe(octave_g, mu);
+        phase_scale *= attenuation;
+        g_scale *= eccentricity;
+    }
+
+    let ambient_energy = density_lift * (0.25 + 0.75 * self_shadow_lift) * ambient_visibility;
+    return sun_col * clamp(strength * (energy * 0.045 * ambient_visibility + ambient_energy * 0.18), 0.0, 0.75);
 }
 
 fn cloud_blue_noise_jitter(pixel: vec2<u32>, frame: u32, sample_index: u32) -> f32 {
@@ -362,12 +393,14 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
             if (sigma <= 0.0) { continue; }
             let g = clamp(cloud.coverage_density_noise_phase.w, -0.95, 0.95);
             let mu = clamp(dot(rd, sun_dir), -1.0, 1.0);
-            let phase = (1.0 - g * g) / max(0.001, pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+            let phase = cloud_phase_lobe(g, mu);
             let jitter = cloud_blue_noise_jitter(pixel, u32(params.frame_number), sidx + ci * 97u);
             let light_t = cloud_light_transmittance(cloud, p, sun_dir, jitter);
+            let multi_scatter = cloud_multi_scatter_lighting(cloud, sigma, mu, light_t, sun_col);
             let absorb = exp(-sigma * dt);
             let scatter = (1.0 - absorb) * transmittance;
-            radiance += scatter * (sun_col * phase * 0.08 * light_t + vec3<f32>(0.04, 0.05, 0.06));
+            let cloud_lighting = sun_col * phase * 0.08 * light_t + multi_scatter + vec3<f32>(0.04, 0.05, 0.06);
+            radiance += scatter * min(cloud_lighting, sun_col * 1.25 + vec3<f32>(0.08));
             transmittance *= absorb;
             if (transmittance < 0.01) { break; }
         }
