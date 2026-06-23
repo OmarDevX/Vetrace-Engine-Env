@@ -2,7 +2,7 @@ use super::Engine;
 use crate::components::components::{
     AngularVelocity, Animation, Atmosphere, AudioSource, Bloom, CameraAttachment, Collider,
     FreeFlightControls, Lerp, LookAt, Material, Player, PostProcessing, Renderable, Rotate,
-    ScriptComponent, Shape, Transform, Velocity, VolumetricFog,
+    ScriptComponent, Shape, Transform, Velocity, VolumetricCloud, VolumetricFog,
 };
 use crate::ecs::{Component, Entity, World};
 use crate::engine::component_io::apply_component_data;
@@ -134,6 +134,7 @@ impl Engine {
         self.auto_register_component::<Bloom>("Bloom");
         self.auto_register_component::<crate::components::components::DepthOfField>("DepthOfField");
         self.auto_register_component::<VolumetricFog>("VolumetricFog");
+        self.auto_register_component::<VolumetricCloud>("VolumetricCloud");
         self.auto_register_component::<Atmosphere>("Atmosphere");
         self.auto_register_component::<crate::components::components::DirectionalLight>(
             "DirectionalLight",

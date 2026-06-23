@@ -3119,6 +3119,127 @@ impl Inspectable for Timer {
         ]
     }
 }
+#[derive(Debug, Clone, Copy)]
+pub struct VolumetricCloud {
+    pub coverage: f32,
+    pub density: f32,
+    pub base_height: f32,
+    pub thickness: f32,
+    pub wind_direction: Vec3,
+    pub wind_speed: f32,
+    pub noise_scale: f32,
+    pub phase_anisotropy: f32,
+    pub primary_steps: i32,
+    pub light_steps: i32,
+}
+
+impl Default for VolumetricCloud {
+    fn default() -> Self {
+        Self {
+            coverage: 0.45,
+            density: 0.35,
+            base_height: 2.0,
+            thickness: 3.0,
+            wind_direction: Vec3::new(1.0, 0.0, 0.0),
+            wind_speed: 0.25,
+            noise_scale: 0.35,
+            phase_anisotropy: 0.55,
+            primary_steps: 48,
+            light_steps: 6,
+        }
+    }
+}
+
+impl Component for VolumetricCloud {}
+
+impl Inspectable for VolumetricCloud {
+    fn exported_fields_mut(&mut self) -> Vec<ExportedField> {
+        vec![
+            ExportedField {
+                name: "coverage",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.coverage as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "density",
+                kind: ExportKind::Slider { min: 0.0, max: 4.0 },
+                value: &mut self.density as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "base_height",
+                kind: ExportKind::Slider {
+                    min: -100.0,
+                    max: 100.0,
+                },
+                value: &mut self.base_height as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "thickness",
+                kind: ExportKind::Slider {
+                    min: 0.01,
+                    max: 100.0,
+                },
+                value: &mut self.thickness as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "wind_direction",
+                kind: ExportKind::Text,
+                value: &mut self.wind_direction as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<Vec3>(),
+            },
+            ExportedField {
+                name: "wind_speed",
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 100.0,
+                },
+                value: &mut self.wind_speed as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "noise_scale",
+                kind: ExportKind::Slider {
+                    min: 0.001,
+                    max: 10.0,
+                },
+                value: &mut self.noise_scale as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "phase_anisotropy",
+                kind: ExportKind::Slider {
+                    min: -0.95,
+                    max: 0.95,
+                },
+                value: &mut self.phase_anisotropy as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "primary_steps",
+                kind: ExportKind::Slider {
+                    min: 1.0,
+                    max: 128.0,
+                },
+                value: &mut self.primary_steps as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<i32>(),
+            },
+            ExportedField {
+                name: "light_steps",
+                kind: ExportKind::Slider {
+                    min: 1.0,
+                    max: 32.0,
+                },
+                value: &mut self.light_steps as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<i32>(),
+            },
+        ]
+    }
+}
+
 #[derive(Debug)]
 pub struct Atmosphere {
     pub planet_radius: f32,

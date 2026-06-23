@@ -1,15 +1,15 @@
+use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
-use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
-use crate::Behaviour;
-use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
-use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
+use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
+use crate::Behaviour;
+use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -306,6 +306,7 @@ impl Engine {
 
             let (raw_gpu_objects, raw_triangles) = scene.get_gpu_buffers();
             let raw_atmos = scene.get_gpu_atmospheres();
+            let raw_clouds = scene.get_gpu_clouds();
             let cam_pos = cam.position;
             let cam_front = cam.orientation * Vec3::X;
             let cam_up = cam.orientation * Vec3::Y;
@@ -384,6 +385,16 @@ impl Engine {
                 tri.v0[1] -= cam_pos.y;
                 tri.v0[2] -= cam_pos.z;
             }
+            let clouds: Vec<_> = raw_clouds
+                .iter()
+                .map(|c| {
+                    let mut cloud = *c;
+                    cloud.center_base_thickness[0] -= cam_pos.x;
+                    cloud.center_base_thickness[1] -= cam_pos.y;
+                    cloud.center_base_thickness[2] -= cam_pos.z;
+                    cloud
+                })
+                .collect();
             let atmos: Vec<_> = raw_atmos
                 .iter()
                 .map(|a| {
@@ -512,6 +523,7 @@ impl Engine {
                 dof_enable,
                 atmos,
                 atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
+                clouds,
             };
             #[cfg(feature = "wgpu")]
             self.renderer.update_scene_data(

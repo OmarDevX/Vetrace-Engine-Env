@@ -1,6 +1,6 @@
 use crate::materials::PbrMaterial;
 use crate::math::{vec3, Vec3};
-use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, Object};
+use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, GpuVolumetricCloud, Object};
 
 pub struct Scene {
     pub objects: Vec<Object>,
@@ -11,6 +11,7 @@ pub struct Scene {
     pub materials: Vec<PbrMaterial>,
     pub bvh_dirty: bool,
     pub atmospheres: Vec<GpuAtmosphere>,
+    pub clouds: Vec<GpuVolumetricCloud>,
 }
 
 impl Scene {
@@ -24,6 +25,7 @@ impl Scene {
             materials: vec![],
             bvh_dirty: true,
             atmospheres: vec![],
+            clouds: vec![],
         }
     }
 
@@ -53,6 +55,7 @@ impl Scene {
         let previous = self.objects.clone();
         let mut materials_changed = false;
         self.gpu_objects.clear();
+        self.clouds.clear();
         self.atmospheres.clear();
         for &entity in world.entities().to_vec().iter() {
             let (transform, material, renderable, shape) = match (
@@ -243,6 +246,30 @@ impl Scene {
                 };
                 self.atmospheres.push(g_atmo);
             }
+            if let Some(cloud) = world.get::<crate::components::components::VolumetricCloud>(entity)
+            {
+                let wind = if cloud.wind_direction.length_squared() > 0.0 {
+                    cloud.wind_direction.normalize()
+                } else {
+                    Vec3::new(1.0, 0.0, 0.0)
+                };
+                self.clouds.push(GpuVolumetricCloud {
+                    center_base_thickness: [
+                        pos[0],
+                        pos[1] + cloud.base_height,
+                        pos[2],
+                        cloud.thickness,
+                    ],
+                    coverage_density_noise_phase: [
+                        cloud.coverage,
+                        cloud.density,
+                        cloud.noise_scale,
+                        cloud.phase_anisotropy,
+                    ],
+                    wind_steps: [wind.x, wind.z, cloud.wind_speed, cloud.primary_steps as f32],
+                    light_padding: [cloud.light_steps as f32, 0.0, 0.0, 0.0],
+                });
+            }
 
             let _ = transform;
             let _ = material;
@@ -263,6 +290,10 @@ impl Scene {
 
     pub fn get_gpu_atmospheres(&self) -> &[GpuAtmosphere] {
         &self.atmospheres
+    }
+
+    pub fn get_gpu_clouds(&self) -> &[GpuVolumetricCloud] {
+        &self.clouds
     }
 
     pub fn add_object(&mut self, object: Object) {

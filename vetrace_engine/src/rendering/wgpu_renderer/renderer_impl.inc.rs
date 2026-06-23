@@ -171,6 +171,13 @@ impl WgpuRenderer {
             usage: BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
+        let cloud_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("volumetric_clouds"),
+            size: std::mem::size_of::<crate::scene::object::GpuVolumetricCloud>() as u64
+                * crate::scene::object::MAX_VOLUMETRIC_CLOUDS as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let material_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("materials"),
             size: std::mem::size_of::<crate::scene::object::GpuMaterial>() as u64
@@ -547,6 +554,16 @@ impl WgpuRenderer {
                             multisampled: false,
                             view_dimension: TextureViewDimension::D3,
                             sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 26,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
                         count: None,
                     },
@@ -1087,6 +1104,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 25,
                     resource: BindingResource::TextureView(&aerial_perspective_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 26,
+                    resource: cloud_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -2001,6 +2022,7 @@ impl WgpuRenderer {
             sharpness: 0.0,
             is_2d: is_2d,
             object_buffer,
+            cloud_buffer,
             triangle_buffer,
             bvh_buffer,
             tri_bvh_buffer,
@@ -2443,6 +2465,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 25,
                     resource: BindingResource::TextureView(&self.aerial_perspective_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 26,
+                    resource: self.cloud_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -2939,6 +2965,10 @@ impl WgpuRenderer {
                     binding: 25,
                     resource: BindingResource::TextureView(&self.aerial_perspective_lut_view),
                 },
+                BindGroupEntry {
+                    binding: 26,
+                    resource: self.cloud_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -3115,7 +3145,11 @@ impl WgpuRenderer {
             _pad_dof: 0,
             atmosphere: params.atmosphere,
             atmo_count: params.atmos.len() as u32,
-            _pad_atmos: [0; 2],
+            cloud_count: params
+                .clouds
+                .len()
+                .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS) as u32,
+            _pad_atmos: 0,
             atmos: {
                 let mut arr = [GpuAtmosphere::default(); MAX_ATMOSPHERES];
                 let count = params.atmos.len().min(MAX_ATMOSPHERES);
@@ -3123,6 +3157,17 @@ impl WgpuRenderer {
                 arr
             },
         };
+        if !params.clouds.is_empty() {
+            let count = params
+                .clouds
+                .len()
+                .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS);
+            self.queue.write_buffer(
+                &self.cloud_buffer,
+                0,
+                bytemuck::cast_slice(&params.clouds[..count]),
+            );
+        }
         if self.prev_shader_params.map_or(true, |p| p != shader_params) {
             self.queue
                 .write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&shader_params));
