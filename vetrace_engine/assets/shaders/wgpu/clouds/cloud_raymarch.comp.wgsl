@@ -9,10 +9,24 @@ struct VolumetricCloud {
     light_padding: vec4<f32>,
 };
 
+struct GpuAtmosphere {
+    center_radius: vec4<f32>,
+    atmo_g_height: vec4<f32>,
+    ray_beta: vec4<f32>,
+    mie_beta: vec4<f32>,
+    ambient_beta: vec4<f32>,
+    absorption_beta: vec4<f32>,
+    absorb_params: vec4<f32>,
+    ozone_params: vec4<f32>,
+    multi_scatter_params: vec4<f32>,
+};
+
 struct CloudFrameParams {
     camera_pos_time: vec4<f32>,
     sun_dir_intensity: vec4<f32>,
     sun_color_count: vec4<f32>,
+    planet_shadow: vec4<f32>, // xyz = atmosphere/planet center, w = planet radius
+    atmosphere_penumbra: vec4<f32>, // x = atmosphere radius, y = penumbra fallback, z = atmosphere count
 };
 
 @group(0) @binding(0) var<storage, read> clouds: array<VolumetricCloud>;
@@ -39,6 +53,32 @@ fn blue_noise_jitter(pixel: vec2<u32>, frame: u32) -> f32 {
     return hash31(vec3<f32>(tile * vec2<f32>(0.75487766, 0.56984029), f32(frame & 255u) * 0.61803399));
 }
 
+fn ray_sphere_forward_interval(ro: vec3<f32>, rd: vec3<f32>, center: vec3<f32>, radius: f32) -> vec2<f32> {
+    let oc = ro - center;
+    let b = dot(oc, rd);
+    let c = dot(oc, oc) - radius * radius;
+    let h = b * b - c;
+    if (h < 0.0) { return vec2<f32>(1e20, -1e20); }
+    let sqrt_h = sqrt(h);
+    return vec2<f32>(-b - sqrt_h, -b + sqrt_h);
+}
+
+fn planet_shadow(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, max_dist: f32) -> f32 {
+    if (params.atmosphere_penumbra.z <= 0.0) { return 1.0; }
+    let planet_center = params.planet_shadow.xyz;
+    let planet_radius = max(params.planet_shadow.w, 0.0);
+    let atmosphere_radius = max(params.atmosphere_penumbra.x, planet_radius);
+    let atmosphere_hit = ray_sphere_forward_interval(p, light_dir, planet_center, atmosphere_radius);
+    let atmosphere_exit_dist = select(atmosphere_hit.y, 1e20, atmosphere_hit.y <= 0.0);
+    let max_shadow_dist = min(max_dist, atmosphere_exit_dist);
+    let planet_hit = ray_sphere_forward_interval(p, light_dir, planet_center, planet_radius);
+    let hits_planet = planet_hit.y >= 0.0 && max(planet_hit.x, 0.0) <= max_shadow_dist;
+    let dist_to_axis = length(cross(p - planet_center, light_dir));
+    let penumbra = max(max(cloud.light_padding.z, params.atmosphere_penumbra.y), 1e-3);
+    let soft_shadow = smoothstep(planet_radius - penumbra, planet_radius + penumbra, dist_to_axis);
+    return select(1.0, soft_shadow, hits_planet);
+}
+
 fn light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
     let steps = max(1u, min(u32(cloud.light_padding.x), 32u));
     let base_y = cloud.center_base_thickness.y;
@@ -46,6 +86,8 @@ fn light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32
     let exit_y = select(base_y, top_y, light_dir.y >= 0.0);
     let denom = select(light_dir.y, select(-1e-4, 1e-4, light_dir.y >= 0.0), abs(light_dir.y) < 1e-4);
     let max_dist = max((exit_y - p.y) / denom, 0.0);
+    let body_shadow = planet_shadow(cloud, p, light_dir, max_dist);
+    if (body_shadow <= 0.0) { return 0.0; }
     let dt = max_dist / f32(steps);
     var optical_depth = 0.0;
     for (var li: u32 = 0u; li < steps; li = li + 1u) {
@@ -53,7 +95,7 @@ fn light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32
         optical_depth += density(cloud, lp) * dt;
     }
     let strength = max(cloud.light_padding.y, 0.0);
-    return exp(-optical_depth * strength);
+    return exp(-optical_depth * strength) * body_shadow;
 }
 
 @compute @workgroup_size(8, 8)
