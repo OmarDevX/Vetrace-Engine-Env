@@ -69,6 +69,15 @@ fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
     let normalized_altitude = (height - center_altitude) / thickness;
     return strength * exp(-normalized_altitude * normalized_altitude);
 }
+
+fn multi_scattering_lut_coord(atmo: Atmosphere, origin: vec3<f32>, view_dir: vec3<f32>, sun_dir: vec3<f32>, dims: vec2<u32>) -> vec2<i32> {
+    let altitude = clamp(length(origin - atmo.center_radius.xyz) - atmo.center_radius.w, 0.0, max(atmo.atmo_g_height.x - atmo.center_radius.w, 1e-3));
+    let altitude_u = altitude / max(atmo.atmo_g_height.x - atmo.center_radius.w, 1e-3);
+    let view_sun_u = dot(normalize(view_dir), normalize(sun_dir)) * 0.5 + 0.5;
+    let max_coord = vec2<f32>(f32(max(dims.x, 1u) - 1u), f32(max(dims.y, 1u) - 1u));
+    return vec2<i32>(round(clamp(vec2<f32>(view_sun_u, altitude_u), vec2<f32>(0.0), vec2<f32>(1.0)) * max_coord));
+}
+
 fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: vec3<f32>) -> Scattering {
     if (params.atmosphere == 0u || params.atmo_count == 0u) {
         return Scattering(vec3<f32>(0.0), vec3<f32>(1.0));
@@ -133,7 +142,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dir = dir_from_uv(uv);
     let z = (f32(id.z) + 0.5) / f32(dims.z);
     let max_dist = mix(2.0, 1000.0, z * z);
-    let multi = textureLoad(multi_scattering_lut, vec2<i32>(0, 0), 0).xyz;
+    var multi = vec3<f32>(0.0);
+    if (params.atmosphere != 0u && params.atmo_count > 0u) {
+        let atmo = params.atmos[0];
+        let sun_dir = normalize(-params.dir_light_dir.xyz);
+        let multi_coord = multi_scattering_lut_coord(atmo, params.camera_pos.xyz, dir, sun_dir, textureDimensions(multi_scattering_lut));
+        multi = textureLoad(multi_scattering_lut, multi_coord, 0).xyz;
+    }
     let sc = integrate_atmosphere(params.camera_pos.xyz, dir, max_dist, multi);
     let trans = dot(sc.transmittance, vec3<f32>(0.3333333));
     textureStore(aerial_perspective_lut, vec3<i32>(id), vec4<f32>(max(sc.color, vec3<f32>(0.0)), clamp(trans, 0.0, 1.0)));

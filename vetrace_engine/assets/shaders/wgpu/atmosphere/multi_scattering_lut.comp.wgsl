@@ -69,6 +69,7 @@ fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
     let normalized_altitude = (height - center_altitude) / thickness;
     return strength * exp(-normalized_altitude * normalized_altitude);
 }
+
 fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: vec3<f32>) -> Scattering {
     if (params.atmosphere == 0u || params.atmo_count == 0u) {
         return Scattering(vec3<f32>(0.0), vec3<f32>(1.0));
@@ -132,10 +133,21 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var color = vec3<f32>(0.0);
     if (params.atmosphere != 0u && params.atmo_count > 0u) {
         let atmo = params.atmos[0];
-        let u = (f32(id.x) + 0.5) / f32(dims.x);
-        let v = (f32(id.y) + 0.5) / f32(dims.y);
-        let density = exp(-v * 8.0);
-        color = (atmo.ray_beta.xyz * (0.35 + 0.65 * u) + atmo.mie_beta.xyz * (1.0 - u)) * density * 0.2;
+        // X axis: cosine of the angle between the lookup view ray and the sun direction.
+        // Y axis: normalized camera/sample altitude from ground radius to atmosphere radius.
+        let view_sun_cos = ((f32(id.x) + 0.5) / f32(dims.x)) * 2.0 - 1.0;
+        let altitude_u = (f32(id.y) + 0.5) / f32(dims.y);
+        let atmosphere_height = max(atmo.atmo_g_height.x - atmo.center_radius.w, 1e-3);
+        let altitude = altitude_u * atmosphere_height;
+        let density_r = exp(-altitude / max(atmo.atmo_g_height.z, 1e-3));
+        let density_m = exp(-altitude / max(atmo.atmo_g_height.w, 1e-3));
+        let mumu = view_sun_cos * view_sun_cos;
+        let g = atmo.atmo_g_height.y;
+        let gg = g * g;
+        let phase_r = 0.05968310366 * (1.0 + mumu);
+        let den = max(1e-3, 1.0 + gg - 2.0 * view_sun_cos * g);
+        let phase_m = 0.11936620732 * (1.0 - gg) * (1.0 + mumu) / (den * sqrt(den));
+        color = (atmo.ray_beta.xyz * density_r * phase_r + atmo.mie_beta.xyz * density_m * phase_m) * atmo.multi_scatter_params.x;
     }
     textureStore(multi_scattering_lut, vec2<i32>(id.xy), vec4<f32>(color, 1.0));
 }
