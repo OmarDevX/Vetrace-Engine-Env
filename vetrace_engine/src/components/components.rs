@@ -3130,7 +3130,8 @@ pub struct VolumetricCloud {
     pub noise_scale: f32,
     pub phase_anisotropy: f32,
     pub primary_steps: i32,
-    pub light_steps: i32,
+    pub cloud_light_steps: i32,
+    pub shadow_strength: f32,
 }
 
 impl Default for VolumetricCloud {
@@ -3145,7 +3146,8 @@ impl Default for VolumetricCloud {
             noise_scale: 0.35,
             phase_anisotropy: 0.55,
             primary_steps: 48,
-            light_steps: 6,
+            cloud_light_steps: 6,
+            shadow_strength: 1.0,
         }
     }
 }
@@ -3228,13 +3230,19 @@ impl Inspectable for VolumetricCloud {
                 type_id: std::any::TypeId::of::<i32>(),
             },
             ExportedField {
-                name: "light_steps",
+                name: "cloud_light_steps",
                 kind: ExportKind::Slider {
                     min: 1.0,
                     max: 32.0,
                 },
-                value: &mut self.light_steps as *mut _ as *mut dyn std::any::Any,
+                value: &mut self.cloud_light_steps as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<i32>(),
+            },
+            ExportedField {
+                name: "shadow_strength",
+                kind: ExportKind::Slider { min: 0.0, max: 4.0 },
+                value: &mut self.shadow_strength as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
             },
         ]
     }

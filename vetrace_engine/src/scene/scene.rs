@@ -267,7 +267,12 @@ impl Scene {
                         cloud.phase_anisotropy,
                     ],
                     wind_steps: [wind.x, wind.z, cloud.wind_speed, cloud.primary_steps as f32],
-                    light_padding: [cloud.light_steps as f32, 0.0, 0.0, 0.0],
+                    light_padding: [
+                        cloud.cloud_light_steps as f32,
+                        cloud.shadow_strength,
+                        0.0,
+                        0.0,
+                    ],
                 });
             }
 
