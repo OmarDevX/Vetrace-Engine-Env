@@ -6,6 +6,8 @@ struct Atmosphere {
     ambient_beta: vec4<f32>,
     absorption_beta: vec4<f32>,
     absorb_params: vec4<f32>,
+    ozone_params: vec4<f32>,
+    multi_scatter_params: vec4<f32>,
 };
 const MAX_ATMOSPHERES: u32 = 8u;
 struct Params {
@@ -60,6 +62,13 @@ fn dir_from_uv(uv: vec2<f32>) -> vec3<f32> {
     let r = sqrt(max(0.0, 1.0 - y * y));
     return normalize(vec3<f32>(sin(phi) * r, y, cos(phi) * r));
 }
+fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
+    let center_altitude = atmo.ozone_params.x;
+    let thickness = max(atmo.ozone_params.y, 1e-3);
+    let strength = max(atmo.ozone_params.z, 0.0);
+    let normalized_altitude = (height - center_altitude) / thickness;
+    return strength * exp(-normalized_altitude * normalized_altitude);
+}
 fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: vec3<f32>) -> Scattering {
     if (params.atmosphere == 0u || params.atmo_count == 0u) {
         return Scattering(vec3<f32>(0.0), vec3<f32>(1.0));
@@ -95,8 +104,7 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
         let h = max(0.0, length(sp) - atmo.center_radius.w);
         let d_r = exp(-h * inv_hr);
         let d_m = exp(-h * inv_hm);
-        let absorb_den = (atmo.absorb_params.x - h) / max(atmo.absorb_params.y, 1e-3);
-        let d_a = (1.0 / (absorb_den * absorb_den + 1.0)) * d_r;
+        let d_a = ozone_density(atmo, h);
         tau_r += d_r * dt;
         tau_m += d_m * dt;
         tau_a += d_a * dt;
