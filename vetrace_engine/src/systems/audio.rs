@@ -27,8 +27,8 @@ fn amp_to_db(amp: f32) -> Decibels {
 }
 
 pub struct AudioSystem {
-    manager: AudioManager<DefaultBackend>,
-    listener: ListenerHandle,
+    manager: Option<AudioManager<DefaultBackend>>,
+    listener: Option<ListenerHandle>,
     handles: HashMap<Entity, PlayingHandle>,
 }
 
@@ -75,25 +75,35 @@ impl SoundHandle {
 }
 impl AudioSystem {
     pub fn new() -> Self {
-        let mut manager = AudioManager::new(AudioManagerSettings::default())
-            .expect("Failed to initialize audio device");
-        let listener = manager
-            .add_listener(
-                Vector3 {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                Quaternion {
-                    v: Vector3 {
+        let (manager, listener) = match AudioManager::new(AudioManagerSettings::default()) {
+            Ok(mut manager) => {
+                match manager.add_listener(
+                    Vector3 {
                         x: 0.0,
                         y: 0.0,
                         z: 0.0,
                     },
-                    s: 1.0,
-                },
-            )
-            .expect("Failed to create listener");
+                    Quaternion {
+                        v: Vector3 {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                        },
+                        s: 1.0,
+                    },
+                ) {
+                    Ok(listener) => (Some(manager), Some(listener)),
+                    Err(err) => {
+                        eprintln!("Audio disabled: failed to create listener: {err}");
+                        (None, None)
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("Audio disabled: failed to initialize audio device: {err}");
+                (None, None)
+            }
+        };
         Self {
             manager,
             listener,
@@ -102,6 +112,9 @@ impl AudioSystem {
     }
 
     fn play_source(&mut self, entity: Entity, src: &AudioSource, position: Vector3<f32>) {
+        let Some(manager) = self.manager.as_mut() else {
+            return;
+        };
         if let Some(path) = &src.clip {
             if let Ok(data) = StreamingSoundData::from_file(path) {
                 let mut settings = StreamingSoundSettings::new()
@@ -112,33 +125,36 @@ impl AudioSystem {
                 }
                 let data = data.with_settings(settings);
                 if src.spatial {
-                    let mut track = self
-                        .manager
-                        .add_spatial_sub_track(
-                            self.listener.id(),
-                            position,
-                            SpatialTrackBuilder::new(),
-                        )
-                        .expect("Failed to create spatial track");
-                    let handle = track.play(data).expect("Failed to play sound");
-                    self.handles.insert(
-                        entity,
-                        PlayingHandle {
-                            track: Some(track),
-                            handle: SoundHandle::Streaming(handle),
-                            clip: src.clip.clone(),
-                        },
-                    );
+                    let Some(listener) = self.listener.as_ref() else {
+                        return;
+                    };
+                    if let Ok(mut track) = manager.add_spatial_sub_track(
+                        listener.id(),
+                        position,
+                        SpatialTrackBuilder::new(),
+                    ) {
+                        if let Ok(handle) = track.play(data) {
+                            self.handles.insert(
+                                entity,
+                                PlayingHandle {
+                                    track: Some(track),
+                                    handle: SoundHandle::Streaming(handle),
+                                    clip: src.clip.clone(),
+                                },
+                            );
+                        }
+                    }
                 } else {
-                    let handle = self.manager.play(data).expect("Failed to play sound");
-                    self.handles.insert(
-                        entity,
-                        PlayingHandle {
-                            track: None,
-                            handle: SoundHandle::Streaming(handle),
-                            clip: src.clip.clone(),
-                        },
-                    );
+                    if let Ok(handle) = manager.play(data) {
+                        self.handles.insert(
+                            entity,
+                            PlayingHandle {
+                                track: None,
+                                handle: SoundHandle::Streaming(handle),
+                                clip: src.clip.clone(),
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -147,9 +163,12 @@ impl AudioSystem {
 
 impl Behaviour for AudioSystem {
     fn start(&mut self, engine: &mut Engine) {
+        let Some(listener) = self.listener.as_mut() else {
+            return;
+        };
         // Update the listener to match the active camera at startup.
         let cam = engine.active_camera_info();
-        self.listener.set_position(
+        listener.set_position(
             Vector3 {
                 x: cam.position.x,
                 y: cam.position.y,
@@ -157,7 +176,7 @@ impl Behaviour for AudioSystem {
             },
             Tween::default(),
         );
-        self.listener.set_orientation(
+        listener.set_orientation(
             Quaternion {
                 v: Vector3 {
                     x: cam.orientation.x,
@@ -186,10 +205,13 @@ impl Behaviour for AudioSystem {
     }
 
     fn update(&mut self, engine: &mut Engine, _delta: f32) {
+        let Some(listener) = self.listener.as_mut() else {
+            return;
+        };
         // Update listener position and orientation each frame so spatial audio
         // responds to camera movement.
         let cam = engine.active_camera_info();
-        self.listener.set_position(
+        listener.set_position(
             Vector3 {
                 x: cam.position.x,
                 y: cam.position.y,
@@ -197,7 +219,7 @@ impl Behaviour for AudioSystem {
             },
             Tween::default(),
         );
-        self.listener.set_orientation(
+        listener.set_orientation(
             Quaternion {
                 v: Vector3 {
                     x: cam.orientation.x,

@@ -112,11 +112,12 @@ const MAX_ATMOSPHERES: u32 = 8u;
 const MAX_VOLUMETRIC_CLOUDS: u32 = 8u;
 
 struct VolumetricCloud {
-    center_base_thickness: vec4<f32>,
+    center_base_thickness: vec4<f32>, // xyz = planet center, w = cloud base radius
     coverage_density_noise_phase: vec4<f32>,
     wind_steps: vec4<f32>,
     light_padding: vec4<f32>,
     multi_scatter: vec4<f32>,
+    shape_params: vec4<f32>, // x = thickness, y = primary steps
 };
 
 // --- runtime safety caps ---
@@ -221,15 +222,62 @@ fn hash31(p: vec3<f32>) -> f32 {
 }
 
 fn cloud_density(cloud: VolumetricCloud, p: vec3<f32>) -> f32 {
-    let base_y = cloud.center_base_thickness.y;
-    let thickness = max(cloud.center_base_thickness.w, 0.001);
-    let height01 = clamp((p.y - base_y) / thickness, 0.0, 1.0);
-    let height_shape = smoothstep(0.0, 0.18, height01) * (1.0 - smoothstep(0.75, 1.0, height01));
-    let wind = vec3<f32>(cloud.wind_steps.x, 0.0, cloud.wind_steps.y) * cloud.wind_steps.z * params.current_time;
+    let center = cloud.center_base_thickness.xyz;
+    let base_radius = max(cloud.center_base_thickness.w, 0.001);
+    let thickness = max(cloud.shape_params.x, 0.001);
+    let rel = p - center;
+    let altitude = length(rel) - base_radius;
+    let height01 = clamp(altitude / thickness, 0.0, 1.0);
+
+    // Unreal-style cloud layers are soft at the base and anvil out near the top.
+    let base_fade = smoothstep(0.0, 0.16, height01);
+    let top_fade = 1.0 - smoothstep(0.72, 1.0, height01);
+    let height_shape = base_fade * top_fade;
+
+    // Advect in the local tangent plane so the pattern wraps around the planet
+    // instead of sliding through a flat world-space slab.
+    let up = normalize(select(vec3<f32>(0.0, 1.0, 0.0), rel, length(rel) > 1e-4));
+    let east_seed = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(up.y) > 0.95);
+    let tangent_x = normalize(cross(east_seed, up));
+    let tangent_z = cross(up, tangent_x);
+    let wind = (tangent_x * cloud.wind_steps.x + tangent_z * cloud.wind_steps.y) * cloud.wind_steps.z * params.current_time;
     let noise_p = (p + wind) * max(cloud.coverage_density_noise_phase.z, 0.001);
-    let n = 0.55 * hash31(floor(noise_p)) + 0.30 * hash31(floor(noise_p * 2.03)) + 0.15 * hash31(floor(noise_p * 4.01));
+    let n = 0.50 * hash31(floor(noise_p)) + 0.32 * hash31(floor(noise_p * 2.03)) + 0.18 * hash31(floor(noise_p * 4.01));
     let coverage = clamp(cloud.coverage_density_noise_phase.x, 0.0, 1.0);
-    return max(0.0, n - (1.0 - coverage)) * height_shape * max(cloud.coverage_density_noise_phase.y, 0.0);
+    let billow = smoothstep(1.0 - coverage, 1.0, n);
+    return billow * height_shape * max(cloud.coverage_density_noise_phase.y, 0.0);
+}
+
+fn cloud_shell_interval(cloud: VolumetricCloud, ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32) -> vec2<f32> {
+    let center = cloud.center_base_thickness.xyz;
+    let inner_radius = max(cloud.center_base_thickness.w, 0.001);
+    let outer_radius = inner_radius + max(cloud.shape_params.x, 0.001);
+    let outer = ray_sphere_forward_interval(ro, rd, center, outer_radius);
+    if (outer.y <= 0.0 || outer.x > outer.y) {
+        return vec2<f32>(1e20, -1e20);
+    }
+
+    let dist_from_center = length(ro - center);
+    var t0 = max(outer.x, 0.0);
+    var t1 = min(outer.y, scene_depth);
+    let inner = ray_sphere_forward_interval(ro, rd, center, inner_radius);
+
+    if (dist_from_center < inner_radius && inner.y > 0.0) {
+        t0 = max(t0, inner.y);
+    } else if (inner.x > t0 && inner.x < t1) {
+        // Stop at the planet-facing side of the hollow shell. The far side is
+        // hidden by the planet for normal surface/space camera views.
+        t1 = inner.x;
+    }
+
+    return vec2<f32>(t0, t1);
+}
+
+fn cloud_shell_exit_distance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>) -> f32 {
+    let center = cloud.center_base_thickness.xyz;
+    let outer_radius = max(cloud.center_base_thickness.w, 0.001) + max(cloud.shape_params.x, 0.001);
+    let hit = ray_sphere_forward_interval(p, light_dir, center, outer_radius);
+    return max(hit.y, 0.0);
 }
 
 fn cloud_phase_lobe(g: f32, mu: f32) -> f32 {
@@ -277,14 +325,6 @@ fn ray_sphere_forward_interval(ro: vec3<f32>, rd: vec3<f32>, center: vec3<f32>, 
     }
     let sqrt_h = sqrt(h);
     return vec2<f32>(-b - sqrt_h, -b + sqrt_h);
-}
-
-fn cloud_planar_exit_distance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>) -> f32 {
-    let base_y = cloud.center_base_thickness.y;
-    let top_y = base_y + max(cloud.center_base_thickness.w, 0.001);
-    let exit_y = select(base_y, top_y, light_dir.y >= 0.0);
-    let denom = select(light_dir.y, select(-1e-4, 1e-4, light_dir.y >= 0.0), abs(light_dir.y) < 1e-4);
-    return max((exit_y - p.y) / denom, 0.0);
 }
 
 fn cloud_planet_shadow_for_atmosphere(atmo: Atmosphere, cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, cloud_exit_dist: f32) -> f32 {
@@ -349,7 +389,7 @@ fn cloud_object_shadow_sample_enabled(cloud: VolumetricCloud, sample_index: u32,
 
 fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32, object_shadow: f32) -> f32 {
     let steps = max(1u, min(u32(cloud.light_padding.x), 32u));
-    let max_dist = cloud_planar_exit_distance(cloud, p, light_dir);
+    let max_dist = cloud_shell_exit_distance(cloud, p, light_dir);
     let planet_shadow = cloud_planet_shadow(cloud, p, light_dir, max_dist);
     if (planet_shadow <= 0.0) {
         return 0.0;
@@ -370,13 +410,9 @@ fn cloud_shadow_transmittance_for_volume(cloud: VolumetricCloud, p: vec3<f32>, l
         return 1.0;
     }
 
-    let base_y = cloud.center_base_thickness.y;
-    let top_y = base_y + max(cloud.center_base_thickness.w, 0.001);
-    let denom = select(light_dir.y, select(-1e-4, 1e-4, light_dir.y >= 0.0), abs(light_dir.y) < 1e-4);
-    let t_base = (base_y - p.y) / denom;
-    let t_top = (top_y - p.y) / denom;
-    var t0 = max(min(t_base, t_top), 0.0);
-    var t1 = max(t_base, t_top);
+    let interval = cloud_shell_interval(cloud, p, light_dir, 1e9);
+    let t0 = interval.x;
+    let t1 = interval.y;
     if (t1 <= t0) {
         return 1.0;
     }
@@ -413,15 +449,11 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
     let sun_col = params.dir_light_color.xyz * max(params.dir_light_dir.w, 0.0);
     for (var ci: u32 = 0u; ci < params.cloud_count && ci < MAX_VOLUMETRIC_CLOUDS; ci = ci + 1u) {
         let cloud = clouds[ci];
-        let base_y = cloud.center_base_thickness.y;
-        let top_y = base_y + max(cloud.center_base_thickness.w, 0.001);
-        let inv_y = 1.0 / max(abs(rd.y), 1e-4);
-        var t0 = min((base_y - ro.y) / rd.y, (top_y - ro.y) / rd.y);
-        var t1 = max((base_y - ro.y) / rd.y, (top_y - ro.y) / rd.y);
-        t0 = max(t0, 0.0);
-        t1 = min(t1, scene_depth);
+        let interval = cloud_shell_interval(cloud, ro, rd, scene_depth);
+        let t0 = interval.x;
+        let t1 = interval.y;
         if (t1 <= t0) { continue; }
-        let steps = max(1u, min(u32(cloud.wind_steps.w), 96u));
+        let steps = max(1u, min(u32(cloud.shape_params.y), 96u));
         let dt = (t1 - t0) / f32(steps);
         for (var sidx: u32 = 0u; sidx < steps; sidx = sidx + 1u) {
             let t = t0 + (f32(sidx) + 0.5) * dt;
@@ -434,7 +466,7 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
             let jitter = cloud_blue_noise_jitter(pixel, u32(params.frame_number), sidx + ci * 97u);
             var object_shadow = 1.0;
             if (cloud_object_shadow_sample_enabled(cloud, sidx, steps)) {
-                object_shadow = cloud_object_shadow_transmittance(p, sun_dir, cloud_planar_exit_distance(cloud, p, sun_dir));
+                object_shadow = cloud_object_shadow_transmittance(p, sun_dir, cloud_shell_exit_distance(cloud, p, sun_dir));
             }
             let light_t = cloud_light_transmittance(cloud, p, sun_dir, jitter, object_shadow);
             let multi_scatter = cloud_multi_scatter_lighting(cloud, sigma, mu, light_t, sun_col);
@@ -704,11 +736,12 @@ fn calculate_scattering(
 
 fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
     if (params.atmosphere == 0u || params.atmo_count == 0u) { return background; }
-    if (max_t >= 1e8) {
-        return sample_sky_view_lut(dir);
-    }
-    return sample_aerial_perspective_lut(dir, max_t, background);
 
+    // Keep the inline atmosphere integration as the authoritative path until
+    // the sky-view and aerial-perspective LUTs are actually populated by
+    // precompute passes. Sampling placeholder LUT textures here makes surface
+    // fog/aerial perspective disappear and can replace the sky with an
+    // uninitialized lookup.
     let sun_dir = normalize(-params.dir_light_dir.xyz);
     let sun_I   = params.dir_light_color.xyz * params.dir_light_dir.w;
 
@@ -1898,7 +1931,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         gi = sample_diffuse_gi(gi_pos + gi_normal * 0.01, gi_normal, &rng_state);
     }
 
-    let L = composite_clouds(vec3<f32>(0.0), view_dir, out_depth, final_col, id.xy);
+    let cloud_scene_depth = select(out_depth, 1e9, out_obj < 0);
+    let L = composite_clouds(vec3<f32>(0.0), view_dir, cloud_scene_depth, final_col, id.xy);
     let max_lum = 10.0;
     let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
     let final_tone = L * min(1.0, max_lum / (lum + 1e-4));

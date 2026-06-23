@@ -3119,6 +3119,14 @@ impl WgpuRenderer {
                     binding: 26,
                     resource: self.cloud_buffer.as_entire_binding(),
                 },
+                BindGroupEntry {
+                    binding: 27,
+                    resource: BindingResource::TextureView(&self.blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 28,
+                    resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                },
             ],
         });
 
