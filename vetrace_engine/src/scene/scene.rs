@@ -271,7 +271,7 @@ impl Scene {
                         cloud.cloud_light_steps as f32,
                         cloud.shadow_strength,
                         cloud.planet_shadow_penumbra,
-                        0.0,
+                        cloud.object_shadow_quality.clamp(0, 4) as f32,
                     ],
                     multi_scatter: [
                         cloud.multi_scatter_strength,

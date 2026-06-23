@@ -3136,6 +3136,9 @@ pub struct VolumetricCloud {
     pub shadow_strength: f32,
     /// Softens planet/sphere shadow terminators on cloud direct lighting in world units.
     pub planet_shadow_penumbra: f32,
+    /// Controls sparse scene-geometry visibility rays from cloud samples toward the sun.
+    /// 0 disables object-to-cloud shadows; 1-4 increase the number of checked cloud samples.
+    pub object_shadow_quality: i32,
     /// Adds a cheap higher-order scattering lift to dense/self-shadowed cloud regions.
     pub multi_scatter_strength: f32,
     /// Number of attenuated phase lobes used by the approximation.
@@ -3161,6 +3164,7 @@ impl Default for VolumetricCloud {
             cloud_light_steps: 6,
             shadow_strength: 1.0,
             planet_shadow_penumbra: 1.0,
+            object_shadow_quality: 1,
             multi_scatter_strength: 0.35,
             multi_scatter_octaves: 3,
             multi_scatter_attenuation: 0.55,
@@ -3269,6 +3273,12 @@ impl Inspectable for VolumetricCloud {
                 },
                 value: &mut self.planet_shadow_penumbra as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "object_shadow_quality",
+                kind: ExportKind::Slider { min: 0.0, max: 4.0 },
+                value: &mut self.object_shadow_quality as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<i32>(),
             },
             ExportedField {
                 name: "multi_scatter_strength",
