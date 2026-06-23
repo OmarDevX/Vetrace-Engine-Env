@@ -242,6 +242,48 @@ fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: ve
     return exp(-optical_depth * max(cloud.light_padding.y, 0.0));
 }
 
+fn cloud_shadow_transmittance_for_volume(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
+    let shadow_strength = max(cloud.light_padding.y, 0.0);
+    if (shadow_strength <= 0.0) {
+        return 1.0;
+    }
+
+    let base_y = cloud.center_base_thickness.y;
+    let top_y = base_y + max(cloud.center_base_thickness.w, 0.001);
+    let denom = select(light_dir.y, select(-1e-4, 1e-4, light_dir.y >= 0.0), abs(light_dir.y) < 1e-4);
+    let t_base = (base_y - p.y) / denom;
+    let t_top = (top_y - p.y) / denom;
+    var t0 = max(min(t_base, t_top), 0.0);
+    var t1 = max(t_base, t_top);
+    if (t1 <= t0) {
+        return 1.0;
+    }
+
+    // Surface cloud shadows use a deliberately lower-resolution march than
+    // volumetric cloud lighting. This keeps the per-hit direct-light path cheap
+    // while still matching the same density field and wind animation.
+    let requested_steps = max(cloud.light_padding.x * 0.5, 1.0);
+    let steps = max(1u, min(u32(requested_steps), 12u));
+    let dt = (t1 - t0) / f32(steps);
+    var optical_depth = 0.0;
+    for (var si: u32 = 0u; si < steps; si = si + 1u) {
+        let sp = p + light_dir * (t0 + (f32(si) + jitter) * dt);
+        optical_depth += cloud_density(cloud, sp) * dt;
+    }
+    return exp(-optical_depth * shadow_strength);
+}
+
+fn cloud_shadow_transmittance(p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
+    var transmittance = 1.0;
+    for (var ci: u32 = 0u; ci < params.cloud_count && ci < MAX_VOLUMETRIC_CLOUDS; ci = ci + 1u) {
+        transmittance *= cloud_shadow_transmittance_for_volume(clouds[ci], p, light_dir, fract(jitter + f32(ci) * 0.61803399));
+        if (transmittance < T_EARLY_OUT) {
+            return 0.0;
+        }
+    }
+    return transmittance;
+}
+
 fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: vec3<f32>, pixel: vec2<u32>) -> vec3<f32> {
     var radiance = vec3<f32>(0.0);
     var transmittance = 1.0;
@@ -1277,7 +1319,8 @@ fn shade_base(
         let vis = dir_soft_shadow(hit + surface_normal * 0.01, ldir, rng);
         if (vis > 0.0) {
             let diff = max(dot(surface_normal, ldir), 0.0);
-            col += base * params.dir_light_color.xyz * diff * params.dir_light_dir.w * vis;
+            let cloud_shadow = cloud_shadow_transmittance(hit + surface_normal * 0.01, ldir, rand(rng));
+            col += base * params.dir_light_color.xyz * diff * params.dir_light_dir.w * vis * cloud_shadow;
         }
     }
     col = col * ao;
