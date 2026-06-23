@@ -188,6 +188,8 @@ struct Params {
 @group(0) @binding(24) var sky_view_lut: texture_2d<f32>;
 @group(0) @binding(25) var aerial_perspective_lut: texture_3d<f32>;
 @group(0) @binding(26) var<storage, read> clouds: array<VolumetricCloud>;
+@group(0) @binding(27) var blue_noise_tex: texture_2d<f32>;
+@group(0) @binding(28) var blue_noise_sampler: sampler;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -203,6 +205,14 @@ struct LightListHeader { count: u32, };
 @group(0) @binding(19) var<uniform> light_header: LightListHeader;
 @group(0) @binding(20) var<storage, read> light_indices: array<u32>;
 
+
+fn sample_blue_noise(pixel: vec2<u32>, frame_number: i32) -> f32 {
+    let dims = vec2<u32>(textureDimensions(blue_noise_tex, 0));
+    let frame = u32(max(frame_number, 0));
+    let offset = vec2<u32>((frame * 5u + frame / 3u) % dims.x, (frame * 7u + frame / 5u) % dims.y);
+    let coord = (pixel + offset) % dims;
+    return textureSampleLevel(blue_noise_tex, blue_noise_sampler, (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims), 0.0).r;
+}
 
 fn hash31(p: vec3<f32>) -> f32 {
     let q = fract(p * 0.1031);
@@ -585,7 +595,8 @@ fn calculate_scattering(
     dir: vec3<f32>,            // normalized
     max_t: f32,
     light_dir: vec3<f32>,      // normalized
-    light_intensity: vec3<f32>
+    light_intensity: vec3<f32>,
+    pixel: vec2<u32>
 ) -> Scattering {
     // Everything operates in camera-relative space.
     let center = atmo.center_radius.xyz;
@@ -618,7 +629,7 @@ fn calculate_scattering(
     let steps = i32(steps_f);
 
     let dt = len / f32(steps);
-    var t  = t0 + 0.5 * dt;
+    var t  = t0 + (0.25 + 0.5 * sample_blue_noise(pixel, params.frame_number)) * dt;
 
     var acc_ray = vec3<f32>(0.0);
     var acc_mie = vec3<f32>(0.0);
@@ -731,7 +742,7 @@ fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: v
         let atmo = params.atmos[idx[i]];
 
         // Sun
-        let sc = calculate_scattering(atmo, origin, dir, max_t, sun_dir, sun_I);
+        let sc = calculate_scattering(atmo, origin, dir, max_t, sun_dir, sun_I, vec2<u32>(0u));
         col += trans * sc.color;
 
         // A few emissive lights (bounded)
@@ -752,7 +763,7 @@ fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: v
                     let area = 4.0 * PI * r * r;
                     lintensity *= area;
                 }
-                let sc_l = calculate_scattering(atmo, origin, dir, max_t, ldir, lintensity);
+                let sc_l = calculate_scattering(atmo, origin, dir, max_t, ldir, lintensity, vec2<u32>(0u));
                 col += trans * sc_l.color;
             }
         }

@@ -78,7 +78,15 @@ fn multi_scattering_lut_coord(atmo: Atmosphere, origin: vec3<f32>, view_dir: vec
     return vec2<i32>(round(clamp(vec2<f32>(view_sun_u, altitude_u), vec2<f32>(0.0), vec2<f32>(1.0)) * max_coord));
 }
 
-fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: vec3<f32>) -> Scattering {
+fn sample_blue_noise(pixel: vec2<u32>, frame_number: i32) -> f32 {
+    let dims = vec2<u32>(textureDimensions(blue_noise_tex, 0));
+    let frame = u32(max(frame_number, 0));
+    let offset = vec2<u32>((frame * 5u + frame / 3u) % dims.x, (frame * 7u + frame / 5u) % dims.y);
+    let coord = (pixel + offset) % dims;
+    return textureSampleLevel(blue_noise_tex, blue_noise_sampler, (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims), 0.0).r;
+}
+
+fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: vec3<f32>, pixel: vec2<u32>, frame_number: i32) -> Scattering {
     if (params.atmosphere == 0u || params.atmo_count == 0u) {
         return Scattering(vec3<f32>(0.0), vec3<f32>(1.0));
     }
@@ -93,7 +101,7 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
     if (t0 > t1) { return Scattering(vec3<f32>(0.0), vec3<f32>(1.0)); }
     let steps = 18;
     let dt = (t1 - t0) / f32(steps);
-    var t = t0 + 0.5 * dt;
+    var t = t0 + (0.25 + 0.5 * sample_blue_noise(pixel, frame_number)) * dt;
     let inv_hr = 1.0 / max(atmo.atmo_g_height.z, 1e-3);
     let inv_hm = 1.0 / max(atmo.atmo_g_height.w, 1e-3);
     let mu = dot(dir, sun_dir);
@@ -134,6 +142,8 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
 @group(0) @binding(0) var aerial_perspective_lut: texture_storage_3d<rgba16float, write>;
 @group(0) @binding(1) var<uniform> params: Params;
 @group(0) @binding(2) var multi_scattering_lut: texture_2d<f32>;
+@group(0) @binding(3) var blue_noise_tex: texture_2d<f32>;
+@group(0) @binding(4) var blue_noise_sampler: sampler;
 @compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(aerial_perspective_lut);
@@ -149,7 +159,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let multi_coord = multi_scattering_lut_coord(atmo, params.camera_pos.xyz, dir, sun_dir, textureDimensions(multi_scattering_lut));
         multi = textureLoad(multi_scattering_lut, multi_coord, 0).xyz;
     }
-    let sc = integrate_atmosphere(params.camera_pos.xyz, dir, max_dist, multi);
+    let sc = integrate_atmosphere(params.camera_pos.xyz, dir, max_dist, multi, id.xy, params.frame_number);
     let trans = dot(sc.transmittance, vec3<f32>(0.3333333));
     textureStore(aerial_perspective_lut, vec3<i32>(id), vec4<f32>(max(sc.color, vec3<f32>(0.0)), clamp(trans, 0.0, 1.0)));
 }

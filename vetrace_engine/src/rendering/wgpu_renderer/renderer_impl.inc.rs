@@ -32,7 +32,22 @@ struct BlurParams {
 
 const MAX_BLUR_REGIONS: usize = 16;
 
-fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 3] {
+fn blue_noise_rgba8_tile() -> Vec<u8> {
+    const BLUE_NOISE_TILE_SIZE: u32 = 16;
+    let mut rgba = Vec::with_capacity((BLUE_NOISE_TILE_SIZE * BLUE_NOISE_TILE_SIZE * 4) as usize);
+    for y in 0..BLUE_NOISE_TILE_SIZE {
+        for x in 0..BLUE_NOISE_TILE_SIZE {
+            // Small deterministic high-frequency tile used as a fallback/default.
+            // Projects that want an authored blue-noise texture can replace this
+            // with a locally loaded texture from their asset pipeline.
+            let v = ((x * 73 + y * 151 + (x ^ y) * 37 + (x * y * 17)) & 0xff) as u8;
+            rgba.extend_from_slice(&[v, v, v, 255]);
+        }
+    }
+    rgba
+}
+
+fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 5] {
     [
         BindGroupLayoutEntry {
             binding: 0,
@@ -62,6 +77,22 @@ fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 3] {
                 view_dimension: TextureViewDimension::D2,
                 sample_type: TextureSampleType::Float { filterable: true },
             },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 3,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Texture {
+                multisampled: false,
+                view_dimension: TextureViewDimension::D2,
+                sample_type: TextureSampleType::Float { filterable: true },
+            },
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 4,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
             count: None,
         },
     ]
@@ -249,6 +280,19 @@ impl WgpuRenderer {
                 "default_white",
             )
             .expect("white texture"),
+        ));
+        let blue_noise_rgba = blue_noise_rgba8_tile();
+        let blue_noise_texture = crate::gpu::TextureHandle(std::sync::Arc::new(
+            crate::gpu::GpuTexture::from_rgba8(
+                device.as_ref(),
+                queue.as_ref(),
+                &blue_noise_rgba,
+                16,
+                16,
+                false,
+                "blue_noise_texture",
+            )
+            .expect("blue noise texture"),
         ));
 
         let triangle_buffer = device.create_buffer(&BufferDescriptor {
@@ -567,6 +611,22 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 27,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 28,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
             });
 
@@ -647,6 +707,22 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
             });
         let atmosphere_lut_pipeline_layout =
@@ -700,6 +776,14 @@ impl WgpuRenderer {
                     binding: 2,
                     resource: BindingResource::TextureView(&multi_scattering_lut_view),
                 },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
+                },
             ],
         });
         let multi_scattering_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -718,6 +802,14 @@ impl WgpuRenderer {
                     binding: 2,
                     resource: BindingResource::TextureView(&sky_view_lut_view),
                 },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
+                },
             ],
         });
         let aerial_perspective_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -735,6 +827,14 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 2,
                     resource: BindingResource::TextureView(&multi_scattering_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
                 },
             ],
         });
@@ -1108,6 +1208,14 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 26,
                     resource: cloud_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 27,
+                    resource: BindingResource::TextureView(&blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 28,
+                    resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
                 },
             ],
         });
@@ -2082,6 +2190,7 @@ impl WgpuRenderer {
             blur_src_texture,
             blur_src_view,
             white_texture,
+            blue_noise_texture,
             material_textures,
             gi_params_buffer,
             sdfgi_bind_group_layout,
@@ -2305,6 +2414,14 @@ impl WgpuRenderer {
                     binding: 2,
                     resource: BindingResource::TextureView(&self.multi_scattering_lut_view),
                 },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                },
             ],
         });
         self.multi_scattering_lut_bind_group =
@@ -2325,6 +2442,14 @@ impl WgpuRenderer {
                     BindGroupEntry {
                         binding: 2,
                         resource: BindingResource::TextureView(&self.sky_view_lut_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(&self.blue_noise_texture.0.view),
+                    },
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
                     },
                 ],
             });
@@ -2348,6 +2473,14 @@ impl WgpuRenderer {
                     BindGroupEntry {
                         binding: 2,
                         resource: BindingResource::TextureView(&self.multi_scattering_lut_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(&self.blue_noise_texture.0.view),
+                    },
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
                     },
                 ],
             });
@@ -2469,6 +2602,14 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 26,
                     resource: self.cloud_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 27,
+                    resource: BindingResource::TextureView(&self.blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 28,
+                    resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
                 },
             ],
         });
