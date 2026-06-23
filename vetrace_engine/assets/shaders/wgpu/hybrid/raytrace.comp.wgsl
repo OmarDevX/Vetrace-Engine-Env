@@ -311,7 +311,33 @@ fn cloud_planet_shadow(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32
     return shadow;
 }
 
-fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
+fn cloud_object_shadow_transmittance(p: vec3<f32>, light_dir: vec3<f32>, max_dist: f32) -> f32 {
+    if (max_dist <= 0.0 || params.total_bvh_nodes == 0u) {
+        return 1.0;
+    }
+
+    // Reuse the directional-light visibility path for object-to-cloud shadows:
+    // trace a single hard visibility ray from the cloud sample toward the sun.
+    // The caller decides how many cloud raymarch samples may pay this TLAS cost.
+    let shadow_dist = min(max_dist, 1000.0);
+    let origin = p + light_dir * 0.02;
+    return select(0.0, 1.0, is_visible(origin, origin + light_dir * shadow_dist, 0xffffffffu, 0xffffffffu));
+}
+
+fn cloud_object_shadow_sample_enabled(cloud: VolumetricCloud, sample_index: u32, primary_steps: u32) -> bool {
+    let quality = min(u32(max(cloud.light_padding.w, 0.0)), 4u);
+    if (quality == 0u) {
+        return false;
+    }
+
+    // Quality is a feature/cost knob stored per cloud. It controls a small
+    // sparse subset of primary cloud samples that run object visibility rays.
+    let max_checked_samples = min(primary_steps, quality * 2u);
+    let stride = max(1u, primary_steps / max_checked_samples);
+    return (sample_index % stride) == 0u;
+}
+
+fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32, object_shadow: f32) -> f32 {
     let steps = max(1u, min(u32(cloud.light_padding.x), 32u));
     let max_dist = cloud_planar_exit_distance(cloud, p, light_dir);
     let planet_shadow = cloud_planet_shadow(cloud, p, light_dir, max_dist);
@@ -324,7 +350,8 @@ fn cloud_light_transmittance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: ve
         let lp = p + light_dir * ((f32(li) + jitter) * dt);
         optical_depth += cloud_density(cloud, lp) * dt;
     }
-    return exp(-optical_depth * max(cloud.light_padding.y, 0.0)) * planet_shadow;
+    let self_shadow = exp(-optical_depth * max(cloud.light_padding.y, 0.0));
+    return self_shadow * planet_shadow * clamp(object_shadow, 0.0, 1.0);
 }
 
 fn cloud_shadow_transmittance_for_volume(cloud: VolumetricCloud, p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
@@ -395,7 +422,11 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
             let mu = clamp(dot(rd, sun_dir), -1.0, 1.0);
             let phase = cloud_phase_lobe(g, mu);
             let jitter = cloud_blue_noise_jitter(pixel, u32(params.frame_number), sidx + ci * 97u);
-            let light_t = cloud_light_transmittance(cloud, p, sun_dir, jitter);
+            var object_shadow = 1.0;
+            if (cloud_object_shadow_sample_enabled(cloud, sidx, steps)) {
+                object_shadow = cloud_object_shadow_transmittance(p, sun_dir, cloud_planar_exit_distance(cloud, p, sun_dir));
+            }
+            let light_t = cloud_light_transmittance(cloud, p, sun_dir, jitter, object_shadow);
             let multi_scatter = cloud_multi_scatter_lighting(cloud, sigma, mu, light_t, sun_col);
             let absorb = exp(-sigma * dt);
             let scatter = (1.0 - absorb) * transmittance;
