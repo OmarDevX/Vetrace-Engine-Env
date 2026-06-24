@@ -281,11 +281,15 @@ impl WgpuRenderer {
         &mut self,
         objects: &[GpuObject],
         triangles: &[GpuTriangle],
+        bvh: &[GpuBvhNode],
+        tri_bvh: &[GpuTriBvhNode],
         materials: &[crate::scene::object::GpuMaterial],
     ) {
         let mut hasher = DefaultHasher::new();
         Self::hash_bytes(&mut hasher, bytemuck::cast_slice(objects));
         Self::hash_bytes(&mut hasher, bytemuck::cast_slice(triangles));
+        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(bvh));
+        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(tri_bvh));
         Self::hash_bytes(&mut hasher, bytemuck::cast_slice(materials));
         let hash = hasher.finish();
         if self.gi_cache.static_scene_hash != hash {
@@ -444,7 +448,7 @@ impl WgpuRenderer {
         let object_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("objects"),
             size: std::mem::size_of::<GpuObject>() as u64 * MIN_SCENE_CAPACITY,
-            usage: BufferUsages::STORAGE,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let cloud_buffer = device.create_buffer(&BufferDescriptor {
@@ -2529,6 +2533,7 @@ impl WgpuRenderer {
             sharpness: 0.0,
             is_2d: is_2d,
             object_buffer,
+            object_buffer_capacity: MIN_SCENE_CAPACITY as usize,
             cloud_buffer,
             triangle_buffer,
             bvh_buffer,
@@ -2693,6 +2698,7 @@ impl WgpuRenderer {
             sprite_vertices_cache: Vec::new(),
             prev_material_names: Vec::new(),
             prev_shader_defs: Vec::new(),
+            prev_objects: Vec::new(),
             prev_triangles: vec![GpuTriangle::zeroed()],
             prev_bvh_nodes: Vec::new(),
             prev_tri_bvh_nodes: Vec::new(),
@@ -3350,14 +3356,30 @@ impl WgpuRenderer {
         // Ensure the object buffer always has space for at least 64 entries to
         // satisfy the shader's minimum binding size requirements.
         const MIN_SCENE_CAPACITY: usize = 64;
-        let mut obj_data = vec![GpuObject::default(); MIN_SCENE_CAPACITY.max(objects.len())];
-        obj_data[..objects.len()].copy_from_slice(objects);
-        self.object_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("objects"),
-            contents: bytemuck::cast_slice(&obj_data),
-            usage: BufferUsages::STORAGE,
-        });
-        self.update_static_gi_hash(objects, triangles, materials);
+        let object_capacity = self
+            .object_buffer_capacity
+            .max(MIN_SCENE_CAPACITY.max(objects.len()));
+        let objects_changed = self.prev_objects.len() != objects.len()
+            || bytemuck::cast_slice::<GpuObject, u8>(&self.prev_objects)
+                != bytemuck::cast_slice::<GpuObject, u8>(objects);
+        let object_capacity_changed = object_capacity != self.object_buffer_capacity;
+        if objects_changed || object_capacity_changed {
+            let mut obj_data = vec![GpuObject::default(); object_capacity];
+            obj_data[..objects.len()].copy_from_slice(objects);
+            let obj_bytes = bytemuck::cast_slice(&obj_data);
+            if object_capacity_changed {
+                self.object_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("objects"),
+                    contents: obj_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+                self.object_buffer_capacity = object_capacity;
+            } else {
+                self.queue.write_buffer(&self.object_buffer, 0, obj_bytes);
+            }
+            self.prev_objects = objects.to_vec();
+        }
+        self.update_static_gi_hash(objects, triangles, bvh, tri_bvh, materials);
         let tri_changed = self.prev_triangles.len() != triangles.len()
             || bytemuck::cast_slice::<GpuTriangle, u8>(&self.prev_triangles)
                 != bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
