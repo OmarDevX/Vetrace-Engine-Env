@@ -218,6 +218,123 @@ fn create_cloud_temporal_texture(
 }
 
 impl WgpuRenderer {
+    fn create_sdfgi_mip_bind_groups(
+        device: &Device,
+        texture: &Texture,
+        layout: &BindGroupLayout,
+    ) -> Vec<BindGroup> {
+        let mip_count = (GI_SDF_RES as f32).log2().floor() as u32 + 1;
+        (1..mip_count)
+            .map(|level| {
+                let src_view = texture.create_view(&TextureViewDescriptor {
+                    label: Some("sdfgi_mip_src_cached"),
+                    format: None,
+                    dimension: Some(TextureViewDimension::D3),
+                    aspect: TextureAspect::All,
+                    base_mip_level: level - 1,
+                    mip_level_count: Some(1),
+                    base_array_layer: 0,
+                    array_layer_count: Some(1),
+                });
+                let dst_view = texture.create_view(&TextureViewDescriptor {
+                    label: Some("sdfgi_mip_dst_cached"),
+                    format: None,
+                    dimension: Some(TextureViewDimension::D3),
+                    aspect: TextureAspect::All,
+                    base_mip_level: level,
+                    mip_level_count: Some(1),
+                    base_array_layer: 0,
+                    array_layer_count: Some(1),
+                });
+                device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("sdfgi_mip_bg_cached"),
+                    layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&src_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::TextureView(&dst_view),
+                        },
+                    ],
+                })
+            })
+            .collect()
+    }
+
+    fn hash_bytes(hasher: &mut DefaultHasher, bytes: &[u8]) {
+        bytes.hash(hasher);
+    }
+
+    fn bake_settings_hash(params: &RenderParams) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        params.gi_quality.hash(&mut hasher);
+        params.gi_debug_mode.hash(&mut hasher);
+        params.gi_mode.hash(&mut hasher);
+        hasher.write_u32(params.max_bounces as u32);
+        hasher.finish()
+    }
+
+    fn update_static_gi_hash(
+        &mut self,
+        objects: &[GpuObject],
+        triangles: &[GpuTriangle],
+        materials: &[crate::scene::object::GpuMaterial],
+    ) {
+        let mut hasher = DefaultHasher::new();
+        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(objects));
+        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(triangles));
+        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(materials));
+        let hash = hasher.finish();
+        if self.gi_cache.static_scene_hash != hash {
+            self.gi_cache.static_scene_hash = hash;
+            self.gi_cache.mark_dirty();
+        }
+    }
+
+    pub fn mark_gi_dirty(&mut self) {
+        self.gi_cache.mark_dirty();
+    }
+
+    pub fn bake_lighting<P: AsRef<std::path::Path>>(
+        &mut self,
+        artifact_path: P,
+        params: &RenderParams,
+    ) -> std::io::Result<()> {
+        let settings_hash = Self::bake_settings_hash(params);
+        let contents = format!(
+            "vetrace_lighting_bake_v1\nscene_hash={}\nbake_settings_hash={}\nbackend=sdfgi\nartifacts=gi_sdf,gi_radiance,lightmap,probes\n",
+            self.gi_cache.static_scene_hash, settings_hash
+        );
+        std::fs::write(&artifact_path, contents)?;
+        self.gi_cache.last_baked_scene_hash = self.gi_cache.static_scene_hash;
+        self.gi_cache.bake_settings_hash = settings_hash;
+        self.gi_cache.artifact_path = Some(artifact_path.as_ref().to_path_buf());
+        self.gi_cache.probe_metadata = Some("dynamic objects sample baked probes/lightmaps; only dynamic shadows/reflections stay real-time".to_string());
+        self.gi_cache.dirty = false;
+        Ok(())
+    }
+
+    pub fn load_lighting_bake<P: AsRef<std::path::Path>>(
+        &mut self,
+        artifact_path: P,
+        params: &RenderParams,
+    ) -> std::io::Result<bool> {
+        let contents = std::fs::read_to_string(&artifact_path)?;
+        let scene_hash = format!("scene_hash={}", self.gi_cache.static_scene_hash);
+        let settings_hash = format!("bake_settings_hash={}", Self::bake_settings_hash(params));
+        let matches = contents.contains(&scene_hash) && contents.contains(&settings_hash);
+        if matches {
+            self.gi_cache.last_baked_scene_hash = self.gi_cache.static_scene_hash;
+            self.gi_cache.bake_settings_hash = Self::bake_settings_hash(params);
+            self.gi_cache.artifact_path = Some(artifact_path.as_ref().to_path_buf());
+            self.gi_cache.dirty = false;
+        }
+        Ok(matches)
+    }
+
     fn texture_array_limit(device: &Device) -> u32 {
         const RESERVED_TEXTURE_SLOTS: u32 = 7;
         const HARD_CAP: u32 = 256;
@@ -1738,6 +1855,8 @@ impl WgpuRenderer {
             entry_point: "main",
             compilation_options: Default::default(),
         });
+        let sdfgi_mip_bind_groups =
+            Self::create_sdfgi_mip_bind_groups(&device, &gi_sdf_texture, &sdfgi_mip_bind_group_layout);
         let sdfgi_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("sdfgi_bg"),
             layout: &sdfgi_bind_group_layout,
@@ -2449,6 +2568,10 @@ impl WgpuRenderer {
             gi_radiance_texture,
             gi_radiance_view,
             gi_radiance_storage_view,
+            gi_cache: GiCacheState {
+                dirty: true,
+                ..Default::default()
+            },
             gi_history_texture,
             gi_history_view,
             gi_noisy_texture,
@@ -2510,6 +2633,7 @@ impl WgpuRenderer {
             sdfgi_inject_bind_group,
             sdfgi_inject_pipeline,
             sdfgi_mip_bind_group_layout,
+            sdfgi_mip_bind_groups,
             sdfgi_mip_pipeline,
             atmosphere_lut_bind_group_layout,
             transmittance_lut_bind_group,
@@ -2688,6 +2812,12 @@ impl WgpuRenderer {
         self.gi_radiance_texture = gi_radiance_texture;
         self.gi_radiance_view = gi_radiance_view;
         self.gi_radiance_storage_view = gi_radiance_storage_view;
+        self.sdfgi_mip_bind_groups = Self::create_sdfgi_mip_bind_groups(
+            &self.device,
+            &self.gi_sdf_texture,
+            &self.sdfgi_mip_bind_group_layout,
+        );
+        self.gi_cache.mark_dirty();
         self.gi_history_texture = gi_history_texture;
         self.gi_history_view = gi_history_view;
         self.gi_noisy_texture = gi_noisy_texture;
@@ -3227,6 +3357,7 @@ impl WgpuRenderer {
             contents: bytemuck::cast_slice(&obj_data),
             usage: BufferUsages::STORAGE,
         });
+        self.update_static_gi_hash(objects, triangles, materials);
         let tri_changed = self.prev_triangles.len() != triangles.len()
             || bytemuck::cast_slice::<GpuTriangle, u8>(&self.prev_triangles)
                 != bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
@@ -3727,6 +3858,7 @@ impl WgpuRenderer {
             self.queue
                 .write_buffer(&self.gi_params_buffer, 0, bytemuck::bytes_of(&gi_params));
             self.prev_gi_params = Some(gi_params);
+            self.gi_cache.mark_dirty();
         }
         if self
             .prev_post_fx_uniforms
@@ -3974,6 +4106,7 @@ impl WgpuRenderer {
         if !self.is_2d
             && params.gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
             && params.gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDF
+            && self.gi_cache.dirty
         {
             {
                 let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -3989,49 +4122,15 @@ impl WgpuRenderer {
                 );
             }
 
-            let mip_count = (GI_SDF_RES as f32).log2().floor() as u32 + 1;
-            for level in 1..mip_count {
-                let src_view = self.gi_sdf_texture.create_view(&TextureViewDescriptor {
-                    label: Some("sdfgi_mip_src"),
-                    format: None,
-                    dimension: Some(TextureViewDimension::D3),
-                    aspect: TextureAspect::All,
-                    base_mip_level: level - 1,
-                    mip_level_count: Some(1),
-                    base_array_layer: 0,
-                    array_layer_count: Some(1),
-                });
-                let dst_view = self.gi_sdf_texture.create_view(&TextureViewDescriptor {
-                    label: Some("sdfgi_mip_dst"),
-                    format: None,
-                    dimension: Some(TextureViewDimension::D3),
-                    aspect: TextureAspect::All,
-                    base_mip_level: level,
-                    mip_level_count: Some(1),
-                    base_array_layer: 0,
-                    array_layer_count: Some(1),
-                });
-                let mip_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-                    label: Some("sdfgi_mip_bg"),
-                    layout: &self.sdfgi_mip_bind_group_layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::TextureView(&src_view),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: BindingResource::TextureView(&dst_view),
-                        },
-                    ],
-                });
+            for (index, mip_bind_group) in self.sdfgi_mip_bind_groups.iter().enumerate() {
+                let level = (index as u32) + 1;
                 let size = GI_SDF_RES >> level;
                 let mut mip_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
                     label: Some("sdfgi_mips"),
                     timestamp_writes: None,
                 });
                 mip_pass.set_pipeline(&self.sdfgi_mip_pipeline);
-                mip_pass.set_bind_group(0, &mip_bind_group, &[]);
+                mip_pass.set_bind_group(0, mip_bind_group, &[]);
                 mip_pass.dispatch_workgroups((size + 7) / 8, (size + 7) / 8, (size + 3) / 4);
             }
             {
@@ -4047,6 +4146,8 @@ impl WgpuRenderer {
                     (GI_SDF_RES + 3) / 4,
                 );
             }
+            self.gi_cache.last_baked_scene_hash = self.gi_cache.static_scene_hash;
+            self.gi_cache.dirty = false;
         }
         if !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -4320,6 +4421,7 @@ impl WgpuRenderer {
             self.queue
                 .write_buffer(&self.light_buffer, 0, bytemuck::bytes_of(&light_data));
             self.prev_light_data = Some(light_data);
+            self.gi_cache.mark_dirty();
         }
         let sprite_stride = (6 * std::mem::size_of::<[f32; 5]>()) as u64;
         let mut vertex_data: Vec<[f32; 5]> = Vec::with_capacity(sprites.len() * 6);

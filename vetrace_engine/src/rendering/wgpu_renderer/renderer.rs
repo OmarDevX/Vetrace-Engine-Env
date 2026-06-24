@@ -9,6 +9,8 @@ use crate::scene::{bvh::GpuBvhNode, tri_bvh::GpuTriBvhNode};
 use bytemuck::Zeroable;
 use egui::{ClippedPrimitive, TexturesDelta};
 use sdl2::video::Window;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
@@ -57,6 +59,7 @@ pub struct WgpuRenderer {
     gi_radiance_texture: Texture,
     gi_radiance_view: TextureView,
     gi_radiance_storage_view: TextureView,
+    gi_cache: GiCacheState,
     gi_history_texture: Texture,
     gi_history_view: TextureView,
     gi_noisy_texture: Texture,
@@ -119,6 +122,7 @@ pub struct WgpuRenderer {
     sdfgi_inject_bind_group: BindGroup,
     sdfgi_inject_pipeline: ComputePipeline,
     sdfgi_mip_bind_group_layout: BindGroupLayout,
+    sdfgi_mip_bind_groups: Vec<BindGroup>,
     sdfgi_mip_pipeline: ComputePipeline,
     atmosphere_lut_bind_group_layout: BindGroupLayout,
     transmittance_lut_bind_group: BindGroup,
@@ -192,6 +196,22 @@ pub struct WgpuRenderer {
     prev_triangles: Vec<GpuTriangle>,
     prev_bvh_nodes: Vec<GpuBvhNode>,
     prev_tri_bvh_nodes: Vec<GpuTriBvhNode>,
+}
+
+#[derive(Default)]
+struct GiCacheState {
+    dirty: bool,
+    static_scene_hash: u64,
+    last_baked_scene_hash: u64,
+    bake_settings_hash: u64,
+    artifact_path: Option<std::path::PathBuf>,
+    probe_metadata: Option<String>,
+}
+
+impl GiCacheState {
+    fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
 }
 
 include!("renderer_impl.inc.rs");
