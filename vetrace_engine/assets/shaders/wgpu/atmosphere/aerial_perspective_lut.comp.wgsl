@@ -78,6 +78,19 @@ fn multi_scattering_lut_coord(atmo: Atmosphere, origin: vec3<f32>, view_dir: vec
     return vec2<i32>(round(clamp(vec2<f32>(view_sun_u, altitude_u), vec2<f32>(0.0), vec2<f32>(1.0)) * max_coord));
 }
 
+
+fn transmittance_lut_uv(atmo: Atmosphere, origin: vec3<f32>, light_dir: vec3<f32>) -> vec2<f32> {
+    let up = normalize(origin - atmo.center_radius.xyz);
+    let altitude = clamp(length(origin - atmo.center_radius.xyz) - atmo.center_radius.w, 0.0, max(atmo.atmo_g_height.x - atmo.center_radius.w, 1e-3));
+    let altitude_u = altitude / max(atmo.atmo_g_height.x - atmo.center_radius.w, 1e-3);
+    let zenith_u = dot(normalize(light_dir), up) * 0.5 + 0.5;
+    return clamp(vec2<f32>(zenith_u, altitude_u), vec2<f32>(0.0), vec2<f32>(1.0));
+}
+
+fn sample_transmittance_lut(atmo: Atmosphere, origin: vec3<f32>, light_dir: vec3<f32>) -> vec3<f32> {
+    return textureSampleLevel(transmittance_lut, blue_noise_sampler, transmittance_lut_uv(atmo, origin, light_dir), 0.0).xyz;
+}
+
 fn sample_blue_noise(pixel: vec2<u32>, frame_number: i32) -> f32 {
     let dims = vec2<u32>(textureDimensions(blue_noise_tex, 0));
     let frame = u32(max(frame_number, 0));
@@ -127,9 +140,7 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
         tau_a += d_a * dt;
         let tau = atmo.ray_beta.xyz * vec3<f32>(tau_r) + atmo.mie_beta.xyz * vec3<f32>(tau_m) + atmo.absorption_beta.xyz * vec3<f32>(tau_a);
         let view_t = exp(-tau);
-        let light_path = ray_sphere_intersect(sp, sun_dir, atmo.atmo_g_height.x).y;
-        let light_tau = max(light_path, 0.0) * 0.00004;
-        let light_t = exp(-(atmo.ray_beta.xyz + atmo.mie_beta.xyz + atmo.absorption_beta.xyz) * vec3<f32>(light_tau));
+        let light_t = sample_transmittance_lut(atmo, atmo.center_radius.xyz + sp, sun_dir);
         acc_r += d_r * view_t * light_t * dt;
         acc_m += d_m * view_t * light_t * dt;
         t += dt;
@@ -144,6 +155,7 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
 @group(0) @binding(2) var multi_scattering_lut: texture_2d<f32>;
 @group(0) @binding(3) var blue_noise_tex: texture_2d<f32>;
 @group(0) @binding(4) var blue_noise_sampler: sampler;
+@group(0) @binding(5) var transmittance_lut: texture_2d<f32>;
 @compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(aerial_perspective_lut);

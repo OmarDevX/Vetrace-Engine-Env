@@ -191,6 +191,7 @@ struct Params {
 @group(0) @binding(26) var<storage, read> clouds: array<VolumetricCloud>;
 @group(0) @binding(27) var blue_noise_tex: texture_2d<f32>;
 @group(0) @binding(28) var blue_noise_sampler: sampler;
+@group(0) @binding(29) var transmittance_lut: texture_2d<f32>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -681,33 +682,10 @@ fn calculate_scattering(
         tauM += dM * dt;
         tauA += dA * dt;
 
-        // Planet occlusion of the light (cheap: solid sphere)
-        var TrL = vec3<f32>(1.0);
+        var TrL = sample_transmittance_lut(atmo, atmo.center_radius.xyz + sp, light_dir);
         let pl = ray_sphere_intersect(sp, light_dir, atmo.center_radius.w);
         if (pl.y > 0.0 && pl.x > 0.0) {
             TrL = vec3<f32>(0.0);
-        } else {
-            // Coarse integral along light segment inside atmosphere
-            let lr = ray_sphere_intersect(sp, light_dir, atmo.atmo_g_height.x);
-            let l_len = max(0.0, lr.y);
-            let lsteps = max(2, min(i32(atmo.absorb_params.w), MAX_LIGHT_STEPS));
-            let ldt = l_len / f32(lsteps);
-            var lt = 0.5 * ldt;
-
-            var iR = 0.0; var iM = 0.0; var iA = 0.0;
-            for (var j: i32 = 0; j < lsteps; j = j + 1) {
-                let sl = sp + light_dir * lt;
-                let hl = length(sl) - atmo.center_radius.w;
-                let dRl = exp(-hl * invHR);
-                let dMl = exp(-hl * invHM);
-                let dAl = ozone_density(atmo, hl);
-                iR += dRl * ldt; iM += dMl * ldt; iA += dAl * ldt;
-                lt += ldt;
-            }
-            let tauL = atmo.ray_beta.xyz * vec3<f32>(iR)
-            + atmo.mie_beta.xyz * vec3<f32>(iM)
-            + atmo.absorption_beta.xyz * vec3<f32>(iA);
-            TrL = exp(-tauL);
         }
 
         let Tview = exp(-(atmo.ray_beta.xyz * vec3<f32>(tauR)
