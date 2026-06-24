@@ -23,7 +23,7 @@ use crate::ecs::{Component, World};
 use crate::engine::component_io::{apply_component_data, export_component_data};
 use crate::engine::core::EngineCore;
 use crate::events::{Event as CustomEvent, LuaEvent, SceneEvents};
-use crate::input::{Input, window::WindowManager};
+use crate::input::{window::WindowManager, Input};
 use crate::inspector::Inspectable;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
@@ -33,7 +33,7 @@ use crate::rendering::Renderer;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
 use crate::scene::{
-    loader::{ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile, save_scene},
+    loader::{save_scene, ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile},
     scene::Scene,
 };
 use crate::systems::collision::CollisionEvent;
@@ -439,6 +439,7 @@ impl Engine {
         let mut dir_light_dir = [-0.3, -0.7, -0.6]; // Default
         let mut dir_light_color = [1.0, 1.0, 0.9]; // Default
         let mut dir_light_intensity = 3.0; // Default
+        let mut dir_light_max_shadow_distance = 250.0;
 
         // Find directional light in the world
         for entity in self.world.entities() {
@@ -449,6 +450,7 @@ impl Engine {
                 dir_light_dir = light.direction;
                 dir_light_color = [light.color[0], light.color[1], light.color[2]];
                 dir_light_intensity = light.intensity;
+                dir_light_max_shadow_distance = light.max_shadow_distance;
                 break; // Use first directional light found
             }
         }
@@ -629,6 +631,7 @@ impl Engine {
         let mut light_samples = 1i32;
         let mut dir_light_samples = 1i32;
         let mut max_bounces = 3i32;
+        let mut shadow_mode = crate::components::components::ShadowMode::Hybrid.as_u32();
         let mut raytraced_shadows_enabled = 1u32;
         let mut raytraced_reflections_enabled = 1u32;
         let mut raytraced_gi_enabled = 0u32;
@@ -652,11 +655,12 @@ impl Engine {
             {
                 gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
                 gi_debug_mode = pp.gi_debug_mode;
-                    renderer_profile = pp.profile.into();
+                renderer_profile = pp.profile.into();
                 gi_mode = if pp.path_traced_gi { 1 } else { 0 };
                 light_samples = pp.light_samples as i32;
                 dir_light_samples = pp.dir_light_samples as i32;
                 max_bounces = pp.max_bounces as i32;
+                shadow_mode = pp.shadow_mode.as_u32();
                 raytraced_shadows_enabled = pp.raytraced_shadows_enabled as u32;
                 raytraced_reflections_enabled = pp.raytraced_reflections_enabled as u32;
                 raytraced_gi_enabled = pp.raytraced_gi_enabled as u32;
@@ -696,6 +700,7 @@ impl Engine {
             max_bounces,
             light_samples,
             dir_shadow_samples: dir_light_samples,
+            shadow_mode,
             raytraced_shadows_enabled,
             raytraced_reflections_enabled,
             raytraced_gi_enabled,
@@ -705,6 +710,10 @@ impl Engine {
             emissive_shadow_samples,
             directional_shadow_samples,
             cloud_object_shadows_enabled,
+            max_rt_shadow_distance: dir_light_max_shadow_distance,
+            rt_shadow_ray_t_max: dir_light_max_shadow_distance,
+            min_soft_shadow_radius: 0.03,
+            _pad_shadow_mode: 0,
             inv_view_proj: {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
@@ -1005,8 +1014,8 @@ impl Engine {
     /// Process primitive objects from scene.objects (spheres, cubes, etc.)
     /// This replicates the primitive object processing from run.rs line 199-288
     fn process_primitive_objects(&mut self) {
-        use crate::CustomMaterial;
         use crate::scene::object::GpuMaterial;
+        use crate::CustomMaterial;
         use std::collections::HashMap;
 
         // Assemble GPU materials for every scene object, generating

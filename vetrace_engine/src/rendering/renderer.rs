@@ -80,7 +80,9 @@ pub enum RendererProfile {
 }
 
 impl Default for RendererProfile {
-    fn default() -> Self { Self::Balanced }
+    fn default() -> Self {
+        Self::Balanced
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -135,6 +137,7 @@ pub struct RenderParams {
     pub max_bounces: i32,
     pub light_samples: i32,
     pub dir_shadow_samples: i32,
+    pub shadow_mode: u32,
     pub raytraced_shadows_enabled: u32,
     pub raytraced_reflections_enabled: u32,
     pub raytraced_gi_enabled: u32,
@@ -144,6 +147,10 @@ pub struct RenderParams {
     pub emissive_shadow_samples: u32,
     pub directional_shadow_samples: u32,
     pub cloud_object_shadows_enabled: u32,
+    pub max_rt_shadow_distance: f32,
+    pub rt_shadow_ray_t_max: f32,
+    pub min_soft_shadow_radius: f32,
+    pub _pad_shadow_mode: u32,
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
     pub gi_quality: u32,

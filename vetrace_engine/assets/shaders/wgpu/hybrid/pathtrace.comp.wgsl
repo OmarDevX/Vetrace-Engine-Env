@@ -18,8 +18,10 @@ struct Object {
     tri_bvh_start: u32,
     tri_bvh_count: u32,
     is_shaded: u32,
-    _pad5: u32,
-    _pad6: u32,
+    casts_raster_shadow: u32,
+    casts_raytraced_shadow: u32,
+    shadow_importance: f32,
+    max_shadow_distance: f32,
 };
 
 struct Triangle {
@@ -137,6 +139,11 @@ const SHADOW_QUALITY_OFF      : u32 = 0u;
 const SHADOW_QUALITY_LOW      : u32 = 1u;
 const SHADOW_QUALITY_MEDIUM   : u32 = 2u;
 const SHADOW_QUALITY_HIGH     : u32 = 3u;
+const SHADOW_MODE_NONE        : u32 = 0u;
+const SHADOW_MODE_RASTER      : u32 = 1u;
+const SHADOW_MODE_RT_HARD     : u32 = 2u;
+const SHADOW_MODE_RT_SOFT     : u32 = 3u;
+const SHADOW_MODE_HYBRID      : u32 = 4u;
 const T_EARLY_OUT             : f32 = 1e-3;
 
 struct Params {
@@ -157,13 +164,17 @@ struct Params {
     max_bounces: i32,
     light_samples: i32,
     dir_shadow_samples: i32,
+    shadow_mode: u32,
     raytraced_shadows_enabled: u32,
     shadow_quality: u32,
     max_shadow_rays: u32,
     emissive_shadow_samples: u32,
     directional_shadow_samples: u32,
     cloud_object_shadows_enabled: u32,
-    _pad_shadow: vec2<u32>,
+    max_rt_shadow_distance: f32,
+    rt_shadow_ray_t_max: f32,
+    min_soft_shadow_radius: f32,
+    _pad_shadow_mode: u32,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
     dir_light_dir: vec4<f32>,
@@ -1595,7 +1606,25 @@ fn is_visible(origin: vec3<f32>, end_pos: vec3<f32>, skip_a: u32, skip_b: u32) -
     var dir = end_pos - origin;
     let dist = length(dir);
     dir = dir / dist;
-    return !object_tlas_any_hit(origin, dir, dist - 0.01, skip_a, skip_b);
+    return !object_tlas_any_hit(origin, dir, min(dist - 0.01, params.rt_shadow_ray_t_max), skip_a, skip_b);
+}
+
+fn rt_shadow_mode_enabled() -> bool {
+    return params.raytraced_shadows_enabled != 0u &&
+        params.shadow_quality != SHADOW_QUALITY_OFF &&
+        params.shadow_mode != SHADOW_MODE_NONE &&
+        params.shadow_mode != SHADOW_MODE_RASTER;
+}
+
+fn soft_rt_shadow_enabled(light_radius: f32, dist: f32) -> bool {
+    if (params.shadow_mode == SHADOW_MODE_RT_HARD) { return false; }
+    if (params.shadow_mode == SHADOW_MODE_RT_SOFT) { return true; }
+    // Hybrid: keep shadow maps as the default and only spend soft RT rays on
+    // nearby/contact-important lights large enough to produce a visible penumbra.
+    let angular_radius = light_radius / max(dist, 1.0);
+    return params.shadow_mode == SHADOW_MODE_HYBRID &&
+        dist <= params.max_rt_shadow_distance &&
+        angular_radius >= params.min_soft_shadow_radius;
 }
 
 // -----------------------------
@@ -1605,7 +1634,13 @@ fn soft_shadow(origin: vec3<f32>, normal: vec3<f32>, light: Object, light_idx: u
     let lm = materials[light.material_index];
     if (lm.emissiveStrength <= 0.0) { return 1.0; }
     var vis: f32 = 0.0;
-    if (params.raytraced_shadows_enabled == 0u || params.shadow_quality == SHADOW_QUALITY_OFF) { return 1.0; }
+    let light_dist = length(light.position - origin);
+    let light_rt_max = min(params.max_rt_shadow_distance, light.max_shadow_distance);
+    let hybrid_selected = params.shadow_mode != SHADOW_MODE_HYBRID || light.casts_raytraced_shadow != 0u || light.shadow_importance >= 0.75;
+    if (!rt_shadow_mode_enabled() || !hybrid_selected || light_dist > light_rt_max) { return 1.0; }
+    if (!soft_rt_shadow_enabled(max(light.radius, max(max(light.size.x * light.scale.x, light.size.y * light.scale.y), light.size.z * light.scale.z) * 0.5), light_dist)) {
+        return select(0.0, 1.0, is_visible(origin, light.position, 0xffffffffu, light_idx));
+    }
     let requested = max(1u, max(u32(params.light_samples), params.emissive_shadow_samples));
     var quality_cap = MAX_LIGHT_SAMPLES;
     if (params.shadow_quality <= SHADOW_QUALITY_LOW) { quality_cap = 1u; }
@@ -1629,9 +1664,10 @@ fn soft_shadow(origin: vec3<f32>, normal: vec3<f32>, light: Object, light_idx: u
 const DIR_SHADOW_RADIUS: f32 = 0.05;
 fn dir_soft_shadow(origin: vec3<f32>, dir: vec3<f32>, rng: ptr<function, u32>) -> f32 {
     var vis: f32 = 0.0;
-    if (params.raytraced_shadows_enabled == 0u || params.shadow_quality == SHADOW_QUALITY_OFF) { return 1.0; }
-    if (params.shadow_quality == SHADOW_QUALITY_LOW) {
-        return select(0.0, 1.0, is_visible(origin, origin + dir * 1000.0, 0xffffffffu, 0xffffffffu));
+    if (!rt_shadow_mode_enabled()) { return 1.0; }
+    let dir_dist = params.max_rt_shadow_distance;
+    if (params.shadow_mode == SHADOW_MODE_RT_HARD || params.shadow_quality == SHADOW_QUALITY_LOW || !soft_rt_shadow_enabled(DIR_SHADOW_RADIUS, dir_dist)) {
+        return select(0.0, 1.0, is_visible(origin, origin + dir * min(1000.0, params.max_rt_shadow_distance), 0xffffffffu, 0xffffffffu));
     }
     let requested = max(1u, max(u32(params.dir_shadow_samples), params.directional_shadow_samples));
     var quality_cap = MAX_DIR_SHADOW_SAMPLES;
@@ -1641,7 +1677,7 @@ fn dir_soft_shadow(origin: vec3<f32>, dir: vec3<f32>, rng: ptr<function, u32>) -
     for (var s: u32 = 0u; s < samples; s = s + 1u) {
         let jitter = random_in_unit_sphere(rng) * DIR_SHADOW_RADIUS;
         let sdir = normalize(dir + jitter);
-        if (is_visible(origin, origin + sdir * 1000.0, 0xffffffffu, 0xffffffffu)) { vis = vis + 1.0; }
+        if (is_visible(origin, origin + sdir * min(1000.0, params.max_rt_shadow_distance), 0xffffffffu, 0xffffffffu)) { vis = vis + 1.0; }
     }
     return vis / f32(samples);
 }
