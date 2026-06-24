@@ -133,6 +133,7 @@ pub struct WgpuRenderer {
     compute_bind_group_layout: BindGroupLayout,
     compute_bind_group: BindGroup,
     compute_pipeline: ComputePipeline,
+    cloud_shadow_pipeline: ComputePipeline,
     denoise_bind_group_layout: BindGroupLayout,
     denoise_bind_group: BindGroup,
     denoise_pipeline: ComputePipeline,

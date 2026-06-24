@@ -210,7 +210,7 @@ struct Params {
 @group(0) @binding(35) var cloud_transmittance_tex: texture_storage_2d<r16float, write>;
 @group(0) @binding(36) var cloud_transmittance_history_tex: texture_2d<f32>;
 @group(0) @binding(37) var cloud_shadow_optical_depth_tex: texture_storage_2d<r16float, write>;
-@group(0) @binding(38) var cloud_shadow_history_tex: texture_2d<f32>;
+@group(0) @binding(38) var cloud_directional_shadow_tex: texture_2d<f32>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -494,14 +494,63 @@ fn cloud_shadow_transmittance_for_volume(cloud: VolumetricCloud, p: vec3<f32>, l
     return exp(-optical_depth * shadow_strength);
 }
 
+
+const CLOUD_SHADOW_WORLD_EXTENT: f32 = 4096.0;
+const CLOUD_SHADOW_RAY_LENGTH: f32 = 65536.0;
+const CLOUD_SHADOW_MARCH_STEPS: u32 = 64u;
+
+fn sun_shadow_basis(light_dir: vec3<f32>) -> mat3x3<f32> {
+    let sun_dir = normalize(light_dir);
+    let up_hint = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(sun_dir.y) > 0.95);
+    let sx = normalize(cross(up_hint, sun_dir));
+    let sy = normalize(cross(sun_dir, sx));
+    return mat3x3<f32>(sx, sy, sun_dir);
+}
+
+fn world_to_sun_shadow_uv(p: vec3<f32>, basis: mat3x3<f32>) -> vec2<f32> {
+    let sun_xy = vec2<f32>(dot(p, basis[0]), dot(p, basis[1]));
+    return sun_xy / CLOUD_SHADOW_WORLD_EXTENT + vec2<f32>(0.5);
+}
+
+fn sun_shadow_texel_world_origin(uv: vec2<f32>, basis: mat3x3<f32>) -> vec3<f32> {
+    let sun_xy = (uv - vec2<f32>(0.5)) * CLOUD_SHADOW_WORLD_EXTENT;
+    return basis[0] * sun_xy.x + basis[1] * sun_xy.y - basis[2] * (CLOUD_SHADOW_RAY_LENGTH * 0.5);
+}
+
+fn directional_cloud_shadow_optical_depth(uv: vec2<f32>, light_dir: vec3<f32>) -> f32 {
+    let basis = sun_shadow_basis(light_dir);
+    let ray_origin = sun_shadow_texel_world_origin(uv, basis);
+    let dt = CLOUD_SHADOW_RAY_LENGTH / f32(CLOUD_SHADOW_MARCH_STEPS);
+    var optical_depth = 0.0;
+    for (var si: u32 = 0u; si < CLOUD_SHADOW_MARCH_STEPS; si = si + 1u) {
+        let p = ray_origin + basis[2] * ((f32(si) + 0.5) * dt);
+        for (var ci: u32 = 0u; ci < params.cloud_count && ci < MAX_VOLUMETRIC_CLOUDS; ci = ci + 1u) {
+            let cloud = clouds[ci];
+            optical_depth += cloud_density(cloud, p) * dt * max(cloud.light_padding.y, 0.0);
+        }
+    }
+    return optical_depth;
+}
+
+@compute @workgroup_size(8,8)
+fn cloud_shadow_main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let dims = textureDimensions(cloud_shadow_optical_depth_tex);
+    if (id.x >= dims.x || id.y >= dims.y) { return; }
+    let uv = (vec2<f32>(id.xy) + vec2<f32>(0.5)) / vec2<f32>(dims);
+    let light_dir = normalize(params.dir_light_dir.xyz);
+    let od = directional_cloud_shadow_optical_depth(uv, light_dir);
+    textureStore(cloud_shadow_optical_depth_tex, vec2<i32>(id.xy), vec4<f32>(od, 0.0, 0.0, 1.0));
+}
+
 fn cached_cloud_shadow_transmittance(p: vec3<f32>, light_dir: vec3<f32>) -> f32 {
     // Directional-cache approximation: project world position onto a stable plane
     // perpendicular to the sun and reuse the precomputed optical-depth atlas.
-    let up_hint = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(light_dir.y) > 0.95);
-    let sx = normalize(cross(up_hint, light_dir));
-    let sy = cross(light_dir, sx);
-    let uv = fract(vec2<f32>(dot(p, sx), dot(p, sy)) * 0.0005 + vec2<f32>(0.5));
-    let od = textureSampleLevel(cloud_shadow_history_tex, tex_sampler, uv, 0.0).r;
+    let basis = sun_shadow_basis(light_dir);
+    let uv = world_to_sun_shadow_uv(p, basis);
+    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) {
+        return 1.0;
+    }
+    let od = textureSampleLevel(cloud_directional_shadow_tex, tex_sampler, uv, 0.0).r;
     return exp(-od);
 }
 
@@ -2108,7 +2157,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let cloud_result = composite_clouds(vec3<f32>(0.0), view_dir, cloud_scene_depth, final_col, id.xy);
     textureStore(cloud_radiance_tex, vec2<i32>(id.xy), vec4<f32>(cloud_result.radiance, 1.0));
     textureStore(cloud_transmittance_tex, vec2<i32>(id.xy), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
-    textureStore(cloud_shadow_optical_depth_tex, vec2<i32>(id.xy), vec4<f32>(-log(max(cloud_result.transmittance, 1e-3)), 0.0, 0.0, 1.0));
     let L = cloud_result.color;
     let max_lum = 10.0;
     let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
