@@ -308,6 +308,13 @@ impl Scene {
                         cloud.anvil_strength,
                         cloud.curl_strength,
                     ],
+                    lighting_params0: [
+                        cloud.forward_anisotropy,
+                        cloud.backward_anisotropy,
+                        cloud.lobe_blend,
+                        cloud.powder_strength,
+                    ],
+                    lighting_params1: [cloud.silver_lining_strength, 0.0, 0.0, 0.0],
                 });
             }
 

@@ -121,6 +121,8 @@ struct VolumetricCloud {
     shape_params: vec4<f32>, // x=thickness, y=primary steps, z=shape scale, w=detail scale
     weather_params: vec4<f32>, // x=weather scale, yz=weather offset, w=macro variation
     detail_params: vec4<f32>, // x=erosion, y=cloud type, z=anvil/top shape, w=curl strength
+    lighting_params0: vec4<f32>, // x=forward g, y=backward g, z=forward lobe blend, w=powder strength
+    lighting_params1: vec4<f32>, // x=silver lining strength, yzw=reserved
 };
 
 // --- runtime safety caps ---
@@ -309,9 +311,31 @@ fn cloud_shell_exit_distance(cloud: VolumetricCloud, p: vec3<f32>, light_dir: ve
     return max(hit.y, 0.0);
 }
 
-fn cloud_phase_lobe(g: f32, mu: f32) -> f32 {
+fn cloud_henyey_greenstein(g: f32, mu: f32) -> f32 {
     let gg = g * g;
     return (1.0 - gg) / max(0.001, pow(1.0 + gg - 2.0 * g * mu, 1.5));
+}
+
+fn cloud_phase_lobe(cloud: VolumetricCloud, mu: f32) -> f32 {
+    let forward_g = clamp(cloud.lighting_params0.x, 0.0, 0.95);
+    let backward_g = -clamp(abs(cloud.lighting_params0.y), 0.0, 0.95);
+    let forward_blend = clamp(cloud.lighting_params0.z, 0.0, 1.0);
+    let forward_lobe = cloud_henyey_greenstein(forward_g, mu);
+    let backward_lobe = cloud_henyey_greenstein(backward_g, mu);
+    return mix(backward_lobe, forward_lobe, forward_blend);
+}
+
+fn cloud_powder_term(cloud: VolumetricCloud, sigma: f32, light_t: f32) -> f32 {
+    let strength = clamp(cloud.lighting_params0.w, 0.0, 2.0);
+    let density_powder = 1.0 - exp(-max(sigma, 0.0) * 2.25);
+    let edge_visibility = smoothstep(0.05, 0.95, light_t);
+    return 1.0 + strength * density_powder * edge_visibility;
+}
+
+fn cloud_silver_lining(cloud: VolumetricCloud, mu: f32, light_t: f32) -> f32 {
+    let strength = clamp(cloud.lighting_params1.x, 0.0, 4.0);
+    let rim = pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0), 16.0);
+    return 1.0 + strength * rim * smoothstep(0.08, 0.75, light_t);
 }
 
 fn cloud_multi_scatter_lighting(cloud: VolumetricCloud, sigma: f32, mu: f32, light_t: f32, sun_col: vec3<f32>) -> vec3<f32> {
@@ -330,7 +354,7 @@ fn cloud_multi_scatter_lighting(cloud: VolumetricCloud, sigma: f32, mu: f32, lig
     var g_scale = eccentricity;
     for (var octave: u32 = 0u; octave < octaves; octave = octave + 1u) {
         let octave_g = clamp(cloud.coverage_density_noise_phase.w * g_scale, -0.95, 0.95);
-        energy += phase_scale * cloud_phase_lobe(octave_g, mu);
+        energy += phase_scale * cloud_henyey_greenstein(octave_g, mu);
         phase_scale *= attenuation;
         g_scale *= eccentricity;
     }
@@ -539,9 +563,8 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
             let p = ro + rd * t;
             let sigma = cloud_density(cloud, p);
             if (sigma <= 0.0) { continue; }
-            let g = clamp(cloud.coverage_density_noise_phase.w, -0.95, 0.95);
             let mu = clamp(dot(rd, sun_dir), -1.0, 1.0);
-            let phase = cloud_phase_lobe(g, mu);
+            let phase = cloud_phase_lobe(cloud, mu);
             let jitter = cloud_blue_noise_jitter(pixel, u32(params.frame_number), sidx + ci * 97u);
             var object_shadow = 1.0;
             if (cloud_object_shadow_sample_enabled(cloud, sidx, steps)) {
@@ -555,15 +578,21 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
             let multi_scatter = cloud_multi_scatter_lighting(cloud, sigma, mu, light_t, atmosphere_sun_col + sky_ambient * 0.55);
             let absorb = exp(-sigma * dt);
             let scatter = (1.0 - absorb) * transmittance;
-            let direct_lighting = atmosphere_sun_col * phase * 0.08 * light_t;
-            let ambient_lighting = sky_ambient * mix(0.90, 0.35, light_t);
+            let powder = cloud_powder_term(cloud, sigma, light_t);
+            let silver = cloud_silver_lining(cloud, mu, light_t);
+            let direct_lighting = atmosphere_sun_col * phase * 0.08 * light_t * powder * silver;
+            let ambient_lighting = sky_ambient * mix(0.95, 0.30, light_t) * mix(0.85, 1.15, powder - 1.0);
             let cloud_lighting = direct_lighting + multi_scatter + ambient_lighting;
-            radiance += scatter * min(cloud_lighting, atmosphere_sun_col * 1.25 + sky_ambient * 1.8 + vec3<f32>(0.015));
+            let sample_lighting = min(cloud_lighting, atmosphere_sun_col * (1.35 + 0.45 * cloud.lighting_params1.x) + sky_ambient * 2.0 + vec3<f32>(0.015));
+            let aerial_sample = textureSampleLevel(aerial_perspective_lut, tex_sampler, vec3<f32>(atmosphere_lut_uv(rd), clamp(sqrt(clamp((t - 2.0) / 998.0, 0.0, 1.0)), 0.0, 1.0)), 0.0);
+            let camera_tinted_lighting = aerial_sample.xyz + sample_lighting * vec3<f32>(aerial_sample.w);
+            radiance += scatter * camera_tinted_lighting;
             transmittance *= absorb;
             if (transmittance < 0.01) { break; }
         }
     }
-    return radiance + base_color * transmittance;
+    let integrated = radiance + base_color * transmittance;
+    return sample_aerial_perspective_lut(rd, scene_depth, integrated);
 }
 
 // -----------------------------
