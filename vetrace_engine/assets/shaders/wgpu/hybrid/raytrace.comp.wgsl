@@ -443,11 +443,61 @@ fn cloud_shadow_transmittance(p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -
     return transmittance;
 }
 
+fn transmittance_lut_uv(atmo: Atmosphere, origin: vec3<f32>, light_dir: vec3<f32>) -> vec2<f32> {
+    let up = normalize(origin - atmo.center_radius.xyz);
+    let atmosphere_thickness = max(atmo.atmo_g_height.x - atmo.center_radius.w, 1e-3);
+    let altitude = clamp(length(origin - atmo.center_radius.xyz) - atmo.center_radius.w, 0.0, atmosphere_thickness);
+    let altitude_u = altitude / atmosphere_thickness;
+    let zenith_u = dot(normalize(light_dir), up) * 0.5 + 0.5;
+    return clamp(vec2<f32>(zenith_u, altitude_u), vec2<f32>(0.0), vec2<f32>(1.0));
+}
+
+fn sample_transmittance_lut(atmo: Atmosphere, origin: vec3<f32>, light_dir: vec3<f32>) -> vec3<f32> {
+    return textureSampleLevel(transmittance_lut, tex_sampler, transmittance_lut_uv(atmo, origin, light_dir), 0.0).xyz;
+}
+
+fn atmosphere_sun_transmittance(p: vec3<f32>, sun_dir: vec3<f32>) -> vec3<f32> {
+    var trans = vec3<f32>(1.0);
+    for (var ai: u32 = 0u; ai < params.atmo_count && ai < MAX_ATMOSPHERES; ai = ai + 1u) {
+        let atmo = params.atmos[ai];
+        let atmosphere_radius = max(atmo.atmo_g_height.x, atmo.center_radius.w);
+        let rel = p - atmo.center_radius.xyz;
+        if (length(rel) <= atmosphere_radius) {
+            var atmo_trans = sample_transmittance_lut(atmo, p, sun_dir);
+            let planet_hit = ray_sphere_forward_interval(p - atmo.center_radius.xyz, sun_dir, vec3<f32>(0.0), atmo.center_radius.w);
+            if (planet_hit.y > 0.0 && planet_hit.x > 0.0) {
+                atmo_trans = vec3<f32>(0.0);
+            }
+            trans *= atmo_trans;
+        }
+    }
+    return clamp(trans, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn sky_ambient_probe(up: vec3<f32>, sun_dir: vec3<f32>) -> vec3<f32> {
+    let safe_up = normalize(select(vec3<f32>(0.0, 1.0, 0.0), up, length(up) > 1e-4));
+    let sun_tangent = sun_dir - safe_up * dot(sun_dir, safe_up);
+    let safe_sun_tangent = normalize(select(vec3<f32>(1.0, 0.0, 0.0), sun_tangent, length(sun_tangent) > 1e-4));
+    let horizon_dir = normalize(safe_up * 0.18 + safe_sun_tangent * 0.82);
+    let zenith_sample = sample_sky_view_lut(safe_up);
+    let horizon_sample = sample_sky_view_lut(horizon_dir);
+    let anti_sun_sample = sample_sky_view_lut(normalize(safe_up * 0.45 - sun_dir * 0.55));
+    let sun_height = clamp(dot(sun_dir, safe_up) * 0.5 + 0.5, 0.0, 1.0);
+    let sunset_warmth = smoothstep(0.02, 0.45, 1.0 - abs(dot(sun_dir, safe_up)));
+    let base_probe = zenith_sample * 0.55 + horizon_sample * 0.30 + anti_sun_sample * 0.15;
+    let warm_tint = vec3<f32>(1.22, 0.72, 0.42);
+    let cool_shadow_tint = vec3<f32>(0.50, 0.62, 0.82);
+    let tint = mix(cool_shadow_tint, warm_tint, sunset_warmth * (1.0 - sun_height * 0.35));
+    return max(base_probe * tint * 0.18, params.skycolor.xyz * 0.015);
+}
+
 fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: vec3<f32>, pixel: vec2<u32>) -> vec3<f32> {
     var radiance = vec3<f32>(0.0);
     var transmittance = 1.0;
     let sun_dir = normalize(-params.dir_light_dir.xyz);
     let sun_col = params.dir_light_color.xyz * max(params.dir_light_dir.w, 0.0);
+    let camera_up = normalize(select(vec3<f32>(0.0, 1.0, 0.0), ro, length(ro) > 1e-4));
+    let camera_sky_ambient = sky_ambient_probe(camera_up, sun_dir);
     for (var ci: u32 = 0u; ci < params.cloud_count && ci < MAX_VOLUMETRIC_CLOUDS; ci = ci + 1u) {
         let cloud = clouds[ci];
         let interval = cloud_shell_interval(cloud, ro, rd, scene_depth);
@@ -470,11 +520,17 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
                 object_shadow = cloud_object_shadow_transmittance(p, sun_dir, cloud_shell_exit_distance(cloud, p, sun_dir));
             }
             let light_t = cloud_light_transmittance(cloud, p, sun_dir, jitter, object_shadow);
-            let multi_scatter = cloud_multi_scatter_lighting(cloud, sigma, mu, light_t, sun_col);
+            let local_up = normalize(select(camera_up, p - cloud.center_base_thickness.xyz, length(p - cloud.center_base_thickness.xyz) > 1e-4));
+            let sun_atmosphere_t = atmosphere_sun_transmittance(p, sun_dir);
+            let atmosphere_sun_col = sun_col * sun_atmosphere_t;
+            let sky_ambient = max(camera_sky_ambient, sky_ambient_probe(local_up, sun_dir));
+            let multi_scatter = cloud_multi_scatter_lighting(cloud, sigma, mu, light_t, atmosphere_sun_col + sky_ambient * 0.55);
             let absorb = exp(-sigma * dt);
             let scatter = (1.0 - absorb) * transmittance;
-            let cloud_lighting = sun_col * phase * 0.08 * light_t + multi_scatter + vec3<f32>(0.04, 0.05, 0.06);
-            radiance += scatter * min(cloud_lighting, sun_col * 1.25 + vec3<f32>(0.08));
+            let direct_lighting = atmosphere_sun_col * phase * 0.08 * light_t;
+            let ambient_lighting = sky_ambient * mix(0.90, 0.35, light_t);
+            let cloud_lighting = direct_lighting + multi_scatter + ambient_lighting;
+            radiance += scatter * min(cloud_lighting, atmosphere_sun_col * 1.25 + sky_ambient * 1.8 + vec3<f32>(0.015));
             transmittance *= absorb;
             if (transmittance < 0.01) { break; }
         }
