@@ -855,6 +855,13 @@ impl WgpuRenderer {
             entry_point: "main",
             compilation_options: Default::default(),
         });
+        let cloud_shadow_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("cloud_directional_shadow_pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_shader,
+            entry_point: "cloud_shadow_main",
+            compilation_options: Default::default(),
+        });
 
         let transmittance_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("transmittance_lut"),
@@ -2517,6 +2524,7 @@ impl WgpuRenderer {
             denoise_bind_group_layout,
             denoise_bind_group,
             compute_pipeline,
+            cloud_shadow_pipeline,
             denoise_pipeline,
             rt_denoise_bind_group_layout,
             rt_denoise_bind_group,
@@ -3515,6 +3523,15 @@ impl WgpuRenderer {
                         entry_point: "main",
                         compilation_options: Default::default(),
                     });
+            self.cloud_shadow_pipeline =
+                self.device
+                    .create_compute_pipeline(&ComputePipelineDescriptor {
+                        label: Some("cloud_directional_shadow_pipeline"),
+                        layout: Some(&compute_pipeline_layout),
+                        module: &compute_module,
+                        entry_point: "cloud_shadow_main",
+                        compilation_options: Default::default(),
+                    });
             self.prev_material_names = material_names.to_vec();
             self.prev_shader_defs = shaders.to_vec();
         }
@@ -4057,6 +4074,15 @@ impl WgpuRenderer {
                 (super::setup::AERIAL_PERSPECTIVE_LUT_HEIGHT + 7) / 8,
                 (super::setup::AERIAL_PERSPECTIVE_LUT_DEPTH + 3) / 4,
             );
+        }
+        {
+            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                label: Some("cloud_directional_shadow"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.cloud_shadow_pipeline);
+            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+            cpass.dispatch_workgroups((512 + 7) / 8, (512 + 7) / 8, 1);
         }
         {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
