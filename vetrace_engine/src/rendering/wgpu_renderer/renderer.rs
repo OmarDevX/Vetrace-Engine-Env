@@ -105,6 +105,8 @@ pub struct WgpuRenderer {
     cloud_transmittance_history_view: TextureView,
     cloud_shadow_texture: Texture,
     cloud_shadow_view: TextureView,
+    cloud_shadow_history_texture: Texture,
+    cloud_shadow_history_view: TextureView,
     material_textures: Vec<crate::gpu::TextureHandle>,
     gi_params_buffer: Buffer,
     postfx_buffer: Buffer,
