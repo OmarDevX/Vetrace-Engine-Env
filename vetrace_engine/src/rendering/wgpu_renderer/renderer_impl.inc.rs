@@ -2492,6 +2492,11 @@ impl WgpuRenderer {
                         blend: None,
                         write_mask: ColorWrites::ALL,
                     }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::R32Float,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
                 ],
                 compilation_options: Default::default(),
             }),
@@ -3854,6 +3859,8 @@ impl WgpuRenderer {
             cloud_sample_count: params.cloud_sample_count,
             cloud_temporal_quality: params.cloud_temporal_quality,
             cloud_shadow_mode: params.cloud_shadow_mode,
+            renderer_mode: params.renderer_mode as u32,
+            _pad_renderer_mode: [0; 3],
             atmos: {
                 let mut arr = [GpuAtmosphere::default(); MAX_ATMOSPHERES];
                 let count = params.atmos.len().min(MAX_ATMOSPHERES);
@@ -4112,6 +4119,14 @@ impl WgpuRenderer {
                             store: StoreOp::Store,
                         },
                     }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.depth_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::WHITE),
+                            store: StoreOp::Store,
+                        },
+                    }),
                 ],
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &self.depth_stencil_view,
@@ -4264,7 +4279,7 @@ impl WgpuRenderer {
             ImageCopyTexture { texture: &self.cloud_transmittance_history_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
             Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
         );
-        if !self.is_2d {
+        if !self.is_2d && params.renderer_mode.uses_path_traced_primary_visibility() {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -4273,7 +4288,7 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d {
+        if !self.is_2d && params.renderer_mode.uses_path_traced_primary_visibility() {
             // Propagate the denoised frame to the color texture so subsequent
             // passes operate on filtered pixels rather than the raw noisy
             // output.

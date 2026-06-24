@@ -63,6 +63,7 @@ struct FsOut {
     @location(0) albedo: vec4<f32>,
     @location(1) normal: vec4<f32>,
     @location(2) material: vec4<u32>,
+    @location(3) depth: f32,
 };
 
 @fragment
@@ -74,5 +75,6 @@ fn fs_main(in: VsOut) -> FsOut {
     let m = clamp(mat.metallic, 0.0, 1.0);
     let r = clamp(mat.roughness, 0.0, 1.0);
     out.material = vec4<u32>(u32(m * 255.0), u32(r * 255.0), 0u, 0u);
+    out.depth = in.pos.z;
     return out;
 }

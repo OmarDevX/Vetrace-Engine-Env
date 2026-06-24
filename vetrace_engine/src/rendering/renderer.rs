@@ -68,6 +68,27 @@ fn resize_texture(
     }
 }
 
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RendererMode {
+    RasterGame = 0,
+    HybridEffects = 1,
+    PathTracePreview = 2,
+    CinematicPathTrace = 3,
+}
+
+impl Default for RendererMode {
+    fn default() -> Self {
+        Self::RasterGame
+    }
+}
+
+impl RendererMode {
+    pub fn uses_path_traced_primary_visibility(self) -> bool {
+        matches!(self, Self::PathTracePreview | Self::CinematicPathTrace)
+    }
+}
+
 pub struct RenderParams {
     pub camera_pos: [f32; 3],
     pub camera_front: [f32; 3],
@@ -115,6 +136,8 @@ pub struct RenderParams {
     pub cloud_temporal_quality: u32,
     /// 0 = cached directional shadow map, 1 = high-quality/debug per-hit raymarch fallback.
     pub cloud_shadow_mode: u32,
+    /// Selects whether the final image starts from rasterized primary visibility or path tracing.
+    pub renderer_mode: RendererMode,
     pub clouds: Vec<GpuVolumetricCloud>,
 }
 
