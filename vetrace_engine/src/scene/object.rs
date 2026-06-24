@@ -190,6 +190,8 @@ pub struct GpuVolumetricCloud {
     pub shape_params: [f32; 4],
     pub weather_params: [f32; 4],
     pub detail_params: [f32; 4],
+    pub lighting_params0: [f32; 4],
+    pub lighting_params1: [f32; 4],
 }
 
 impl Default for GpuVolumetricCloud {
@@ -203,6 +205,8 @@ impl Default for GpuVolumetricCloud {
             shape_params: [0.0; 4],
             weather_params: [0.0; 4],
             detail_params: [0.0; 4],
+            lighting_params0: [0.0; 4],
+            lighting_params1: [0.0; 4],
         }
     }
 }
