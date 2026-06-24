@@ -1,9 +1,9 @@
 pub mod export;
 
-use std::any::TypeId;
-use egui::Ui;
-use export::{ExportedField, ExportKind};
 use crate::components::components::ColliderShape;
+use egui::Ui;
+use export::{ExportKind, ExportedField};
+use std::any::TypeId;
 
 /// Trait implemented by user components via `#[derive(Inspectable)]`
 pub trait Inspectable {
@@ -20,21 +20,66 @@ pub trait Inspectable {
                         } else if field.type_id == TypeId::of::<f64>() {
                             let val = &mut *(field.value as *mut f64);
                             let mut val_f32 = *val as f32;
-                            if ui.add(egui::Slider::new(&mut val_f32, min..=max).text(field.name)).changed() {
+                            if ui
+                                .add(egui::Slider::new(&mut val_f32, min..=max).text(field.name))
+                                .changed()
+                            {
                                 *val = val_f32 as f64;
                             }
                         } else if field.type_id == TypeId::of::<i32>() {
                             let val = &mut *(field.value as *mut i32);
                             let mut val_f32 = *val as f32;
-                            if ui.add(egui::Slider::new(&mut val_f32, min..=max).text(field.name)).changed() {
+                            if ui
+                                .add(egui::Slider::new(&mut val_f32, min..=max).text(field.name))
+                                .changed()
+                            {
                                 *val = val_f32 as i32;
                             }
                         } else if field.type_id == TypeId::of::<u32>() {
                             let val = &mut *(field.value as *mut u32);
                             let mut val_f32 = *val as f32;
-                            if ui.add(egui::Slider::new(&mut val_f32, min..=max).text(field.name)).changed() {
+                            if ui
+                                .add(egui::Slider::new(&mut val_f32, min..=max).text(field.name))
+                                .changed()
+                            {
                                 *val = val_f32 as u32;
                             }
+                        }
+                    }
+
+                    ExportKind::Drag { min, max, speed } => {
+                        if field.type_id == TypeId::of::<f32>() {
+                            let val = &mut *(field.value as *mut f32);
+                            ui.add(
+                                egui::DragValue::new(val)
+                                    .clamp_range(min..=max)
+                                    .speed(speed)
+                                    .prefix(format!("{}: ", field.name)),
+                            );
+                        } else if field.type_id == TypeId::of::<f64>() {
+                            let val = &mut *(field.value as *mut f64);
+                            ui.add(
+                                egui::DragValue::new(val)
+                                    .clamp_range((min as f64)..=(max as f64))
+                                    .speed(speed as f64)
+                                    .prefix(format!("{}: ", field.name)),
+                            );
+                        } else if field.type_id == TypeId::of::<i32>() {
+                            let val = &mut *(field.value as *mut i32);
+                            ui.add(
+                                egui::DragValue::new(val)
+                                    .clamp_range((min as i32)..=(max as i32))
+                                    .speed(speed)
+                                    .prefix(format!("{}: ", field.name)),
+                            );
+                        } else if field.type_id == TypeId::of::<u32>() {
+                            let val = &mut *(field.value as *mut u32);
+                            ui.add(
+                                egui::DragValue::new(val)
+                                    .clamp_range((min as u32)..=(max as u32))
+                                    .speed(speed)
+                                    .prefix(format!("{}: ", field.name)),
+                            );
                         }
                     }
                     ExportKind::Checkbox => {

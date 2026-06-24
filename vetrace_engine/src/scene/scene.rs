@@ -208,6 +208,8 @@ impl Scene {
             self.gpu_objects.push(gpu_object);
             if let Some(atmo) = world.get::<crate::components::components::Atmosphere>(entity) {
                 let center = pos;
+                // Atmosphere distances are already authored in world units with
+                // `1 world unit = 1 km`; pack them unchanged for the shader.
                 let g_atmo = GpuAtmosphere {
                     center_radius: [center[0], center[1], center[2], atmo.planet_radius],
                     atmo_g_height: [atmo.atmo_radius, atmo.g, atmo.height_ray, atmo.height_mie],
