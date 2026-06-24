@@ -629,6 +629,9 @@ impl Engine {
         let mut dir_light_samples = 1i32;
         let mut max_bounces = 3i32;
         let mut raytraced_shadows_enabled = 1u32;
+        let mut raytraced_reflections_enabled = 1u32;
+        let mut raytraced_gi_enabled = 0u32;
+        let mut raytraced_transparency_enabled = 1u32;
         let mut shadow_quality = 2u32;
         let mut max_shadow_rays = 2u32;
         let mut emissive_shadow_samples = 1u32;
@@ -653,6 +656,9 @@ impl Engine {
                 dir_light_samples = pp.dir_light_samples as i32;
                 max_bounces = pp.max_bounces as i32;
                 raytraced_shadows_enabled = pp.raytraced_shadows_enabled as u32;
+                raytraced_reflections_enabled = pp.raytraced_reflections_enabled as u32;
+                raytraced_gi_enabled = pp.raytraced_gi_enabled as u32;
+                raytraced_transparency_enabled = pp.raytraced_transparency_enabled as u32;
                 shadow_quality = pp.shadow_quality.min(4);
                 max_shadow_rays = pp.max_shadow_rays.min(8);
                 emissive_shadow_samples = pp.emissive_shadow_samples.min(8);
@@ -689,6 +695,9 @@ impl Engine {
             light_samples,
             dir_shadow_samples: dir_light_samples,
             raytraced_shadows_enabled,
+            raytraced_reflections_enabled,
+            raytraced_gi_enabled,
+            raytraced_transparency_enabled,
             shadow_quality,
             max_shadow_rays,
             emissive_shadow_samples,
