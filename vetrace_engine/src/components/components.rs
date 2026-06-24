@@ -3308,9 +3308,16 @@ impl Inspectable for VolumetricCloud {
     }
 }
 
+/// Atmospheric scattering parameters.
+///
+/// Distance values are authored in engine world units, and the atmosphere shader
+/// interprets `1.0` world unit as `1.0` kilometer. Keep radius and scale-height
+/// fields in this kilometer-equivalent convention when packing GPU data.
 #[derive(Debug)]
 pub struct Atmosphere {
+    /// Planet ground radius in world units (`1 world unit = 1 km`).
     pub planet_radius: f32,
+    /// Atmosphere top radius in world units (`1 world unit = 1 km`).
     pub atmo_radius: f32,
     pub ray_beta: Vec3,
     pub mie_beta: Vec3,
@@ -3321,22 +3328,36 @@ pub struct Atmosphere {
     pub multi_scatter_phase_boost: f32,
     pub multi_scatter_ambient_mix: f32,
     pub g: f32,
+    /// Rayleigh density scale height in world units (`1 world unit = 1 km`).
     pub height_ray: f32,
+    /// Mie density scale height in world units (`1 world unit = 1 km`).
     pub height_mie: f32,
+    /// Absorption density scale height in world units (`1 world unit = 1 km`).
     pub height_absorption: f32,
     pub absorption_falloff: f32,
+    /// Ozone layer center altitude above `planet_radius` in world units (`1 world unit = 1 km`).
     pub ozone_center_altitude: f32,
+    /// Ozone layer thickness in world units (`1 world unit = 1 km`).
     pub ozone_thickness: f32,
     pub ozone_strength: f32,
     pub primary_steps: i32,
     pub light_steps: i32,
 }
 
-impl Default for Atmosphere {
-    fn default() -> Self {
-        Self {
-            planet_radius: 100.0,
-            atmo_radius: 110.0,
+/// Presets for physical atmosphere authoring. Values use the engine convention
+/// `1.0` world unit = `1.0` kilometer.
+pub mod atmosphere_presets {
+    use super::{Atmosphere, Vec3};
+
+    /// Earth / Unreal-like SkyAtmosphere preset.
+    ///
+    /// Matches common UE SkyAtmosphere kilometer defaults: 6360 km ground radius,
+    /// 6460 km atmosphere top radius, 8 km Rayleigh scale height, 1.2 km Mie
+    /// scale height, and a broad ozone layer centered around 25 km.
+    pub fn earth_unreal_like() -> Atmosphere {
+        Atmosphere {
+            planet_radius: 6360.0,
+            atmo_radius: 6460.0,
             ray_beta: Vec3::new(5.5e-3, 0.013, 0.0224),
             mie_beta: Vec3::splat(0.021),
             ambient_beta: Vec3::ZERO,
@@ -3350,12 +3371,28 @@ impl Default for Atmosphere {
             height_mie: 1.2,
             height_absorption: 30.0,
             absorption_falloff: 4.0,
-            ozone_center_altitude: 30.0,
-            ozone_thickness: 10.0,
+            ozone_center_altitude: 25.0,
+            ozone_thickness: 15.0,
             ozone_strength: 1.0,
             primary_steps: 16,
             light_steps: 8,
         }
+    }
+}
+
+impl Atmosphere {
+    /// Engine-unit-to-kilometer scale used by atmosphere fields and GPU packing.
+    pub const WORLD_UNITS_PER_KILOMETER: f32 = 1.0;
+
+    /// Earth / Unreal-like SkyAtmosphere preset in kilometer-equivalent world units.
+    pub fn earth_unreal_like() -> Self {
+        atmosphere_presets::earth_unreal_like()
+    }
+}
+
+impl Default for Atmosphere {
+    fn default() -> Self {
+        Self::earth_unreal_like()
     }
 }
 
@@ -3366,18 +3403,20 @@ impl Inspectable for Atmosphere {
         vec![
             ExportedField {
                 name: "planet_radius",
-                kind: ExportKind::Slider {
-                    min: 0.0,
-                    max: 1000.0,
+                kind: ExportKind::Drag {
+                    min: 1.0,
+                    max: 7000.0,
+                    speed: 0.1,
                 },
                 value: &mut self.planet_radius as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "atmo_radius",
-                kind: ExportKind::Slider {
-                    min: 0.0,
-                    max: 1000.0,
+                kind: ExportKind::Drag {
+                    min: 1.0,
+                    max: 7000.0,
+                    speed: 0.1,
                 },
                 value: &mut self.atmo_radius as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),

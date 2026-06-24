@@ -3,7 +3,16 @@ use std::any::TypeId;
 /// UI export kind (slider, checkbox, etc)
 #[derive(Debug)]
 pub enum ExportKind {
-    Slider { min: f32, max: f32 },
+    Slider {
+        min: f32,
+        max: f32,
+    },
+    /// Numeric drag editor for large ranges that need precise manual authoring.
+    Drag {
+        min: f32,
+        max: f32,
+        speed: f32,
+    },
     Checkbox,
     Text,
     Dropdown(Vec<String>),
