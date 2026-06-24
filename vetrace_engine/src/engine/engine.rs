@@ -23,7 +23,7 @@ use crate::ecs::{Component, World};
 use crate::engine::component_io::{apply_component_data, export_component_data};
 use crate::engine::core::EngineCore;
 use crate::events::{Event as CustomEvent, LuaEvent, SceneEvents};
-use crate::input::{Input, window::WindowManager};
+use crate::input::{window::WindowManager, Input};
 use crate::inspector::Inspectable;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
@@ -33,7 +33,7 @@ use crate::rendering::Renderer;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
 use crate::scene::{
-    loader::{ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile, save_scene},
+    loader::{save_scene, ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile},
     scene::Scene,
 };
 use crate::systems::collision::CollisionEvent;
@@ -625,6 +625,12 @@ impl Engine {
         let mut light_samples = 1i32;
         let mut dir_light_samples = 1i32;
         let mut max_bounces = 3i32;
+        let mut raytraced_shadows_enabled = 1u32;
+        let mut shadow_quality = 2u32;
+        let mut max_shadow_rays = 2u32;
+        let mut emissive_shadow_samples = 1u32;
+        let mut directional_shadow_samples = 1u32;
+        let mut cloud_object_shadows_enabled = 1u32;
         let mut dof_aperture = 0.0f32;
         let mut dof_focus_dist = 0.0f32;
         let mut dof_enable = 0u32;
@@ -643,6 +649,12 @@ impl Engine {
                 light_samples = pp.light_samples as i32;
                 dir_light_samples = pp.dir_light_samples as i32;
                 max_bounces = pp.max_bounces as i32;
+                raytraced_shadows_enabled = pp.raytraced_shadows_enabled as u32;
+                shadow_quality = pp.shadow_quality.min(4);
+                max_shadow_rays = pp.max_shadow_rays.min(8);
+                emissive_shadow_samples = pp.emissive_shadow_samples.min(8);
+                directional_shadow_samples = pp.directional_shadow_samples.min(8);
+                cloud_object_shadows_enabled = pp.cloud_object_shadows_enabled as u32;
                 atmosphere = pp.atmosphere;
                 if let Some(d) = &pp.dof {
                     dof_enable = 1;
@@ -673,6 +685,12 @@ impl Engine {
             max_bounces,
             light_samples,
             dir_shadow_samples: dir_light_samples,
+            raytraced_shadows_enabled,
+            shadow_quality,
+            max_shadow_rays,
+            emissive_shadow_samples,
+            directional_shadow_samples,
+            cloud_object_shadows_enabled,
             inv_view_proj: {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
@@ -969,8 +987,8 @@ impl Engine {
     /// Process primitive objects from scene.objects (spheres, cubes, etc.)
     /// This replicates the primitive object processing from run.rs line 199-288
     fn process_primitive_objects(&mut self) {
-        use crate::CustomMaterial;
         use crate::scene::object::GpuMaterial;
+        use crate::CustomMaterial;
         use std::collections::HashMap;
 
         // Assemble GPU materials for every scene object, generating

@@ -3791,6 +3791,13 @@ impl WgpuRenderer {
             max_bounces: params.max_bounces,
             light_samples: params.light_samples,
             dir_shadow_samples: params.dir_shadow_samples,
+            raytraced_shadows_enabled: params.raytraced_shadows_enabled,
+            shadow_quality: params.shadow_quality,
+            max_shadow_rays: params.max_shadow_rays,
+            emissive_shadow_samples: params.emissive_shadow_samples,
+            directional_shadow_samples: params.directional_shadow_samples,
+            cloud_object_shadows_enabled: params.cloud_object_shadows_enabled,
+            _pad_shadow: [0; 2],
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
             dir_light_dir: [
