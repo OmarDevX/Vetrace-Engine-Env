@@ -626,7 +626,7 @@ impl WgpuRenderer {
         let mut shader_compiler = RaytraceShaderCompiler {
             device: device.clone(),
             base_shader_template: include_str!(
-                "../../../assets/shaders/wgpu/hybrid/raytrace.comp.wgsl"
+                "../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"
             )
             .to_string(),
             material_registry: std::collections::HashMap::new(),

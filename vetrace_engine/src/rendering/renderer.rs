@@ -87,6 +87,10 @@ impl RendererMode {
     pub fn uses_path_traced_primary_visibility(self) -> bool {
         matches!(self, Self::PathTracePreview | Self::CinematicPathTrace)
     }
+
+    pub fn uses_decomposed_rt_effects(self) -> bool {
+        matches!(self, Self::HybridEffects)
+    }
 }
 
 pub struct RenderParams {
@@ -105,6 +109,9 @@ pub struct RenderParams {
     pub light_samples: i32,
     pub dir_shadow_samples: i32,
     pub raytraced_shadows_enabled: u32,
+    pub raytraced_reflections_enabled: u32,
+    pub raytraced_gi_enabled: u32,
+    pub raytraced_transparency_enabled: u32,
     pub shadow_quality: u32,
     pub max_shadow_rays: u32,
     pub emissive_shadow_samples: u32,

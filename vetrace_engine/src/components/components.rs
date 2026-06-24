@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::export::{ExportKind, ExportedField};
 use crate::inspector::Inspectable;
+use crate::inspector::export::{ExportKind, ExportedField};
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -2355,6 +2355,9 @@ pub struct PostProcessing {
     pub gi_enabled: bool,
     pub path_traced_gi: bool,
     pub raytraced_shadows_enabled: bool,
+    pub raytraced_reflections_enabled: bool,
+    pub raytraced_gi_enabled: bool,
+    pub raytraced_transparency_enabled: bool,
     /// 0 Off, 1 Low hard shadows, 2 Medium capped soft shadows, 3 High, 4 Cinematic.
     pub shadow_quality: u32,
     pub max_shadow_rays: u32,
@@ -2386,6 +2389,9 @@ impl Default for PostProcessing {
             gi_enabled: true,
             path_traced_gi: false,
             raytraced_shadows_enabled: true,
+            raytraced_reflections_enabled: true,
+            raytraced_gi_enabled: false,
+            raytraced_transparency_enabled: true,
             shadow_quality: 2,
             max_shadow_rays: 2,
             emissive_shadow_samples: 1,
@@ -2417,6 +2423,9 @@ impl PostProcessing {
             gi_enabled: true,
             path_traced_gi: false,
             raytraced_shadows_enabled: true,
+            raytraced_reflections_enabled: true,
+            raytraced_gi_enabled: false,
+            raytraced_transparency_enabled: true,
             shadow_quality: 1,
             max_shadow_rays: 1,
             emissive_shadow_samples: 1,
@@ -2471,6 +2480,15 @@ impl Inspectable for PostProcessing {
             ui.separator();
             ui.label("Direct Lighting Shadows");
             ui.checkbox(&mut self.raytraced_shadows_enabled, "Ray Traced Shadows");
+            ui.checkbox(
+                &mut self.raytraced_reflections_enabled,
+                "Ray Traced Reflections",
+            );
+            ui.checkbox(&mut self.raytraced_gi_enabled, "Ray Traced GI");
+            ui.checkbox(
+                &mut self.raytraced_transparency_enabled,
+                "Ray Traced Transparency",
+            );
             egui::ComboBox::from_id_source("shadow_quality_pp")
                 .selected_text(match self.shadow_quality {
                     0 => "Off",
