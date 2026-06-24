@@ -75,6 +75,8 @@ pub async fn init_wgpu(
     (device, queue, surface, config)
 }
 
+pub const TRANSMITTANCE_LUT_WIDTH: u32 = 256;
+pub const TRANSMITTANCE_LUT_HEIGHT: u32 = 64;
 pub const SKY_VIEW_LUT_WIDTH: u32 = 256;
 pub const SKY_VIEW_LUT_HEIGHT: u32 = 128;
 // Multi-scattering LUT axes are view/sun cosine (x) and normalized altitude (y).
@@ -96,8 +98,33 @@ pub fn create_atmosphere_lut_textures(
     Texture,
     TextureView,
     TextureView,
+    Texture,
+    TextureView,
+    TextureView,
 ) {
     let lut_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING;
+    let transmittance_lut_texture = device.create_texture(&TextureDescriptor {
+        label: Some("transmittance_lut"),
+        size: Extent3d {
+            width: TRANSMITTANCE_LUT_WIDTH,
+            height: TRANSMITTANCE_LUT_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba16Float,
+        usage: lut_usage,
+        view_formats: &[],
+    });
+    let transmittance_lut_view =
+        transmittance_lut_texture.create_view(&TextureViewDescriptor::default());
+    let transmittance_lut_storage_view =
+        transmittance_lut_texture.create_view(&TextureViewDescriptor {
+            label: Some("transmittance_lut_write"),
+            ..Default::default()
+        });
+
     let sky_view_lut_texture = device.create_texture(&TextureDescriptor {
         label: Some("sky_view_lut"),
         size: Extent3d {
@@ -164,6 +191,9 @@ pub fn create_atmosphere_lut_textures(
         });
 
     (
+        transmittance_lut_texture,
+        transmittance_lut_view,
+        transmittance_lut_storage_view,
         sky_view_lut_texture,
         sky_view_lut_view,
         sky_view_lut_storage_view,

@@ -47,7 +47,7 @@ fn blue_noise_rgba8_tile() -> Vec<u8> {
     rgba
 }
 
-fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 5] {
+fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 6] {
     [
         BindGroupLayoutEntry {
             binding: 0,
@@ -93,6 +93,16 @@ fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 5] {
             binding: 4,
             visibility: ShaderStages::COMPUTE,
             ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        },
+        BindGroupLayoutEntry {
+            binding: 5,
+            visibility: ShaderStages::COMPUTE,
+            ty: BindingType::Texture {
+                multisampled: false,
+                view_dimension: TextureViewDimension::D2,
+                sample_type: TextureSampleType::Float { filterable: true },
+            },
             count: None,
         },
     ]
@@ -167,6 +177,9 @@ impl WgpuRenderer {
             linear_sampler,
         ) = create_textures(&device, config.format, render_width, render_height);
         let (
+            transmittance_lut_texture,
+            transmittance_lut_view,
+            transmittance_lut_storage_view,
             sky_view_lut_texture,
             sky_view_lut_view,
             sky_view_lut_storage_view,
@@ -627,6 +640,16 @@ impl WgpuRenderer {
                         ty: BindingType::Sampler(SamplerBindingType::Filtering),
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 29,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -643,6 +666,13 @@ impl WgpuRenderer {
             compilation_options: Default::default(),
         });
 
+        let transmittance_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("transmittance_lut"),
+            source: ShaderSource::Wgsl(
+                include_str!("../../../assets/shaders/wgpu/atmosphere/transmittance_lut.comp.wgsl")
+                    .into(),
+            ),
+        });
         let sky_view_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("sky_view_lut"),
             source: ShaderSource::Wgsl(
@@ -723,6 +753,16 @@ impl WgpuRenderer {
                         ty: BindingType::Sampler(SamplerBindingType::Filtering),
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
                 ],
             });
         let atmosphere_lut_pipeline_layout =
@@ -737,6 +777,13 @@ impl WgpuRenderer {
                 bind_group_layouts: &[&aerial_perspective_lut_bind_group_layout],
                 push_constant_ranges: &[],
             });
+        let transmittance_lut_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("transmittance_lut_pipeline"),
+            layout: Some(&atmosphere_lut_pipeline_layout),
+            module: &transmittance_lut_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+        });
         let sky_view_lut_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some("sky_view_lut_pipeline"),
             layout: Some(&atmosphere_lut_pipeline_layout),
@@ -760,6 +807,18 @@ impl WgpuRenderer {
                 entry_point: "main",
                 compilation_options: Default::default(),
             });
+        let transmittance_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("transmittance_lut_bg"),
+            layout: &atmosphere_lut_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&transmittance_lut_storage_view) },
+                BindGroupEntry { binding: 1, resource: params_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&sky_view_lut_view) },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&blue_noise_texture.0.view) },
+                BindGroupEntry { binding: 4, resource: BindingResource::Sampler(&blue_noise_texture.0.sampler) },
+                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&sky_view_lut_view) },
+            ],
+        });
         let sky_view_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("sky_view_lut_bg"),
             layout: &atmosphere_lut_bind_group_layout,
@@ -783,6 +842,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 4,
                     resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&transmittance_lut_view),
                 },
             ],
         });
@@ -810,6 +873,10 @@ impl WgpuRenderer {
                     binding: 4,
                     resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
                 },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&transmittance_lut_view),
+                },
             ],
         });
         let aerial_perspective_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -835,6 +902,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 4,
                     resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&transmittance_lut_view),
                 },
             ],
         });
@@ -1216,6 +1287,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 28,
                     resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 29,
+                    resource: BindingResource::TextureView(&transmittance_lut_view),
                 },
             ],
         });
@@ -2181,6 +2256,9 @@ impl WgpuRenderer {
             variance_view,
             lightmap_texture,
             lightmap_view,
+            transmittance_lut_texture,
+            transmittance_lut_view,
+            transmittance_lut_storage_view,
             sky_view_lut_texture,
             sky_view_lut_view,
             sky_view_lut_storage_view,
@@ -2211,6 +2289,8 @@ impl WgpuRenderer {
             sdfgi_mip_bind_group_layout,
             sdfgi_mip_pipeline,
             atmosphere_lut_bind_group_layout,
+            transmittance_lut_bind_group,
+            transmittance_lut_pipeline,
             sky_view_lut_bind_group,
             sky_view_lut_pipeline,
             multi_scattering_lut_bind_group,
@@ -2326,6 +2406,9 @@ impl WgpuRenderer {
             linear_sampler,
         ) = create_textures(&self.device, self.config.format, self.width, self.height);
         let (
+            transmittance_lut_texture,
+            transmittance_lut_view,
+            transmittance_lut_storage_view,
             sky_view_lut_texture,
             sky_view_lut_view,
             sky_view_lut_storage_view,
@@ -2387,6 +2470,9 @@ impl WgpuRenderer {
         self.variance_view = variance_view;
         self.lightmap_texture = lightmap_texture;
         self.lightmap_view = lightmap_view;
+        self.transmittance_lut_texture = transmittance_lut_texture;
+        self.transmittance_lut_view = transmittance_lut_view;
+        self.transmittance_lut_storage_view = transmittance_lut_storage_view;
         self.sky_view_lut_texture = sky_view_lut_texture;
         self.sky_view_lut_view = sky_view_lut_view;
         self.sky_view_lut_storage_view = sky_view_lut_storage_view;
@@ -2407,6 +2493,18 @@ impl WgpuRenderer {
         self.sampler = sampler;
         self.linear_sampler = linear_sampler;
         self.prev_view_proj = Mat4::IDENTITY.to_cols_array_2d();
+        self.transmittance_lut_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("transmittance_lut_bg"),
+            layout: &self.atmosphere_lut_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.transmittance_lut_storage_view) },
+                BindGroupEntry { binding: 1, resource: self.params_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.sky_view_lut_view) },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.blue_noise_texture.0.view) },
+                BindGroupEntry { binding: 4, resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler) },
+                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.sky_view_lut_view) },
+            ],
+        });
         self.sky_view_lut_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("sky_view_lut_bg"),
             layout: &self.atmosphere_lut_bind_group_layout,
@@ -2430,6 +2528,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 4,
                     resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.transmittance_lut_view),
                 },
             ],
         });
@@ -2459,6 +2561,10 @@ impl WgpuRenderer {
                     BindGroupEntry {
                         binding: 4,
                         resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 5,
+                        resource: BindingResource::TextureView(&self.transmittance_lut_view),
                     },
                 ],
             });
@@ -2490,6 +2596,10 @@ impl WgpuRenderer {
                     BindGroupEntry {
                         binding: 4,
                         resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 5,
+                        resource: BindingResource::TextureView(&self.transmittance_lut_view),
                     },
                 ],
             });
@@ -2619,6 +2729,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 28,
                     resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 29,
+                    resource: BindingResource::TextureView(&self.transmittance_lut_view),
                 },
             ],
         });
@@ -3126,6 +3240,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 28,
                     resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 29,
+                    resource: BindingResource::TextureView(&self.transmittance_lut_view),
                 },
             ],
         });
@@ -3667,6 +3785,13 @@ impl WgpuRenderer {
                 label: Some("atmosphere_luts"),
                 timestamp_writes: None,
             });
+            cpass.set_pipeline(&self.transmittance_lut_pipeline);
+            cpass.set_bind_group(0, &self.transmittance_lut_bind_group, &[]);
+            cpass.dispatch_workgroups(
+                (super::setup::TRANSMITTANCE_LUT_WIDTH + 7) / 8,
+                (super::setup::TRANSMITTANCE_LUT_HEIGHT + 7) / 8,
+                1,
+            );
             cpass.set_pipeline(&self.multi_scattering_lut_pipeline);
             cpass.set_bind_group(0, &self.multi_scattering_lut_bind_group, &[]);
             cpass.dispatch_workgroups(
