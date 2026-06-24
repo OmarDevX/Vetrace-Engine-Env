@@ -523,6 +523,7 @@ impl Engine {
                 dof_enable,
                 atmos,
                 atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
+                atmosphere_mode: 0,
                 clouds,
             };
             #[cfg(feature = "wgpu")]
