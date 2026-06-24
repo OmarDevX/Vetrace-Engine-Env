@@ -15,7 +15,7 @@ pub use egui::EguiRenderer;
 pub use egui_wgpu::EguiRenderer;
 #[cfg(not(feature = "wgpu"))]
 pub use renderer::Renderer;
-pub use renderer::{RenderParams, RendererMode};
+pub use renderer::{RenderParams, RendererMode, RendererProfile, RendererProfilerStats};
 pub use resource::{Triangle, Vec3, compile_shader, link_program, load_obj_file};
 pub use ssbo::{create_ssbo, update_ssbo};
 pub use texture::{TextureHandle, TextureStorage};

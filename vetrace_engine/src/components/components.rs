@@ -2346,8 +2346,32 @@ impl Inspectable for DirectionalLight {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RendererProfile {
+    Ultra,
+    High,
+    Balanced,
+    Indoor60FPS,
+    Low,
+    Cinematic,
+}
+
+impl From<RendererProfile> for crate::rendering::renderer::RendererProfile {
+    fn from(value: RendererProfile) -> Self {
+        match value {
+            RendererProfile::Ultra => Self::Ultra,
+            RendererProfile::High => Self::High,
+            RendererProfile::Balanced => Self::Balanced,
+            RendererProfile::Indoor60FPS => Self::Indoor60FPS,
+            RendererProfile::Low => Self::Low,
+            RendererProfile::Cinematic => Self::Cinematic,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PostProcessing {
+    pub profile: RendererProfile,
     pub bloom: Option<Bloom>,
     pub dof: Option<DepthOfField>,
     pub gi_quality: u32,
@@ -2382,6 +2406,7 @@ pub struct PostProcessing {
 impl Default for PostProcessing {
     fn default() -> Self {
         Self {
+            profile: RendererProfile::Balanced,
             bloom: None,
             dof: None,
             gi_quality: 0,
@@ -2418,6 +2443,32 @@ impl Default for PostProcessing {
 impl PostProcessing {
     /// Game-performance preset: keeps baked/static GI available while capping
     /// expensive ray-traced soft shadows and leaving cinematic path tracing off.
+    pub fn indoor_60_fps() -> Self {
+        Self {
+            profile: RendererProfile::Indoor60FPS,
+            gi_enabled: true,
+            gi_quality: 2,
+            path_traced_gi: false,
+            raytraced_shadows_enabled: false,
+            raytraced_reflections_enabled: true,
+            raytraced_gi_enabled: false,
+            raytraced_transparency_enabled: false,
+            shadow_quality: 0,
+            max_shadow_rays: 0,
+            emissive_shadow_samples: 1,
+            directional_shadow_samples: 1,
+            cloud_object_shadows_enabled: false,
+            light_samples: 1,
+            dir_light_samples: 1,
+            max_bounces: 1,
+            temporal_blend: 1.0,
+            gi_temporal_blend: 0.2,
+            atmosphere: true,
+            fog_max_opacity: 0.5,
+            ..Self::default()
+        }
+    }
+
     pub fn game_performance() -> Self {
         Self {
             gi_enabled: true,
@@ -2447,6 +2498,19 @@ impl Inspectable for PostProcessing {
     }
 
     fn draw_ui(&mut self, ui: &mut egui::Ui) {
+        ui.label("Renderer Profile");
+        egui::ComboBox::from_id_source("renderer_profile_pp")
+            .selected_text(format!("{:?}", self.profile))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.profile, RendererProfile::Ultra, "Ultra");
+                ui.selectable_value(&mut self.profile, RendererProfile::High, "High");
+                ui.selectable_value(&mut self.profile, RendererProfile::Balanced, "Balanced");
+                ui.selectable_value(&mut self.profile, RendererProfile::Indoor60FPS, "Indoor 60 FPS");
+                ui.selectable_value(&mut self.profile, RendererProfile::Low, "Low");
+                ui.selectable_value(&mut self.profile, RendererProfile::Cinematic, "Cinematic");
+            });
+        if ui.button("Apply Indoor60FPS preset").clicked() { *self = PostProcessing::indoor_60_fps(); }
+
         ui.label("Exposure");
         // Allow a wider exposure range so scenes can be brightened
         // sufficiently when default lighting feels too dim.

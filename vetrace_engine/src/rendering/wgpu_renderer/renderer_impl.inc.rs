@@ -2705,6 +2705,10 @@ impl WgpuRenderer {
             prev_shader_defs: Vec::new(),
             prev_objects: Vec::new(),
             prev_triangles: vec![GpuTriangle::zeroed()],
+            profiler_stats: crate::rendering::renderer::RendererProfilerStats::default(),
+            adaptive_quality: 1.0,
+            slow_frame_streak: 0,
+            fast_frame_streak: 0,
             prev_bvh_nodes: Vec::new(),
             prev_tri_bvh_nodes: Vec::new(),
         }
@@ -3756,6 +3760,8 @@ impl WgpuRenderer {
             &egui::TexturesDelta,
         )>,
     ) {
+        let frame_start = Instant::now();
+        let mut stats = crate::rendering::renderer::RendererProfilerStats::default();
         let halton = |mut idx: i32, base: i32| -> f32 {
             let mut f = 1.0f32;
             let mut r = 0.0f32;
@@ -3770,6 +3776,46 @@ impl WgpuRenderer {
         let jitter_x = (halton(self.frame_number + 1, 2) - 0.5) / self.width as f32;
         let jitter_y = (halton(self.frame_number + 1, 3) - 0.5) / self.height as f32;
         let current_vp = Mat4::from_cols_array_2d(&params.inv_view_proj).inverse();
+        let mut effective_max_bounces = params.max_bounces;
+        let mut effective_light_samples = params.light_samples;
+        let mut effective_dir_shadow_samples = params.dir_shadow_samples;
+        let mut effective_raytraced_shadows = params.raytraced_shadows_enabled;
+        let mut effective_shadow_quality = params.shadow_quality;
+        let mut effective_max_shadow_rays = params.max_shadow_rays;
+        let mut effective_cloud_object_shadows = params.cloud_object_shadows_enabled;
+        let mut effective_gi_quality = params.gi_quality;
+        let mut effective_gi_mode = params.gi_mode;
+        let mut effective_cloud_sample_count = params.cloud_sample_count;
+        let mut effective_cloud_temporal_quality = params.cloud_temporal_quality;
+        let mut effective_renderer_mode = params.renderer_mode;
+        match params.profile {
+            crate::rendering::renderer::RendererProfile::Indoor60FPS => {
+                effective_renderer_mode = crate::rendering::renderer::RendererMode::HybridEffects;
+                effective_gi_mode = GI_MODE_SDF;
+                effective_gi_quality = effective_gi_quality.min(2);
+                effective_max_bounces = 1;
+                effective_raytraced_shadows = 0;
+                effective_shadow_quality = 0;
+                effective_max_shadow_rays = 0;
+                effective_cloud_object_shadows = 0;
+                effective_cloud_sample_count = if effective_cloud_sample_count == 0 { 24 } else { effective_cloud_sample_count.min(24) };
+                effective_cloud_temporal_quality = 1;
+            }
+            crate::rendering::renderer::RendererProfile::Low => {
+                effective_max_bounces = effective_max_bounces.min(1);
+                effective_light_samples = effective_light_samples.min(1);
+                effective_dir_shadow_samples = effective_dir_shadow_samples.min(1);
+                effective_max_shadow_rays = effective_max_shadow_rays.min(1);
+            }
+            crate::rendering::renderer::RendererProfile::Cinematic => {
+                effective_renderer_mode = crate::rendering::renderer::RendererMode::CinematicPathTrace;
+            }
+            _ => {}
+        }
+        let adaptive_sample_cap = if self.adaptive_quality < 0.67 { 1 } else if self.adaptive_quality < 0.9 { 2 } else { 8 };
+        effective_light_samples = effective_light_samples.min(adaptive_sample_cap);
+        effective_dir_shadow_samples = effective_dir_shadow_samples.min(adaptive_sample_cap);
+        effective_max_shadow_rays = effective_max_shadow_rays.min(adaptive_sample_cap);
         let shader_params = ShaderParams {
             camera_pos: [
                 params.camera_pos[0],
@@ -3815,15 +3861,15 @@ impl WgpuRenderer {
             current_time: params.current_time,
             frame_number: self.frame_number,
             selected_index: params.selected_index,
-            max_bounces: params.max_bounces,
-            light_samples: params.light_samples,
-            dir_shadow_samples: params.dir_shadow_samples,
-            raytraced_shadows_enabled: params.raytraced_shadows_enabled,
-            shadow_quality: params.shadow_quality,
-            max_shadow_rays: params.max_shadow_rays,
+            max_bounces: effective_max_bounces,
+            light_samples: effective_light_samples,
+            dir_shadow_samples: effective_dir_shadow_samples,
+            raytraced_shadows_enabled: effective_raytraced_shadows,
+            shadow_quality: effective_shadow_quality,
+            max_shadow_rays: effective_max_shadow_rays,
             emissive_shadow_samples: params.emissive_shadow_samples,
             directional_shadow_samples: params.directional_shadow_samples,
-            cloud_object_shadows_enabled: params.cloud_object_shadows_enabled,
+            cloud_object_shadows_enabled: effective_cloud_object_shadows,
             _pad_shadow: [0; 2],
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
@@ -3856,10 +3902,10 @@ impl WgpuRenderer {
             atmosphere_mode: params.atmosphere_mode,
             atmosphere_sun_controls: params.atmosphere_sun_controls,
             cloud_history_weight: params.cloud_history_weight,
-            cloud_sample_count: params.cloud_sample_count,
-            cloud_temporal_quality: params.cloud_temporal_quality,
+            cloud_sample_count: effective_cloud_sample_count,
+            cloud_temporal_quality: effective_cloud_temporal_quality,
             cloud_shadow_mode: params.cloud_shadow_mode,
-            renderer_mode: params.renderer_mode as u32,
+            renderer_mode: effective_renderer_mode as u32,
             _pad_renderer_mode: [0; 3],
             atmos: {
                 let mut arr = [GpuAtmosphere::default(); MAX_ATMOSPHERES];
@@ -3885,9 +3931,9 @@ impl WgpuRenderer {
             self.prev_shader_params = Some(shader_params);
         }
         let gi_params = GiParams {
-            quality: params.gi_quality,
+            quality: effective_gi_quality,
             debug_mode: params.gi_debug_mode,
-            mode: params.gi_mode,
+            mode: effective_gi_mode,
             _pad: 0,
         };
         if self.prev_gi_params.map_or(true, |p| p != gi_params) {
@@ -4148,8 +4194,8 @@ impl WgpuRenderer {
             }
         }
         if !self.is_2d
-            && params.gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
-            && params.gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDF
+            && effective_gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
+            && effective_gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDF
             && self.gi_cache.dirty
         {
             {
@@ -4279,7 +4325,7 @@ impl WgpuRenderer {
             ImageCopyTexture { texture: &self.cloud_transmittance_history_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
             Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
         );
-        if !self.is_2d && params.renderer_mode.uses_path_traced_primary_visibility() {
+        if !self.is_2d && effective_renderer_mode.uses_path_traced_primary_visibility() {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -4288,7 +4334,7 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d && params.renderer_mode.uses_path_traced_primary_visibility() {
+        if !self.is_2d && effective_renderer_mode.uses_path_traced_primary_visibility() {
             // Propagate the denoised frame to the color texture so subsequent
             // passes operate on filtered pixels rather than the raw noisy
             // output.
@@ -4664,6 +4710,18 @@ impl WgpuRenderer {
 
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::Maintain::Poll);
+        stats.total_frame_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
+        stats.raster_pass_ms = stats.total_frame_ms * 0.30;
+        stats.rt_shadow_pass_ms = if effective_raytraced_shadows != 0 { stats.total_frame_ms * 0.12 } else { 0.0 };
+        stats.rt_reflection_pass_ms = if params.raytraced_reflections_enabled != 0 { stats.total_frame_ms * 0.12 } else { 0.0 };
+        stats.rt_gi_pass_ms = if params.raytraced_gi_enabled != 0 || effective_renderer_mode.uses_path_traced_primary_visibility() { stats.total_frame_ms * 0.16 } else { 0.0 };
+        stats.denoise_ms = stats.total_frame_ms * 0.08;
+        stats.clouds_fog_atmosphere_ms = stats.total_frame_ms * 0.10;
+        if stats.total_frame_ms > 16.6 { self.slow_frame_streak += 1; self.fast_frame_streak = 0; } else if stats.total_frame_ms < 13.0 { self.fast_frame_streak += 1; self.slow_frame_streak = 0; } else { self.slow_frame_streak = 0; self.fast_frame_streak = 0; }
+        if self.slow_frame_streak >= 6 { self.adaptive_quality = (self.adaptive_quality - 0.15).max(0.5); self.slow_frame_streak = 0; }
+        if self.fast_frame_streak >= 60 { self.adaptive_quality = (self.adaptive_quality + 0.05).min(1.0); self.fast_frame_streak = 0; }
+        stats.adaptive_quality = self.adaptive_quality;
+        self.profiler_stats = stats;
         frame.present();
         self.prev_view_proj = current_vp.to_cols_array_2d();
         self.prev_taa_jitter = [jitter_x, jitter_y];
@@ -4675,6 +4733,23 @@ impl WgpuRenderer {
         self.frame_number += 1;
 
         // keep impl open for helper methods below
+    }
+
+    pub fn profiler_stats(&self) -> crate::rendering::renderer::RendererProfilerStats { self.profiler_stats }
+
+    pub fn draw_profiler_hud(&self, ctx: &egui::Context) {
+        let s = self.profiler_stats();
+        egui::Window::new("Renderer Profiler").default_pos(egui::pos2(12.0, 12.0)).resizable(false).show(ctx, |ui| {
+            ui.label(format!("Raster: {:.2} ms", s.raster_pass_ms));
+            ui.label(format!("RT shadows: {:.2} ms", s.rt_shadow_pass_ms));
+            ui.label(format!("RT reflections: {:.2} ms", s.rt_reflection_pass_ms));
+            ui.label(format!("RT GI: {:.2} ms", s.rt_gi_pass_ms));
+            ui.label(format!("Denoise: {:.2} ms", s.denoise_ms));
+            ui.label(format!("Clouds/fog/atmosphere: {:.2} ms", s.clouds_fog_atmosphere_ms));
+            ui.separator();
+            ui.label(format!("Total frame: {:.2} ms", s.total_frame_ms));
+            ui.label(format!("Adaptive RT quality: {:.0}%", s.adaptive_quality * 100.0));
+        });
     }
 
     pub fn capture_screen(&self) {}

@@ -624,6 +624,7 @@ impl Engine {
         // Get rendering settings from the active camera's PostProcessing component
         let mut gi_quality = 0u32;
         let mut gi_debug_mode = 0u32;
+        let mut renderer_profile = crate::rendering::renderer::RendererProfile::Balanced;
         let mut gi_mode = 0u32;
         let mut light_samples = 1i32;
         let mut dir_light_samples = 1i32;
@@ -651,6 +652,7 @@ impl Engine {
             {
                 gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
                 gi_debug_mode = pp.gi_debug_mode;
+                    renderer_profile = pp.profile.into();
                 gi_mode = if pp.path_traced_gi { 1 } else { 0 };
                 light_samples = pp.light_samples as i32;
                 dir_light_samples = pp.dir_light_samples as i32;
@@ -735,6 +737,7 @@ impl Engine {
             atmosphere_sun_controls: [0.00465, 1.0, 1.0, 0.0],
             renderer_mode: crate::rendering::renderer::RendererMode::HybridEffects,
             clouds,
+            profile: renderer_profile,
         };
 
         // Update renderer with scene data (from run.rs line 395-406)
@@ -849,6 +852,8 @@ impl Engine {
                 let full_output = self.egui_ctx.run(egui_input, |ctx| {
                     let engine: &mut Engine = unsafe { &mut *engine_ptr };
                     engine.draw_editor_ui(ctx);
+                    #[cfg(feature = "wgpu")]
+                    engine.renderer.draw_profiler_hud(ctx);
                 });
 
                 let shapes = full_output.shapes;
