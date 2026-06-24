@@ -97,6 +97,8 @@ pub struct RenderParams {
     pub dof_enable: u32,
     pub atmos: Vec<GpuAtmosphere>,
     pub atmosphere: u32,
+    /// 0 = precomputed LUT atmosphere, 1 = inline atmosphere integration for debug/quality A/B tests.
+    pub atmosphere_mode: u32,
     pub clouds: Vec<GpuVolumetricCloud>,
 }
 

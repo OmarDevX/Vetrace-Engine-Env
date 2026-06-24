@@ -164,7 +164,7 @@ struct Params {
     atmosphere: u32,
     atmo_count: u32,
     cloud_count: u32,
-    _pad_atmos: u32,
+    atmosphere_mode: u32, // 0 = LUT atmosphere, 1 = inline/debug atmosphere
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 
@@ -737,13 +737,31 @@ fn calculate_scattering(
 fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: vec3<f32>) -> vec3<f32> {
     if (params.atmosphere == 0u || params.atmo_count == 0u) { return background; }
 
-    // Keep the inline atmosphere integration as the authoritative path until
-    // the sky-view and aerial-perspective LUTs are actually populated by
-    // precompute passes. Sampling placeholder LUT textures here makes surface
-    // fog/aerial perspective disappear and can replace the sky with an
-    // uninitialized lookup.
     let sun_dir = normalize(-params.dir_light_dir.xyz);
     let sun_I   = params.dir_light_color.xyz * params.dir_light_dir.w;
+
+    // Default to the precomputed LUT path for production rendering. Keep the
+    // previous inline marcher behind atmosphere_mode == 1u so visual A/B tests
+    // can compare the LUTs against the high-cost integration path.
+    if (params.atmosphere_mode == 0u) {
+        var lut_col: vec3<f32>;
+        if (max_t >= 1e9) {
+            lut_col = sample_sky_view_lut(dir);
+        } else {
+            lut_col = sample_aerial_perspective_lut(dir, max_t, background);
+        }
+
+        // Preserve the explicit solar disc/glow used by the inline path; the
+        // LUTs model atmospheric radiance, while this keeps directional-light
+        // visibility consistent for sky rays during A/B testing.
+        let sun_cos = dot(dir, sun_dir);
+        let sun_size = 0.9995;
+        if (max_t >= 1e9 && sun_cos > sun_size) {
+            let glow = (sun_cos - sun_size) / (1.0 - sun_size);
+            lut_col += sun_I * glow * 50.0;
+        }
+        return lut_col;
+    }
 
     // Find atmospheres intersected (small N)
     var count: u32 = 0u;

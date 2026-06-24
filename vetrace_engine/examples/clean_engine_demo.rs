@@ -91,6 +91,8 @@ impl App for SimpleGame {
             dof_enable: 0,
             atmos: Vec::new(),
             atmosphere: 0,
+            atmosphere_mode: 0,
+            clouds: Vec::new(),
         };
 
         // Render with empty sprite and PBR data for now

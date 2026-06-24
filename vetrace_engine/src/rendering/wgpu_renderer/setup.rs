@@ -75,14 +75,14 @@ pub async fn init_wgpu(
     (device, queue, surface, config)
 }
 
-pub const SKY_VIEW_LUT_WIDTH: u32 = 192;
-pub const SKY_VIEW_LUT_HEIGHT: u32 = 108;
+pub const SKY_VIEW_LUT_WIDTH: u32 = 256;
+pub const SKY_VIEW_LUT_HEIGHT: u32 = 128;
 // Multi-scattering LUT axes are view/sun cosine (x) and normalized altitude (y).
 pub const MULTI_SCATTERING_LUT_WIDTH: u32 = 64;
 pub const MULTI_SCATTERING_LUT_HEIGHT: u32 = 32;
 pub const AERIAL_PERSPECTIVE_LUT_WIDTH: u32 = 160;
 pub const AERIAL_PERSPECTIVE_LUT_HEIGHT: u32 = 90;
-pub const AERIAL_PERSPECTIVE_LUT_DEPTH: u32 = 32;
+pub const AERIAL_PERSPECTIVE_LUT_DEPTH: u32 = 48;
 
 pub fn create_atmosphere_lut_textures(
     device: &Device,
