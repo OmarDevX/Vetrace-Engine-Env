@@ -100,6 +100,7 @@ struct Atmosphere {
     absorption_beta: vec4<f32>,
     absorb_params: vec4<f32>,
     ozone_params: vec4<f32>,
+    absorption_layer_params: vec4<f32>,
     multi_scatter_params: vec4<f32>,
 };
 
@@ -640,12 +641,20 @@ fn ray_sphere_intersect(start: vec3<f32>, dir: vec3<f32>, radius: f32) -> vec2<f
 }
 
 
-fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
-    let center_altitude = atmo.ozone_params.x;
-    let thickness = max(atmo.ozone_params.y, 1e-3);
-    let strength = max(atmo.ozone_params.z, 0.0);
-    let normalized_altitude = (height - center_altitude) / thickness;
-    return strength * exp(-normalized_altitude * normalized_altitude);
+fn absorption_layer_density(layer: vec4<f32>, altitude: f32) -> f32 {
+    let exp_term = layer.x * exp(clamp(layer.y * altitude, -80.0, 80.0));
+    let linear_term = layer.z * altitude + layer.w;
+    return max(exp_term + linear_term, 0.0);
+}
+
+fn absorption_profile_density(atmo: Atmosphere, height: f32) -> f32 {
+    let lower_width = max(atmo.absorb_params.x, 0.0);
+    let upper_width = max(atmo.absorb_params.y, 0.0);
+    let density_scale = max(atmo.absorb_params.z, 0.0);
+    let lower_density = select(0.0, absorption_layer_density(atmo.ozone_params, height), height <= lower_width);
+    let upper_altitude = max(height - lower_width, 0.0);
+    let upper_density = select(0.0, absorption_layer_density(atmo.absorption_layer_params, height), height > lower_width && upper_altitude <= upper_width);
+    return density_scale * clamp(max(lower_density, upper_density), 0.0, 1.0);
 }
 
 fn estimate_multi_scattering(
@@ -713,7 +722,7 @@ fn calculate_scattering(
 
     // Adaptive steps (cap by authoring)
     let len = t1 - t0;
-    let base_steps = min(i32(atmo.absorb_params.z), MAX_SCATTER_STEPS);
+    let base_steps = min(i32(atmo.absorb_params.w), MAX_SCATTER_STEPS);
     let target_dl  = max(0.5 * atmo.atmo_g_height.z, 1e-3);
     let steps_f = clamp(ceil(len / target_dl), 4.0, f32(base_steps));
     let steps = i32(steps_f);
@@ -733,7 +742,7 @@ fn calculate_scattering(
 
         let dR = exp(-h * invHR);
         let dM = exp(-h * invHM);
-        let dA = ozone_density(atmo, h);
+        let dA = absorption_profile_density(atmo, h);
 
         tauR += dR * dt;
         tauM += dM * dt;

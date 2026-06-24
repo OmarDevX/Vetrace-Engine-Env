@@ -3332,14 +3332,25 @@ pub struct Atmosphere {
     pub height_ray: f32,
     /// Mie density scale height in world units (`1 world unit = 1 km`).
     pub height_mie: f32,
-    /// Absorption density scale height in world units (`1 world unit = 1 km`).
-    pub height_absorption: f32,
-    pub absorption_falloff: f32,
-    /// Ozone layer center altitude above `planet_radius` in world units (`1 world unit = 1 km`).
-    pub ozone_center_altitude: f32,
-    /// Ozone layer thickness in world units (`1 world unit = 1 km`).
-    pub ozone_thickness: f32,
-    pub ozone_strength: f32,
+    /// Lower absorption layer width in world units (`1 world unit = 1 km`).
+    pub absorption_lower_width: f32,
+    /// Upper absorption layer width in world units (`1 world unit = 1 km`).
+    pub absorption_upper_width: f32,
+    /// Lower absorption density exponential term multiplier.
+    pub absorption_lower_exp_term: f32,
+    /// Lower absorption density exponential scale, in inverse world units.
+    pub absorption_lower_exp_scale: f32,
+    /// Lower absorption density linear term, in inverse world units.
+    pub absorption_lower_linear_term: f32,
+    pub absorption_lower_constant_term: f32,
+    /// Upper absorption density exponential term multiplier.
+    pub absorption_upper_exp_term: f32,
+    /// Upper absorption density exponential scale, in inverse world units.
+    pub absorption_upper_exp_scale: f32,
+    /// Upper absorption density linear term, in inverse world units.
+    pub absorption_upper_linear_term: f32,
+    pub absorption_upper_constant_term: f32,
+    pub absorption_density_scale: f32,
     pub primary_steps: i32,
     pub light_steps: i32,
 }
@@ -3353,7 +3364,8 @@ pub mod atmosphere_presets {
     ///
     /// Matches common UE SkyAtmosphere kilometer defaults: 6360 km ground radius,
     /// 6460 km atmosphere top radius, 8 km Rayleigh scale height, 1.2 km Mie
-    /// scale height, and a broad ozone layer centered around 25 km.
+    /// scale height, and a 50 km two-layer ozone/absorption profile whose peak
+    /// is near 25 km altitude.
     pub fn earth_unreal_like() -> Atmosphere {
         Atmosphere {
             planet_radius: 6360.0,
@@ -3369,11 +3381,17 @@ pub mod atmosphere_presets {
             g: 0.7,
             height_ray: 8.0,
             height_mie: 1.2,
-            height_absorption: 30.0,
-            absorption_falloff: 4.0,
-            ozone_center_altitude: 25.0,
-            ozone_thickness: 15.0,
-            ozone_strength: 1.0,
+            absorption_lower_width: 25.0,
+            absorption_upper_width: 25.0,
+            absorption_lower_exp_term: 0.0,
+            absorption_lower_exp_scale: 0.0,
+            absorption_lower_linear_term: 1.0 / 15.0,
+            absorption_lower_constant_term: -2.0 / 3.0,
+            absorption_upper_exp_term: 0.0,
+            absorption_upper_exp_scale: 0.0,
+            absorption_upper_linear_term: -1.0 / 15.0,
+            absorption_upper_constant_term: 8.0 / 3.0,
+            absorption_density_scale: 1.0,
             primary_steps: 16,
             light_steps: 8,
         }
@@ -3423,49 +3441,81 @@ impl Inspectable for Atmosphere {
             },
             ExportedField {
                 name: "ray_beta_r",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.ray_beta.x as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "ray_beta_g",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.ray_beta.y as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "ray_beta_b",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.ray_beta.z as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "mie_beta",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.mie_beta.x as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "ambient_beta",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.ambient_beta.x as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "absorption_beta_r",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.absorption_beta.x as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "absorption_beta_g",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.absorption_beta.y as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "absorption_beta_b",
-                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 1.0,
+                    speed: 0.0001,
+                },
                 value: &mut self.absorption_beta.z as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
@@ -3521,45 +3571,113 @@ impl Inspectable for Atmosphere {
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
-                name: "height_absorption",
-                kind: ExportKind::Slider {
+                name: "absorption_lower_width",
+                kind: ExportKind::Drag {
                     min: 0.0,
                     max: 100.0,
+                    speed: 0.001,
                 },
-                value: &mut self.height_absorption as *mut _ as *mut dyn std::any::Any,
+                value: &mut self.absorption_lower_width as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
-                name: "absorption_falloff",
-                kind: ExportKind::Slider {
+                name: "absorption_upper_width",
+                kind: ExportKind::Drag {
                     min: 0.0,
                     max: 100.0,
+                    speed: 0.001,
                 },
-                value: &mut self.absorption_falloff as *mut _ as *mut dyn std::any::Any,
+                value: &mut self.absorption_upper_width as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
-                name: "ozone_center_altitude",
-                kind: ExportKind::Slider {
+                name: "absorption_lower_exp_term",
+                kind: ExportKind::Drag {
                     min: 0.0,
-                    max: 100.0,
+                    max: 4.0,
+                    speed: 0.001,
                 },
-                value: &mut self.ozone_center_altitude as *mut _ as *mut dyn std::any::Any,
+                value: &mut self.absorption_lower_exp_term as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
-                name: "ozone_thickness",
-                kind: ExportKind::Slider {
-                    min: 0.0,
-                    max: 100.0,
+                name: "absorption_lower_exp_scale",
+                kind: ExportKind::Drag {
+                    min: -4.0,
+                    max: 4.0,
+                    speed: 0.001,
                 },
-                value: &mut self.ozone_thickness as *mut _ as *mut dyn std::any::Any,
+                value: &mut self.absorption_lower_exp_scale as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
-                name: "ozone_strength",
-                kind: ExportKind::Slider { min: 0.0, max: 8.0 },
-                value: &mut self.ozone_strength as *mut _ as *mut dyn std::any::Any,
+                name: "absorption_lower_linear_term",
+                kind: ExportKind::Drag {
+                    min: -1.0,
+                    max: 1.0,
+                    speed: 0.001,
+                },
+                value: &mut self.absorption_lower_linear_term as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "absorption_lower_constant_term",
+                kind: ExportKind::Drag {
+                    min: -4.0,
+                    max: 4.0,
+                    speed: 0.001,
+                },
+                value: &mut self.absorption_lower_constant_term as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "absorption_upper_exp_term",
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 4.0,
+                    speed: 0.001,
+                },
+                value: &mut self.absorption_upper_exp_term as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "absorption_upper_exp_scale",
+                kind: ExportKind::Drag {
+                    min: -4.0,
+                    max: 4.0,
+                    speed: 0.001,
+                },
+                value: &mut self.absorption_upper_exp_scale as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "absorption_upper_linear_term",
+                kind: ExportKind::Drag {
+                    min: -1.0,
+                    max: 1.0,
+                    speed: 0.001,
+                },
+                value: &mut self.absorption_upper_linear_term as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "absorption_upper_constant_term",
+                kind: ExportKind::Drag {
+                    min: -4.0,
+                    max: 4.0,
+                    speed: 0.001,
+                },
+                value: &mut self.absorption_upper_constant_term as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "absorption_density_scale",
+                kind: ExportKind::Drag {
+                    min: 0.0,
+                    max: 8.0,
+                    speed: 0.001,
+                },
+                value: &mut self.absorption_density_scale as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {

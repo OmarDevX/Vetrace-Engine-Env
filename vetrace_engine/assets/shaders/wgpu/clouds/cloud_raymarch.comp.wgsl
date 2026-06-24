@@ -19,6 +19,7 @@ struct GpuAtmosphere {
     absorption_beta: vec4<f32>,
     absorb_params: vec4<f32>,
     ozone_params: vec4<f32>,
+    absorption_layer_params: vec4<f32>,
     multi_scatter_params: vec4<f32>,
 };
 
