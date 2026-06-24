@@ -3426,6 +3426,7 @@ impl WgpuRenderer {
                 .len()
                 .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS) as u32,
             atmosphere_mode: params.atmosphere_mode,
+            atmosphere_sun_controls: params.atmosphere_sun_controls,
             atmos: {
                 let mut arr = [GpuAtmosphere::default(); MAX_ATMOSPHERES];
                 let count = params.atmos.len().min(MAX_ATMOSPHERES);

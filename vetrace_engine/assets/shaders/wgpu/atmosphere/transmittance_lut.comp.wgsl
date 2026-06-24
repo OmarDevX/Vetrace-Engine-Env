@@ -42,7 +42,9 @@ struct Params {
     _pad_dof: u32,
     atmosphere: u32,
     atmo_count: u32,
-    _pad_atmos: vec2<u32>,
+    cloud_count: u32,
+    atmosphere_mode: u32,
+    atmosphere_sun_controls: vec4<f32>,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 struct Scattering { color: vec3<f32>, transmittance: vec3<f32> };

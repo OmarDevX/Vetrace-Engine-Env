@@ -92,6 +92,7 @@ impl App for SimpleGame {
             atmos: Vec::new(),
             atmosphere: 0,
             atmosphere_mode: 0,
+            atmosphere_sun_controls: [0.00465, 1.0, 1.0, 0.0],
             clouds: Vec::new(),
         };
 
