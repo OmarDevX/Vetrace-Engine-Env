@@ -10,8 +10,8 @@ use bytemuck::Zeroable;
 use egui::{ClippedPrimitive, TexturesDelta};
 use sdl2::video::Window;
 use std::num::NonZeroU64;
-use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::SurfaceTargetUnsafe;
+use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
@@ -89,6 +89,12 @@ pub struct WgpuRenderer {
     occluder_view: TextureView,
     white_texture: crate::gpu::TextureHandle,
     blue_noise_texture: crate::gpu::TextureHandle,
+    _cloud_shape_noise_texture: Texture,
+    cloud_shape_noise_view: TextureView,
+    _cloud_detail_noise_texture: Texture,
+    cloud_detail_noise_view: TextureView,
+    _cloud_weather_texture: Texture,
+    cloud_weather_view: TextureView,
     material_textures: Vec<crate::gpu::TextureHandle>,
     gi_params_buffer: Buffer,
     postfx_buffer: Buffer,

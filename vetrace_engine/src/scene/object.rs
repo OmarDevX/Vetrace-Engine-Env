@@ -188,6 +188,8 @@ pub struct GpuVolumetricCloud {
     pub light_padding: [f32; 4],
     pub multi_scatter: [f32; 4],
     pub shape_params: [f32; 4],
+    pub weather_params: [f32; 4],
+    pub detail_params: [f32; 4],
 }
 
 impl Default for GpuVolumetricCloud {
@@ -199,6 +201,8 @@ impl Default for GpuVolumetricCloud {
             light_padding: [0.0; 4],
             multi_scatter: [0.0; 4],
             shape_params: [0.0; 4],
+            weather_params: [0.0; 4],
+            detail_params: [0.0; 4],
         }
     }
 }
