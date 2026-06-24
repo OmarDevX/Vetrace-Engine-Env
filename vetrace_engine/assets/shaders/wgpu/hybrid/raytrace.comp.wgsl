@@ -171,6 +171,10 @@ struct Params {
     cloud_count: u32,
     atmosphere_mode: u32, // 0 = LUT atmosphere, 1 = inline/debug atmosphere
     atmosphere_sun_controls: vec4<f32>,
+    cloud_history_weight: f32,
+    cloud_sample_count: u32,
+    cloud_temporal_quality: u32,
+    cloud_shadow_mode: u32,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 
@@ -201,6 +205,12 @@ struct Params {
 @group(0) @binding(30) var cloud_shape_noise_tex: texture_3d<f32>;
 @group(0) @binding(31) var cloud_detail_noise_tex: texture_3d<f32>;
 @group(0) @binding(32) var cloud_weather_tex: texture_2d<f32>;
+@group(0) @binding(33) var cloud_radiance_tex: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(34) var cloud_radiance_history_tex: texture_2d<f32>;
+@group(0) @binding(35) var cloud_transmittance_tex: texture_storage_2d<r16float, write>;
+@group(0) @binding(36) var cloud_transmittance_history_tex: texture_2d<f32>;
+@group(0) @binding(37) var cloud_shadow_optical_depth_tex: texture_storage_2d<r16float, write>;
+@group(0) @binding(38) var cloud_shadow_history_tex: texture_2d<f32>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -484,7 +494,19 @@ fn cloud_shadow_transmittance_for_volume(cloud: VolumetricCloud, p: vec3<f32>, l
     return exp(-optical_depth * shadow_strength);
 }
 
+fn cached_cloud_shadow_transmittance(p: vec3<f32>, light_dir: vec3<f32>) -> f32 {
+    // Directional-cache approximation: project world position onto a stable plane
+    // perpendicular to the sun and reuse the precomputed optical-depth atlas.
+    let up_hint = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(light_dir.y) > 0.95);
+    let sx = normalize(cross(up_hint, light_dir));
+    let sy = cross(light_dir, sx);
+    let uv = fract(vec2<f32>(dot(p, sx), dot(p, sy)) * 0.0005 + vec2<f32>(0.5));
+    let od = textureSampleLevel(cloud_shadow_history_tex, tex_sampler, uv, 0.0).r;
+    return exp(-od);
+}
+
 fn cloud_shadow_transmittance(p: vec3<f32>, light_dir: vec3<f32>, jitter: f32) -> f32 {
+    if (params.cloud_shadow_mode == 0u) { return cached_cloud_shadow_transmittance(p, light_dir); }
     var transmittance = 1.0;
     for (var ci: u32 = 0u; ci < params.cloud_count && ci < MAX_VOLUMETRIC_CLOUDS; ci = ci + 1u) {
         transmittance *= cloud_shadow_transmittance_for_volume(clouds[ci], p, light_dir, fract(jitter + f32(ci) * 0.61803399));
@@ -543,7 +565,32 @@ fn sky_ambient_probe(up: vec3<f32>, sun_dir: vec3<f32>) -> vec3<f32> {
     return max(base_probe * tint * 0.18, params.skycolor.xyz * 0.015);
 }
 
-fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: vec3<f32>, pixel: vec2<u32>) -> vec3<f32> {
+struct CloudCompositeResult {
+    color: vec3<f32>,
+    radiance: vec3<f32>,
+    transmittance: f32,
+};
+
+fn cloud_history_uv(rd: vec3<f32>, scene_depth: f32) -> vec2<f32> {
+    let world = rd * min(scene_depth, 10000.0);
+    let prev = params.prev_view_proj * vec4<f32>(world + (params.prev_camera_pos.xyz - params.camera_pos.xyz), 1.0);
+    if (abs(prev.w) < 1e-5) { return vec2<f32>(-1.0); }
+    let ndc = prev.xy / prev.w;
+    return ndc * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+}
+
+fn cloud_temporal_rejection(pixel: vec2<u32>, uv: vec2<f32>, scene_depth: f32, transmittance: f32) -> f32 {
+    if (params.cloud_temporal_quality == 0u || any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) { return 0.0; }
+    let dims = vec2<f32>(textureDimensions(cloud_radiance_history_tex, 0));
+    let motion = length((uv - (vec2<f32>(pixel) + vec2<f32>(0.5)) / dims) * dims);
+    let motion_reject = smoothstep(48.0, 6.0, motion);
+    let depth_reject = select(0.35, 1.0, scene_depth < 1e8);
+    let prev_t = textureSampleLevel(cloud_transmittance_history_tex, tex_sampler, uv, 0.0).r;
+    let trans_reject = smoothstep(0.45, 0.08, abs(prev_t - transmittance));
+    return clamp(params.cloud_history_weight, 0.0, 0.98) * motion_reject * depth_reject * trans_reject;
+}
+
+fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: vec3<f32>, pixel: vec2<u32>) -> CloudCompositeResult {
     var radiance = vec3<f32>(0.0);
     var transmittance = 1.0;
     let sun_dir = normalize(-params.dir_light_dir.xyz);
@@ -556,7 +603,8 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
         let t0 = interval.x;
         let t1 = interval.y;
         if (t1 <= t0) { continue; }
-        let steps = max(1u, min(u32(cloud.shape_params.y), 96u));
+        let requested_steps = select(u32(cloud.shape_params.y), params.cloud_sample_count, params.cloud_sample_count > 0u);
+        let steps = max(1u, min(requested_steps, 96u));
         let dt = (t1 - t0) / f32(steps);
         for (var sidx: u32 = 0u; sidx < steps; sidx = sidx + 1u) {
             let t = t0 + (f32(sidx) + 0.5) * dt;
@@ -591,8 +639,14 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
             if (transmittance < 0.01) { break; }
         }
     }
-    let integrated = radiance + base_color * transmittance;
-    return sample_aerial_perspective_lut(rd, scene_depth, integrated);
+    let history_uv = cloud_history_uv(rd, scene_depth);
+    let history_w = cloud_temporal_rejection(pixel, history_uv, scene_depth, transmittance);
+    let history_radiance = textureSampleLevel(cloud_radiance_history_tex, tex_sampler, history_uv, 0.0).xyz;
+    let history_transmittance = textureSampleLevel(cloud_transmittance_history_tex, tex_sampler, history_uv, 0.0).r;
+    let resolved_radiance = mix(radiance, history_radiance, history_w);
+    let resolved_transmittance = mix(transmittance, history_transmittance, history_w);
+    let integrated = resolved_radiance + base_color * resolved_transmittance;
+    return CloudCompositeResult(sample_aerial_perspective_lut(rd, scene_depth, integrated), resolved_radiance, resolved_transmittance);
 }
 
 // -----------------------------
@@ -2051,7 +2105,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     let cloud_scene_depth = select(out_depth, 1e9, out_obj < 0);
-    let L = composite_clouds(vec3<f32>(0.0), view_dir, cloud_scene_depth, final_col, id.xy);
+    let cloud_result = composite_clouds(vec3<f32>(0.0), view_dir, cloud_scene_depth, final_col, id.xy);
+    textureStore(cloud_radiance_tex, vec2<i32>(id.xy), vec4<f32>(cloud_result.radiance, 1.0));
+    textureStore(cloud_transmittance_tex, vec2<i32>(id.xy), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
+    textureStore(cloud_shadow_optical_depth_tex, vec2<i32>(id.xy), vec4<f32>(-log(max(cloud_result.transmittance, 1e-3)), 0.0, 0.0, 1.0));
+    let L = cloud_result.color;
     let max_lum = 10.0;
     let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));
     let final_tone = L * min(1.0, max_lum / (lum + 1e-4));

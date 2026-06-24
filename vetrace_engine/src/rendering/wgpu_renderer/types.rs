@@ -194,6 +194,10 @@ pub struct ShaderParams {
     pub cloud_count: u32,
     pub atmosphere_mode: u32,
     pub atmosphere_sun_controls: [f32; 4],
+    pub cloud_history_weight: f32,
+    pub cloud_sample_count: u32,
+    pub cloud_temporal_quality: u32,
+    pub cloud_shadow_mode: u32,
     pub atmos: [GpuAtmosphere; MAX_ATMOSPHERES],
 }
 

@@ -101,6 +101,14 @@ pub struct RenderParams {
     pub atmosphere_mode: u32,
     /// x = sun angular radius in radians, y = sun disk intensity, z = sky luminance scale.
     pub atmosphere_sun_controls: [f32; 4],
+    /// Temporal accumulation factor for cloud radiance/transmittance history (0 disables history).
+    pub cloud_history_weight: f32,
+    /// Optional global cap for cloud primary raymarch samples; 0 uses per-cloud settings.
+    pub cloud_sample_count: u32,
+    /// 0 = off/current-frame clouds, 1 = conservative history, 2 = fuller temporal reuse.
+    pub cloud_temporal_quality: u32,
+    /// 0 = cached directional shadow map, 1 = high-quality/debug per-hit raymarch fallback.
+    pub cloud_shadow_mode: u32,
     pub clouds: Vec<GpuVolumetricCloud>,
 }
 
