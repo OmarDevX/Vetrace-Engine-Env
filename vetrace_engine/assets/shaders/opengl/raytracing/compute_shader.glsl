@@ -55,7 +55,8 @@ struct Triangle {
 };
 
 struct BvhNode {
-    vec4 center_radius;
+    vec4 bmin;
+    vec4 bmax;
     ivec4 child_object;
 };
 
@@ -329,13 +330,8 @@ bool is_visible(vec3 from, vec3 to, int skipA, int skipB)
     while (sp > 0) {
         int node_idx = stack[--sp];
         BvhNode node = nodes[node_idx];
-        if (!boundsIntersect(from, dir, node.center_radius.xyz, node.center_radius.w))
+        if (!aabbIntersect(from, dir, node.bmin.xyz, node.bmax.xyz, dist))
             continue;
-        vec3 toCenter = node.center_radius.xyz - from;
-        float proj = dot(toCenter, dir);
-        if (proj < 0.0 || proj - node.center_radius.w > dist) continue;
-        float perp2 = dot(toCenter,toCenter) - proj*proj;
-        if (perp2 > node.center_radius.w*node.center_radius.w) continue;
 
         int left = node.child_object.x;
         int right = node.child_object.y;
@@ -511,7 +507,7 @@ vec4 calculateLightContribution(vec3 rayOrigin, vec3 rayDir, inout uint rngState
         while (sp > 0) {
             int node_idx = stack[--sp];
             BvhNode node = nodes[node_idx];
-            if (!boundsIntersect(rayOrigin, rayDir, node.center_radius.xyz, node.center_radius.w))
+            if (!aabbIntersect(rayOrigin, rayDir, node.bmin.xyz, node.bmax.xyz, 1e20))
                 continue;
             int left = node.child_object.x;
             int right = node.child_object.y;

@@ -34,7 +34,8 @@ struct Triangle {
 };
 
 struct BvhNode {
-    center_radius: vec4<f32>,
+    bmin: vec4<f32>,
+    bmax: vec4<f32>,
     child_object: vec4<i32>,
 };
 
@@ -1390,16 +1391,15 @@ fn mesh_any_hit(origin: vec3<f32>, dir: vec3<f32>, obj: Object, t_cap: f32) -> b
 // -----------------------------
 // TLAS traversal
 // -----------------------------
-fn sphere_hit(o: vec3<f32>, d: vec3<f32>, c: vec3<f32>, r: f32, t_cap: f32) -> bool {
-    let oc = o - c;
-    let b = dot(oc, d);
-    let c2 = dot(oc, oc) - r * r;
-    let h = b * b - c2;
-    if (h < 0.0) { return false; }
-    let s = sqrt(h);
-    let t_near = -b - s;
-    let t_far  = -b + s;
-    return (t_far > 0.0) && (t_near < t_cap);
+fn aabb_hit(o: vec3<f32>, d: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>, t_cap: f32) -> bool {
+    let inv_d = 1.0 / d;
+    let t0 = (bmin - o) * inv_d;
+    let t1 = (bmax - o) * inv_d;
+    let tsm = min(t0, t1);
+    let tbig = max(t0, t1);
+    let t_near = max(max(tsm.x, tsm.y), max(tsm.z, 0.0));
+    let t_far = min(min(tbig.x, tbig.y), tbig.z);
+    return t_far >= t_near && t_near < t_cap;
 }
 
 fn in_bounds_tlas(i: u32) -> bool { return i < params.total_bvh_nodes; }
@@ -1436,7 +1436,7 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
         let ni = u32(stack[sp]);
         if (!in_bounds_tlas(ni)) { continue; }
         let node = bvh_nodes[ni];
-        if (!sphere_hit(o, d, node.center_radius.xyz, node.center_radius.w, best.t)) { continue; }
+        if (!aabb_hit(o, d, node.bmin.xyz, node.bmax.xyz, best.t)) { continue; }
 
         let c0 = node.child_object.x; let c1 = node.child_object.y;
         if (c0 < 0 && c1 < 0) {
@@ -1522,7 +1522,7 @@ fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip
         let ni = u32(stack[sp]);
         if (!in_bounds_tlas(ni)) { continue; }
         let node = bvh_nodes[ni];
-        if (!sphere_hit(o, d, node.center_radius.xyz, node.center_radius.w, t_cap)) { continue; }
+        if (!aabb_hit(o, d, node.bmin.xyz, node.bmax.xyz, t_cap)) { continue; }
 
         let c0 = node.child_object.x; let c1 = node.child_object.y;
         if (c0 < 0 && c1 < 0) {
