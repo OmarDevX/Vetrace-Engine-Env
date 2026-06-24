@@ -319,6 +319,7 @@ impl WgpuRenderer {
         let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_current");
         let (cloud_transmittance_history_texture, cloud_transmittance_history_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_history");
         let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_optical_depth");
+        let (cloud_shadow_history_texture, cloud_shadow_history_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_history");
         // Create placeholder buffers large enough to satisfy the minimum
         // binding size required by the shaders. Even with an empty scene the
         // renderer expects space for at least 64 objects and materials.
@@ -461,6 +462,7 @@ impl WgpuRenderer {
         let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_current");
         let (cloud_transmittance_history_texture, cloud_transmittance_history_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_history");
         let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_optical_depth");
+        let (cloud_shadow_history_texture, cloud_shadow_history_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_history");
 
         let triangle_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("triangles"),
@@ -1494,7 +1496,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 35, resource: BindingResource::TextureView(&cloud_transmittance_view) },
                 BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&cloud_transmittance_history_view) },
                 BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&cloud_shadow_view) },
-                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&cloud_shadow_view) },
+                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&cloud_shadow_history_view) },
             ],
         });
 
@@ -2497,6 +2499,8 @@ impl WgpuRenderer {
             cloud_transmittance_history_view,
             cloud_shadow_texture,
             cloud_shadow_view,
+            cloud_shadow_history_texture,
+            cloud_shadow_history_view,
             material_textures,
             gi_params_buffer,
             sdfgi_bind_group_layout,
@@ -2659,6 +2663,7 @@ impl WgpuRenderer {
         let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(&self.device, self.width, self.height, TextureFormat::R16Float, "cloud_transmittance_current");
         let (cloud_transmittance_history_texture, cloud_transmittance_history_view) = create_cloud_temporal_texture(&self.device, self.width, self.height, TextureFormat::R16Float, "cloud_transmittance_history");
         let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(&self.device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_optical_depth");
+        let (cloud_shadow_history_texture, cloud_shadow_history_view) = create_cloud_temporal_texture(&self.device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_history");
         self.screen_texture = st;
         self.screen_view = screen_view;
         self.screen_history_texture = screen_history_texture;
@@ -2723,6 +2728,8 @@ impl WgpuRenderer {
         self.cloud_transmittance_history_view = cloud_transmittance_history_view;
         self.cloud_shadow_texture = cloud_shadow_texture;
         self.cloud_shadow_view = cloud_shadow_view;
+        self.cloud_shadow_history_texture = cloud_shadow_history_texture;
+        self.cloud_shadow_history_view = cloud_shadow_history_view;
         self.blur_src_texture = blur_src_texture;
         self.blur_src_view = blur_src_view;
         self.sampler = sampler;
@@ -2974,7 +2981,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 35, resource: BindingResource::TextureView(&self.cloud_transmittance_view) },
                 BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&self.cloud_transmittance_history_view) },
                 BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
-                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
+                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_history_view) },
             ],
         });
 
@@ -3491,7 +3498,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 35, resource: BindingResource::TextureView(&self.cloud_transmittance_view) },
                 BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&self.cloud_transmittance_history_view) },
                 BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
-                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
+                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_history_view) },
             ],
         });
 
@@ -4084,6 +4091,25 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
             cpass.dispatch_workgroups((512 + 7) / 8, (512 + 7) / 8, 1);
         }
+        encoder.copy_texture_to_texture(
+            ImageCopyTexture {
+                texture: &self.cloud_shadow_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            ImageCopyTexture {
+                texture: &self.cloud_shadow_history_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: 512,
+                height: 512,
+                depth_or_array_layers: 1,
+            },
+        );
         {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("raytrace"),
