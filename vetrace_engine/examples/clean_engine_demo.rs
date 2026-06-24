@@ -1,7 +1,7 @@
-use vetrace_engine::{Engine};
+use vetrace_engine::Engine;
+use vetrace_engine::app::App;
 use vetrace_engine::components::components::Transform;
 use vetrace_engine::rendering::RenderParams;
-use vetrace_engine::app::App;
 /// Simple game application demonstrating the new clean engine API
 struct SimpleGame {
     entity_count: usize,
@@ -19,15 +19,17 @@ impl App for SimpleGame {
 
         // Add a simple system that prints every 60 frames
         let mut frame_counter = 0;
-     
 
         // Spawn some test entities
         for i in 0..5 {
             let entity = engine.spawn_entity();
-            engine.add_component(entity, Transform {
-                position: [i as f32, 0.0, 0.0],
-                ..Default::default()
-            });
+            engine.add_component(
+                entity,
+                Transform {
+                    position: [i as f32, 0.0, 0.0],
+                    ..Default::default()
+                },
+            );
             self.entity_count += 1;
         }
 
@@ -92,6 +94,10 @@ impl App for SimpleGame {
             atmos: Vec::new(),
             atmosphere: 0,
             atmosphere_mode: 0,
+            cloud_history_weight: 0.88,
+            cloud_sample_count: 0,
+            cloud_temporal_quality: 1,
+            cloud_shadow_mode: 0,
             atmosphere_sun_controls: [0.00465, 1.0, 1.0, 0.0],
             clouds: Vec::new(),
         };

@@ -1,15 +1,15 @@
-use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
+use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
+use crate::Behaviour;
+use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
+use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
-use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
-use crate::Behaviour;
-use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -524,6 +524,10 @@ impl Engine {
                 atmos,
                 atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
                 atmosphere_mode: 0,
+                cloud_history_weight: 0.88,
+                cloud_sample_count: 0,
+                cloud_temporal_quality: 1,
+                cloud_shadow_mode: 0,
                 atmosphere_sun_controls: [0.00465, 1.0, 1.0, 0.0],
                 clouds,
             };
