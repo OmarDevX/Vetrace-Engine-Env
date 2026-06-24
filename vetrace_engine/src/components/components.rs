@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::Inspectable;
 use crate::inspector::export::{ExportKind, ExportedField};
+use crate::inspector::Inspectable;
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -2257,11 +2257,43 @@ impl Inspectable for VolumetricFog {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShadowMode {
+    None,
+    RasterShadowMap,
+    RaytracedHard,
+    RaytracedSoft,
+    Hybrid,
+}
+
+impl ShadowMode {
+    pub fn as_u32(self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::RasterShadowMap => 1,
+            Self::RaytracedHard => 2,
+            Self::RaytracedSoft => 3,
+            Self::Hybrid => 4,
+        }
+    }
+}
+
+impl Default for ShadowMode {
+    fn default() -> Self {
+        Self::Hybrid
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DirectionalLight {
     pub direction: [f32; 3],
     pub color: [f32; 3],
     pub intensity: f32,
+    pub casts_raster_shadow: bool,
+    pub casts_raytraced_shadow: bool,
+    /// 0.0 = never promote in Hybrid, 1.0 = hero light/contact-detail candidate.
+    pub shadow_importance: f32,
+    pub max_shadow_distance: f32,
 }
 
 impl Default for DirectionalLight {
@@ -2270,6 +2302,10 @@ impl Default for DirectionalLight {
             direction: [0.0, -1.0, 0.0],
             color: [255.0, 255.0, 255.0],
             intensity: 1.0,
+            casts_raster_shadow: true,
+            casts_raytraced_shadow: false,
+            shadow_importance: 1.0,
+            max_shadow_distance: 250.0,
         }
     }
 }
@@ -2342,6 +2378,33 @@ impl Inspectable for DirectionalLight {
                 value: &mut self.intensity as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
+            ExportedField {
+                name: "casts_raster_shadow",
+                kind: ExportKind::Checkbox,
+                value: &mut self.casts_raster_shadow as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<bool>(),
+            },
+            ExportedField {
+                name: "casts_raytraced_shadow",
+                kind: ExportKind::Checkbox,
+                value: &mut self.casts_raytraced_shadow as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<bool>(),
+            },
+            ExportedField {
+                name: "shadow_importance",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.shadow_importance as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "max_shadow_distance",
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 1000.0,
+                },
+                value: &mut self.max_shadow_distance as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
         ]
     }
 }
@@ -2378,6 +2441,7 @@ pub struct PostProcessing {
     pub gi_debug_mode: u32,
     pub gi_enabled: bool,
     pub path_traced_gi: bool,
+    pub shadow_mode: ShadowMode,
     pub raytraced_shadows_enabled: bool,
     pub raytraced_reflections_enabled: bool,
     pub raytraced_gi_enabled: bool,
@@ -2413,6 +2477,7 @@ impl Default for PostProcessing {
             gi_debug_mode: 0,
             gi_enabled: true,
             path_traced_gi: false,
+            shadow_mode: ShadowMode::Hybrid,
             raytraced_shadows_enabled: true,
             raytraced_reflections_enabled: true,
             raytraced_gi_enabled: false,
@@ -2449,6 +2514,7 @@ impl PostProcessing {
             gi_enabled: true,
             gi_quality: 2,
             path_traced_gi: false,
+            shadow_mode: ShadowMode::RasterShadowMap,
             raytraced_shadows_enabled: false,
             raytraced_reflections_enabled: true,
             raytraced_gi_enabled: false,
@@ -2473,6 +2539,7 @@ impl PostProcessing {
         Self {
             gi_enabled: true,
             path_traced_gi: false,
+            shadow_mode: ShadowMode::Hybrid,
             raytraced_shadows_enabled: true,
             raytraced_reflections_enabled: true,
             raytraced_gi_enabled: false,
@@ -2505,11 +2572,17 @@ impl Inspectable for PostProcessing {
                 ui.selectable_value(&mut self.profile, RendererProfile::Ultra, "Ultra");
                 ui.selectable_value(&mut self.profile, RendererProfile::High, "High");
                 ui.selectable_value(&mut self.profile, RendererProfile::Balanced, "Balanced");
-                ui.selectable_value(&mut self.profile, RendererProfile::Indoor60FPS, "Indoor 60 FPS");
+                ui.selectable_value(
+                    &mut self.profile,
+                    RendererProfile::Indoor60FPS,
+                    "Indoor 60 FPS",
+                );
                 ui.selectable_value(&mut self.profile, RendererProfile::Low, "Low");
                 ui.selectable_value(&mut self.profile, RendererProfile::Cinematic, "Cinematic");
             });
-        if ui.button("Apply Indoor60FPS preset").clicked() { *self = PostProcessing::indoor_60_fps(); }
+        if ui.button("Apply Indoor60FPS preset").clicked() {
+            *self = PostProcessing::indoor_60_fps();
+        }
 
         ui.label("Exposure");
         // Allow a wider exposure range so scenes can be brightened

@@ -14,8 +14,10 @@ struct Object {
     tri_bvh_start: u32,
     tri_bvh_count: u32,
     is_shaded: u32,
-    _pad5: u32,
-    _pad6: u32,
+    casts_raster_shadow: u32,
+    casts_raytraced_shadow: u32,
+    shadow_importance: f32,
+    max_shadow_distance: f32,
 };
 
 struct Params {
@@ -35,13 +37,17 @@ struct Params {
     max_bounces: i32,
     light_samples: i32,
     dir_shadow_samples: i32,
+    shadow_mode: u32,
     raytraced_shadows_enabled: u32,
     shadow_quality: u32,
     max_shadow_rays: u32,
     emissive_shadow_samples: u32,
     directional_shadow_samples: u32,
     cloud_object_shadows_enabled: u32,
-    _pad_shadow: vec2<u32>,
+    max_rt_shadow_distance: f32,
+    rt_shadow_ray_t_max: f32,
+    min_soft_shadow_radius: f32,
+    _pad_shadow_mode: u32,
     inv_view_proj: mat4x4<f32>,
 };
 

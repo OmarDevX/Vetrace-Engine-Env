@@ -26,8 +26,10 @@ pub struct GpuObject {
     pub tri_bvh_start: u32,
     pub tri_bvh_count: u32,
     pub is_shaded: u32,
-    pub _padding5: u32,
-    pub _padding6: u32,
+    pub casts_raster_shadow: u32,
+    pub casts_raytraced_shadow: u32,
+    pub shadow_importance: f32,
+    pub max_shadow_distance: f32,
 }
 impl Default for GpuObject {
     fn default() -> Self {
@@ -48,8 +50,10 @@ impl Default for GpuObject {
             tri_bvh_start: 0,
             tri_bvh_count: 0,
             is_shaded: 1,
-            _padding5: 0,
-            _padding6: 0,
+            casts_raster_shadow: 1,
+            casts_raytraced_shadow: 0,
+            shadow_importance: 0.0,
+            max_shadow_distance: 100.0,
             orientation: [0.0, 0.0, 0.0, 1.0],
         }
     }
@@ -245,6 +249,10 @@ pub struct Object {
     pub tri_bvh_start: usize,
     pub tri_bvh_count: usize,
     pub is_shaded: bool,
+    pub casts_raster_shadow: bool,
+    pub casts_raytraced_shadow: bool,
+    pub shadow_importance: f32,
+    pub max_shadow_distance: f32,
 }
 
 impl Object {
@@ -282,6 +290,10 @@ impl Object {
             tri_bvh_start: 0,
             tri_bvh_count: 0,
             is_shaded: true,
+            casts_raster_shadow: true,
+            casts_raytraced_shadow: false,
+            shadow_importance: 0.0,
+            max_shadow_distance: 100.0,
         }
     }
     pub fn to_gpu(&self) -> GpuObject {
@@ -302,8 +314,10 @@ impl Object {
             tri_bvh_start: self.tri_bvh_start as u32,
             tri_bvh_count: self.tri_bvh_count as u32,
             is_shaded: self.is_shaded as u32,
-            _padding5: 0,
-            _padding6: 0,
+            casts_raster_shadow: self.casts_raster_shadow as u32,
+            casts_raytraced_shadow: self.casts_raytraced_shadow as u32,
+            shadow_importance: self.shadow_importance,
+            max_shadow_distance: self.max_shadow_distance,
             orientation: self.orientation,
         }
     }
@@ -535,6 +549,10 @@ impl Default for Object {
             tri_bvh_start: 0,
             tri_bvh_count: 0,
             is_shaded: true,
+            casts_raster_shadow: true,
+            casts_raytraced_shadow: false,
+            shadow_importance: 0.0,
+            max_shadow_distance: 100.0,
         }
     }
 }
