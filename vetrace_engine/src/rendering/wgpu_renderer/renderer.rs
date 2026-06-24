@@ -12,6 +12,7 @@ use sdl2::video::Window;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
+use std::time::Instant;
 use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::{util::DeviceExt, *};
@@ -196,6 +197,10 @@ pub struct WgpuRenderer {
     prev_shader_defs: Vec<(String, String)>,
     prev_objects: Vec<GpuObject>,
     prev_triangles: Vec<GpuTriangle>,
+    profiler_stats: crate::rendering::renderer::RendererProfilerStats,
+    adaptive_quality: f32,
+    slow_frame_streak: u32,
+    fast_frame_streak: u32,
     prev_bvh_nodes: Vec<GpuBvhNode>,
     prev_tri_bvh_nodes: Vec<GpuTriBvhNode>,
 }

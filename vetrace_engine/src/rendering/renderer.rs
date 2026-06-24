@@ -70,6 +70,33 @@ fn resize_texture(
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RendererProfile {
+    Ultra,
+    High,
+    Balanced,
+    Indoor60FPS,
+    Low,
+    Cinematic,
+}
+
+impl Default for RendererProfile {
+    fn default() -> Self { Self::Balanced }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RendererProfilerStats {
+    pub raster_pass_ms: f32,
+    pub rt_shadow_pass_ms: f32,
+    pub rt_reflection_pass_ms: f32,
+    pub rt_gi_pass_ms: f32,
+    pub denoise_ms: f32,
+    pub clouds_fog_atmosphere_ms: f32,
+    pub total_frame_ms: f32,
+    pub adaptive_quality: f32,
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererMode {
     RasterGame = 0,
     HybridEffects = 1,
@@ -146,6 +173,7 @@ pub struct RenderParams {
     /// Selects whether the final image starts from rasterized primary visibility or path tracing.
     pub renderer_mode: RendererMode,
     pub clouds: Vec<GpuVolumetricCloud>,
+    pub profile: RendererProfile,
 }
 
 struct Uniforms {
