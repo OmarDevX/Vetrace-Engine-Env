@@ -1,7 +1,7 @@
-use vetrace_engine::Engine;
 use vetrace_engine::app::App;
 use vetrace_engine::components::components::Transform;
 use vetrace_engine::rendering::RenderParams;
+use vetrace_engine::Engine;
 /// Simple game application demonstrating the new clean engine API
 struct SimpleGame {
     entity_count: usize,
@@ -69,6 +69,12 @@ impl App for SimpleGame {
             max_bounces: 8,
             light_samples: 1,
             dir_shadow_samples: 1,
+            raytraced_shadows_enabled: 1,
+            shadow_quality: 2,
+            max_shadow_rays: 2,
+            emissive_shadow_samples: 1,
+            directional_shadow_samples: 1,
+            cloud_object_shadows_enabled: 1,
             inv_view_proj: [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],

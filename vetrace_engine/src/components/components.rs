@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::Inspectable;
 use crate::inspector::export::{ExportKind, ExportedField};
+use crate::inspector::Inspectable;
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -2354,6 +2354,13 @@ pub struct PostProcessing {
     pub gi_debug_mode: u32,
     pub gi_enabled: bool,
     pub path_traced_gi: bool,
+    pub raytraced_shadows_enabled: bool,
+    /// 0 Off, 1 Low hard shadows, 2 Medium capped soft shadows, 3 High, 4 Cinematic.
+    pub shadow_quality: u32,
+    pub max_shadow_rays: u32,
+    pub emissive_shadow_samples: u32,
+    pub directional_shadow_samples: u32,
+    pub cloud_object_shadows_enabled: bool,
     pub light_samples: u32,
     pub dir_light_samples: u32,
     pub max_bounces: u32,
@@ -2378,6 +2385,12 @@ impl Default for PostProcessing {
             gi_debug_mode: 0,
             gi_enabled: true,
             path_traced_gi: false,
+            raytraced_shadows_enabled: true,
+            shadow_quality: 2,
+            max_shadow_rays: 2,
+            emissive_shadow_samples: 1,
+            directional_shadow_samples: 1,
+            cloud_object_shadows_enabled: true,
             light_samples: 1,
             dir_light_samples: 1,
             max_bounces: 3,
@@ -2392,6 +2405,27 @@ impl Default for PostProcessing {
             fog_height_falloff: 0.0,
             fog_max_opacity: 1.0,
             fog_inscattering_tint: [1.0, 1.0, 1.0],
+        }
+    }
+}
+
+impl PostProcessing {
+    /// Game-performance preset: keeps baked/static GI available while capping
+    /// expensive ray-traced soft shadows and leaving cinematic path tracing off.
+    pub fn game_performance() -> Self {
+        Self {
+            gi_enabled: true,
+            path_traced_gi: false,
+            raytraced_shadows_enabled: true,
+            shadow_quality: 1,
+            max_shadow_rays: 1,
+            emissive_shadow_samples: 1,
+            directional_shadow_samples: 1,
+            cloud_object_shadows_enabled: false,
+            light_samples: 1,
+            dir_light_samples: 1,
+            max_bounces: 1,
+            ..Self::default()
         }
     }
 }
@@ -2430,6 +2464,34 @@ impl Inspectable for PostProcessing {
                 });
 
             ui.checkbox(&mut self.path_traced_gi, "Path Traced GI");
+            if ui.button("Apply GamePerformance preset").clicked() {
+                *self = PostProcessing::game_performance();
+            }
+
+            ui.separator();
+            ui.label("Direct Lighting Shadows");
+            ui.checkbox(&mut self.raytraced_shadows_enabled, "Ray Traced Shadows");
+            egui::ComboBox::from_id_source("shadow_quality_pp")
+                .selected_text(match self.shadow_quality {
+                    0 => "Off",
+                    1 => "Low",
+                    2 => "Medium",
+                    3 => "High",
+                    _ => "Cinematic",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.shadow_quality, 0, "Off");
+                    ui.selectable_value(&mut self.shadow_quality, 1, "Low");
+                    ui.selectable_value(&mut self.shadow_quality, 2, "Medium");
+                    ui.selectable_value(&mut self.shadow_quality, 3, "High");
+                    ui.selectable_value(&mut self.shadow_quality, 4, "Cinematic");
+                });
+            ui.label("Max Shadow Rays");
+            ui.add(egui::Slider::new(&mut self.max_shadow_rays, 0..=8));
+            ui.checkbox(
+                &mut self.cloud_object_shadows_enabled,
+                "Cloud Object Shadows",
+            );
 
             ui.label("GI Debug");
             egui::ComboBox::from_id_source("gi_debug_pp")
@@ -3391,16 +3453,21 @@ impl Inspectable for VolumetricCloud {
                 value: &mut self.phase_anisotropy as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
-
             ExportedField {
                 name: "forward_anisotropy",
-                kind: ExportKind::Slider { min: 0.0, max: 0.95 },
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 0.95,
+                },
                 value: &mut self.forward_anisotropy as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
                 name: "backward_anisotropy",
-                kind: ExportKind::Slider { min: 0.0, max: 0.95 },
+                kind: ExportKind::Slider {
+                    min: 0.0,
+                    max: 0.95,
+                },
                 value: &mut self.backward_anisotropy as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },

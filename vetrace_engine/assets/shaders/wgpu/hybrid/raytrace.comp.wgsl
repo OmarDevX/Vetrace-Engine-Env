@@ -132,6 +132,10 @@ const MAX_LIGHT_STEPS         : i32 = 6;
 const MAX_ATMO_LIGHTS         : u32 = 2u;
 const MAX_LIGHT_SAMPLES       : u32 = 8u;
 const MAX_DIR_SHADOW_SAMPLES  : u32 = 8u;
+const SHADOW_QUALITY_OFF      : u32 = 0u;
+const SHADOW_QUALITY_LOW      : u32 = 1u;
+const SHADOW_QUALITY_MEDIUM   : u32 = 2u;
+const SHADOW_QUALITY_HIGH     : u32 = 3u;
 const T_EARLY_OUT             : f32 = 1e-3;
 
 struct Params {
@@ -152,6 +156,13 @@ struct Params {
     max_bounces: i32,
     light_samples: i32,
     dir_shadow_samples: i32,
+    raytraced_shadows_enabled: u32,
+    shadow_quality: u32,
+    max_shadow_rays: u32,
+    emissive_shadow_samples: u32,
+    directional_shadow_samples: u32,
+    cloud_object_shadows_enabled: u32,
+    _pad_shadow: vec2<u32>,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
     dir_light_dir: vec4<f32>,
@@ -438,6 +449,7 @@ fn cloud_object_shadow_transmittance(p: vec3<f32>, light_dir: vec3<f32>, max_dis
 }
 
 fn cloud_object_shadow_sample_enabled(cloud: VolumetricCloud, sample_index: u32, primary_steps: u32) -> bool {
+    if (params.cloud_object_shadows_enabled == 0u || params.raytraced_shadows_enabled == 0u || params.shadow_quality == SHADOW_QUALITY_OFF) { return false; }
     let quality = min(u32(max(cloud.light_padding.w, 0.0)), 4u);
     if (quality == 0u) {
         return false;
@@ -1334,6 +1346,47 @@ fn mesh_intersect(origin: vec3<f32>, dir: vec3<f32>, obj: Object) -> MeshHit {
 }
 
 
+
+fn mesh_any_hit(origin: vec3<f32>, dir: vec3<f32>, obj: Object, t_cap: f32) -> bool {
+    var stack: array<i32, 256>;
+    var sp: i32 = 0;
+    let root = i32(obj.tri_bvh_start);
+    if (root < 0) { return false; }
+    stack[sp] = root; sp = sp + 1;
+
+    loop {
+        if (sp == 0) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tri_node(ni)) { continue; }
+        let node = tri_bvh_nodes[ni];
+        if (!aabb_hit(origin, dir, node.bmin.xyz, node.bmax.xyz, t_cap)) { continue; }
+        let c0 = node.child_tri.x; let c1 = node.child_tri.y;
+        if (c0 < 0 && c1 < 0) {
+            let ti = u32(node.child_tri.z);
+            if (in_bounds_tri(ti)) {
+                let tri = triangles[ti];
+                let hit = tri_intersect(origin, dir, tri.v0, tri.e1, tri.e2);
+                if (hit.t < t_cap) {
+                    var mat_idx: u32 = obj.material_index;
+                    mat_idx = tri.material_index;
+                    let mat = materials[mat_idx];
+                    var a = mat.baseColorFactor.w;
+                    if (mat.baseColorTex != 0u) {
+                        let uv = tri.uv0 + tri.duv1 * hit.u + tri.duv2 * hit.v;
+                        a = a * textureSampleLevel(textures[mat.baseColorTex], tex_sampler, uv, 0.0).a;
+                    }
+                    if (obj.is_glass > 0u || a >= 0.5) { return true; }
+                }
+            }
+        } else {
+            if (c0 >= 0 && sp < 256) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 256) { stack[sp] = c1; sp = sp + 1; }
+        }
+    }
+    return false;
+}
+
 // -----------------------------
 // TLAS traversal
 // -----------------------------
@@ -1482,8 +1535,8 @@ fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip
                     var t = 1e20; var tri_idx: u32 = 0xffffffffu; var uv = vec2<f32>(0.0);
 
                     if (oref.is_mesh > 0u) {
-                        let res = mesh_intersect(o, d, oref);
-                        t = res.t; tri_idx = res.tri; uv = res.uv;
+                        if (mesh_any_hit(o, d, oref, t_cap)) { return true; }
+                        t = 1e20;
                     } else if (oref.is_cube > 0u) {
                         t = cube_hit(o, d, oref.position, oref.size, oref.orientation, oref.scale).t;
                     } else {
@@ -1504,8 +1557,8 @@ fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip
                     var t = 1e20; var tri_idx: u32 = 0xffffffffu; var uv = vec2<f32>(0.0);
 
                     if (oref.is_mesh > 0u) {
-                        let res = mesh_intersect(o, d, oref);
-                        t = res.t; tri_idx = res.tri; uv = res.uv;
+                        if (mesh_any_hit(o, d, oref, t_cap)) { return true; }
+                        t = 1e20;
                     } else if (oref.is_cube > 0u) {
                         t = cube_hit(o, d, oref.position, oref.size, oref.orientation, oref.scale).t;
                     } else {
@@ -1540,7 +1593,13 @@ fn soft_shadow(origin: vec3<f32>, normal: vec3<f32>, light: Object, light_idx: u
     let lm = materials[light.material_index];
     if (lm.emissiveStrength <= 0.0) { return 1.0; }
     var vis: f32 = 0.0;
-    let samples: u32 = max(1u, u32(params.light_samples));
+    if (params.raytraced_shadows_enabled == 0u || params.shadow_quality == SHADOW_QUALITY_OFF) { return 1.0; }
+    let requested = max(1u, max(u32(params.light_samples), params.emissive_shadow_samples));
+    var quality_cap = MAX_LIGHT_SAMPLES;
+    if (params.shadow_quality <= SHADOW_QUALITY_LOW) { quality_cap = 1u; }
+    if (params.shadow_quality == SHADOW_QUALITY_MEDIUM) { quality_cap = 2u; }
+    let ray_cap = select(MAX_LIGHT_SAMPLES, max(1u, params.max_shadow_rays), params.max_shadow_rays > 0u);
+    let samples: u32 = clamp(requested, 1u, min(ray_cap, quality_cap));
     for (var s: u32 = 0u; s < samples; s = s + 1u) {
         var offset = vec3<f32>(0.0);
         if (light.is_cube > 0u) {
@@ -1558,7 +1617,15 @@ fn soft_shadow(origin: vec3<f32>, normal: vec3<f32>, light: Object, light_idx: u
 const DIR_SHADOW_RADIUS: f32 = 0.05;
 fn dir_soft_shadow(origin: vec3<f32>, dir: vec3<f32>, rng: ptr<function, u32>) -> f32 {
     var vis: f32 = 0.0;
-    let samples: u32 = max(1u, u32(params.dir_shadow_samples));
+    if (params.raytraced_shadows_enabled == 0u || params.shadow_quality == SHADOW_QUALITY_OFF) { return 1.0; }
+    if (params.shadow_quality == SHADOW_QUALITY_LOW) {
+        return select(0.0, 1.0, is_visible(origin, origin + dir * 1000.0, 0xffffffffu, 0xffffffffu));
+    }
+    let requested = max(1u, max(u32(params.dir_shadow_samples), params.directional_shadow_samples));
+    var quality_cap = MAX_DIR_SHADOW_SAMPLES;
+    if (params.shadow_quality == SHADOW_QUALITY_MEDIUM) { quality_cap = 2u; }
+    let ray_cap = select(MAX_DIR_SHADOW_SAMPLES, max(1u, params.max_shadow_rays), params.max_shadow_rays > 0u);
+    let samples: u32 = clamp(requested, 1u, min(ray_cap, quality_cap));
     for (var s: u32 = 0u; s < samples; s = s + 1u) {
         let jitter = random_in_unit_sphere(rng) * DIR_SHADOW_RADIUS;
         let sdir = normalize(dir + jitter);

@@ -35,6 +35,13 @@ struct Params {
     max_bounces: i32,
     light_samples: i32,
     dir_shadow_samples: i32,
+    raytraced_shadows_enabled: u32,
+    shadow_quality: u32,
+    max_shadow_rays: u32,
+    emissive_shadow_samples: u32,
+    directional_shadow_samples: u32,
+    cloud_object_shadows_enabled: u32,
+    _pad_shadow: vec2<u32>,
     inv_view_proj: mat4x4<f32>,
 };
 

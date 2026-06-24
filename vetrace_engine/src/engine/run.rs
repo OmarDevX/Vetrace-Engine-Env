@@ -1,15 +1,15 @@
+use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
-use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
-use crate::Behaviour;
-use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
-use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
+use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
+use crate::Behaviour;
+use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -427,6 +427,12 @@ impl Engine {
             let mut light_samples = 1i32;
             let mut dir_light_samples = 1i32;
             let mut max_bounces = 3i32;
+            let mut raytraced_shadows_enabled = 1u32;
+            let mut shadow_quality = 2u32;
+            let mut max_shadow_rays = 2u32;
+            let mut emissive_shadow_samples = 1u32;
+            let mut directional_shadow_samples = 1u32;
+            let mut cloud_object_shadows_enabled = 1u32;
             let mut dof_aperture = 0.0f32;
             let mut dof_focus_dist = 0.0f32;
             let mut dof_enable = 0u32;
@@ -445,6 +451,12 @@ impl Engine {
                     light_samples = pp.light_samples as i32;
                     dir_light_samples = pp.dir_light_samples as i32;
                     max_bounces = pp.max_bounces as i32;
+                    raytraced_shadows_enabled = pp.raytraced_shadows_enabled as u32;
+                    shadow_quality = pp.shadow_quality.min(4);
+                    max_shadow_rays = pp.max_shadow_rays.min(8);
+                    emissive_shadow_samples = pp.emissive_shadow_samples.min(8);
+                    directional_shadow_samples = pp.directional_shadow_samples.min(8);
+                    cloud_object_shadows_enabled = pp.cloud_object_shadows_enabled as u32;
                     atmosphere = pp.atmosphere;
                     if let Some(d) = &pp.dof {
                         dof_enable = 1;
@@ -483,6 +495,12 @@ impl Engine {
                 max_bounces,
                 light_samples,
                 dir_shadow_samples: dir_light_samples,
+                raytraced_shadows_enabled,
+                shadow_quality,
+                max_shadow_rays,
+                emissive_shadow_samples,
+                directional_shadow_samples,
+                cloud_object_shadows_enabled,
                 inv_view_proj: {
                     let (w, h) = self.renderer.screen_dimensions();
                     let aspect = w as f32 / h as f32;
