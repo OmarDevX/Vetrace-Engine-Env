@@ -165,6 +165,7 @@ struct Params {
     atmo_count: u32,
     cloud_count: u32,
     atmosphere_mode: u32, // 0 = LUT atmosphere, 1 = inline/debug atmosphere
+    atmosphere_sun_controls: vec4<f32>,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 
@@ -789,10 +790,11 @@ fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: v
         // LUTs model atmospheric radiance, while this keeps directional-light
         // visibility consistent for sky rays during A/B testing.
         let sun_cos = dot(dir, sun_dir);
-        let sun_size = 0.9995;
-        if (max_t >= 1e9 && sun_cos > sun_size) {
-            let glow = (sun_cos - sun_size) / (1.0 - sun_size);
-            lut_col += sun_I * glow * 50.0;
+        let sun_radius = max(params.atmosphere_sun_controls.x, 1e-5);
+        let sun_edge = cos(sun_radius);
+        if (max_t >= 1e9 && sun_cos > sun_edge) {
+            let glow = (sun_cos - sun_edge) / max(1.0 - sun_edge, 1e-5);
+            lut_col += sun_I * glow * max(params.atmosphere_sun_controls.y, 0.0);
         }
         return lut_col;
     }
@@ -861,10 +863,11 @@ fn apply_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, background: v
 
     // Sun glow only for sky rays
     let sun_cos = dot(dir, sun_dir);
-    let sun_size = 0.9995;
-    if (max_t >= 1e9 && sun_cos > sun_size) {
-        let glow = (sun_cos - sun_size) / (1.0 - sun_size);
-        col += trans * sun_I * glow * 50.0;
+    let sun_radius = max(params.atmosphere_sun_controls.x, 1e-5);
+    let sun_edge = cos(sun_radius);
+    if (max_t >= 1e9 && sun_cos > sun_edge) {
+        let glow = (sun_cos - sun_edge) / max(1.0 - sun_edge, 1e-5);
+        col += trans * sun_I * glow * max(params.atmosphere_sun_controls.y, 0.0);
     }
     return col;
 }

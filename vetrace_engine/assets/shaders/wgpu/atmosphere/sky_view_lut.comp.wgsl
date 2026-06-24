@@ -42,7 +42,9 @@ struct Params {
     _pad_dof: u32,
     atmosphere: u32,
     atmo_count: u32,
-    _pad_atmos: vec2<u32>,
+    cloud_count: u32,
+    atmosphere_mode: u32,
+    atmosphere_sun_controls: vec4<f32>,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 struct Scattering { color: vec3<f32>, transmittance: vec3<f32> };
@@ -170,11 +172,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         multi = textureLoad(multi_scattering_lut, multi_coord, 0).xyz;
     }
     let sc = integrate_atmosphere(params.camera_pos.xyz, dir, 1e9, multi, id.xy, params.frame_number);
-    var color = sc.color + sc.transmittance * params.skycolor.xyz;
+    var color = (sc.color + sc.transmittance * params.skycolor.xyz) * max(params.atmosphere_sun_controls.z, 0.0);
     let sun_dir = normalize(-params.dir_light_dir.xyz);
     let sun_cos = dot(dir, sun_dir);
-    if (sun_cos > 0.9995) {
-        color += sc.transmittance * params.dir_light_color.xyz * params.dir_light_dir.w * ((sun_cos - 0.9995) / 0.0005) * 50.0;
+    let sun_radius = max(params.atmosphere_sun_controls.x, 1e-5);
+    let sun_edge = cos(sun_radius);
+    if (sun_cos > sun_edge) {
+        let glow = (sun_cos - sun_edge) / max(1.0 - sun_edge, 1e-5);
+        color += sc.transmittance * params.dir_light_color.xyz * params.dir_light_dir.w * glow * max(params.atmosphere_sun_controls.y, 0.0);
     }
     textureStore(sky_view_lut, vec2<i32>(id.xy), vec4<f32>(max(color, vec3<f32>(0.0)), 1.0));
 }

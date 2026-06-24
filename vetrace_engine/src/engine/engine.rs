@@ -696,6 +696,7 @@ impl Engine {
             atmos,
             atmosphere: if atmosphere && have_atmos { 1 } else { 0 },
             atmosphere_mode: 0,
+            atmosphere_sun_controls: [0.00465, 1.0, 1.0, 0.0],
             clouds,
         };
 

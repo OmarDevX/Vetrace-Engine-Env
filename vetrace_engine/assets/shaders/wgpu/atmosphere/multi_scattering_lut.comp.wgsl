@@ -42,7 +42,9 @@ struct Params {
     _pad_dof: u32,
     atmosphere: u32,
     atmo_count: u32,
-    _pad_atmos: vec2<u32>,
+    cloud_count: u32,
+    atmosphere_mode: u32,
+    atmosphere_sun_controls: vec4<f32>,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 struct Scattering { color: vec3<f32>, transmittance: vec3<f32> };
@@ -68,6 +70,19 @@ fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
     let strength = max(atmo.ozone_params.z, 0.0);
     let normalized_altitude = (height - center_altitude) / thickness;
     return strength * exp(-normalized_altitude * normalized_altitude);
+}
+
+
+fn transmittance_lut_uv(atmo: Atmosphere, origin: vec3<f32>, light_dir: vec3<f32>) -> vec2<f32> {
+    let rel = origin - atmo.center_radius.xyz;
+    let r = clamp((length(rel) - atmo.center_radius.w) / max(atmo.atmo_g_height.x - atmo.center_radius.w, 1e-3), 0.0, 1.0);
+    let up = normalize(select(vec3<f32>(0.0, 1.0, 0.0), rel, length(rel) > 1e-3));
+    let mu = dot(up, light_dir) * 0.5 + 0.5;
+    return vec2<f32>(clamp(mu, 0.0, 1.0), r);
+}
+
+fn sample_transmittance_lut(atmo: Atmosphere, origin: vec3<f32>, light_dir: vec3<f32>) -> vec3<f32> {
+    return textureSampleLevel(transmittance_lut, blue_noise_sampler, transmittance_lut_uv(atmo, origin, light_dir), 0.0).xyz;
 }
 
 fn sample_blue_noise(pixel: vec2<u32>, frame_number: i32) -> f32 {
@@ -136,6 +151,7 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
 @group(0) @binding(2) var unused_lut: texture_2d<f32>;
 @group(0) @binding(3) var blue_noise_tex: texture_2d<f32>;
 @group(0) @binding(4) var blue_noise_sampler: sampler;
+@group(0) @binding(5) var transmittance_lut: texture_2d<f32>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(multi_scattering_lut);
@@ -151,13 +167,17 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let altitude = altitude_u * atmosphere_height;
         let density_r = exp(-altitude / max(atmo.atmo_g_height.z, 1e-3));
         let density_m = exp(-altitude / max(atmo.atmo_g_height.w, 1e-3));
+        let sun_dir = normalize(-params.dir_light_dir.xyz);
+        let up = vec3<f32>(sqrt(max(0.0, 1.0 - view_sun_cos * view_sun_cos)), view_sun_cos, 0.0);
+        let origin = atmo.center_radius.xyz + up * (atmo.center_radius.w + altitude);
+        let trans_to_sun = sample_transmittance_lut(atmo, origin, sun_dir);
         let mumu = view_sun_cos * view_sun_cos;
         let g = atmo.atmo_g_height.y;
         let gg = g * g;
         let phase_r = 0.05968310366 * (1.0 + mumu);
         let den = max(1e-3, 1.0 + gg - 2.0 * view_sun_cos * g);
         let phase_m = 0.11936620732 * (1.0 - gg) * (1.0 + mumu) / (den * sqrt(den));
-        color = (atmo.ray_beta.xyz * density_r * phase_r + atmo.mie_beta.xyz * density_m * phase_m) * atmo.multi_scatter_params.x;
+        color = (atmo.ray_beta.xyz * density_r * phase_r + atmo.mie_beta.xyz * density_m * phase_m) * trans_to_sun * atmo.multi_scatter_params.x * max(params.atmosphere_sun_controls.z, 0.0);
     }
     textureStore(multi_scattering_lut, vec2<i32>(id.xy), vec4<f32>(color, 1.0));
 }

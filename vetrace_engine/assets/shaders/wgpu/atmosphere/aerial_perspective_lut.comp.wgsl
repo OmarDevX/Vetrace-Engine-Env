@@ -42,7 +42,9 @@ struct Params {
     _pad_dof: u32,
     atmosphere: u32,
     atmo_count: u32,
-    _pad_atmos: vec2<u32>,
+    cloud_count: u32,
+    atmosphere_mode: u32,
+    atmosphere_sun_controls: vec4<f32>,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 struct Scattering { color: vec3<f32>, transmittance: vec3<f32> };
@@ -173,5 +175,5 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let sc = integrate_atmosphere(params.camera_pos.xyz, dir, max_dist, multi, id.xy, params.frame_number);
     let trans = dot(sc.transmittance, vec3<f32>(0.3333333));
-    textureStore(aerial_perspective_lut, vec3<i32>(id), vec4<f32>(max(sc.color, vec3<f32>(0.0)), clamp(trans, 0.0, 1.0)));
+    textureStore(aerial_perspective_lut, vec3<i32>(id), vec4<f32>(max(sc.color * max(params.atmosphere_sun_controls.z, 0.0), vec3<f32>(0.0)), clamp(trans, 0.0, 1.0)));
 }

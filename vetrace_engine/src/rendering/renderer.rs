@@ -99,6 +99,8 @@ pub struct RenderParams {
     pub atmosphere: u32,
     /// 0 = precomputed LUT atmosphere, 1 = inline atmosphere integration for debug/quality A/B tests.
     pub atmosphere_mode: u32,
+    /// x = sun angular radius in radians, y = sun disk intensity, z = sky luminance scale.
+    pub atmosphere_sun_controls: [f32; 4],
     pub clouds: Vec<GpuVolumetricCloud>,
 }
 
