@@ -187,7 +187,7 @@ pub struct ShaderParams {
     pub max_rt_shadow_distance: f32,
     pub rt_shadow_ray_t_max: f32,
     pub min_soft_shadow_radius: f32,
-    pub _pad_shadow_mode: u32,
+    pub raytraced_reflections_enabled: u32,
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
     pub dir_light_dir: [f32; 4],

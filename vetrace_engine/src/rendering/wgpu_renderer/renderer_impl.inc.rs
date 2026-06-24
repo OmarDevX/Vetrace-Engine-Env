@@ -963,6 +963,7 @@ impl WgpuRenderer {
                     BindGroupLayoutEntry { binding: 36, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: None },
                     BindGroupLayoutEntry { binding: 37, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::R16Float, view_dimension: TextureViewDimension::D2 }, count: None },
                     BindGroupLayoutEntry { binding: 38, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: None },
+                    BindGroupLayoutEntry { binding: 39, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: None },
                 ],
             });
 
@@ -1618,6 +1619,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&cloud_transmittance_history_view) },
                 BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&cloud_shadow_view) },
                 BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&cloud_shadow_history_view) },
+                BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&screen_history_view) },
             ],
         });
 
@@ -3127,6 +3129,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&self.cloud_transmittance_history_view) },
                 BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
                 BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_history_view) },
+                BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&self.screen_history_view) },
             ],
         });
 
@@ -3874,7 +3877,7 @@ impl WgpuRenderer {
             max_rt_shadow_distance: params.max_rt_shadow_distance,
             rt_shadow_ray_t_max: params.rt_shadow_ray_t_max,
             min_soft_shadow_radius: params.min_soft_shadow_radius,
-            _pad_shadow_mode: 0,
+            raytraced_reflections_enabled: params.raytraced_reflections_enabled,
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
             dir_light_dir: [

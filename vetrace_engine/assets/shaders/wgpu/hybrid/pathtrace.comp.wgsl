@@ -174,7 +174,7 @@ struct Params {
     max_rt_shadow_distance: f32,
     rt_shadow_ray_t_max: f32,
     min_soft_shadow_radius: f32,
-    _pad_shadow_mode: u32,
+    raytraced_reflections_enabled: u32,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
     dir_light_dir: vec4<f32>,
@@ -246,6 +246,7 @@ fn uses_path_traced_primary_visibility() -> bool {
 @group(0) @binding(36) var cloud_transmittance_history_tex: texture_2d<f32>;
 @group(0) @binding(37) var cloud_shadow_optical_depth_tex: texture_storage_2d<r16float, write>;
 @group(0) @binding(38) var cloud_directional_shadow_tex: texture_2d<f32>;
+@group(0) @binding(39) var color_history_tex: texture_2d<f32>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -2112,6 +2113,99 @@ fn shade_glass(
 
 
 
+
+const REFLECT_ROUGH_PROBE_ONLY: f32 = 0.60;
+const REFLECT_ROUGH_RT_ALLOWED: f32 = 0.25;
+const REFLECT_SSR_STEPS: i32 = 20;
+const REFLECT_SSR_STRIDE_PX: f32 = 10.0;
+
+fn reflection_probe_fallback(albedo: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, roughness: f32, metallic: f32) -> vec3<f32> {
+    let reflected = reflect(view_dir, normal);
+    let sky_lobe = mix(params.skycolor.rgb * 0.35, params.dir_light_color.rgb, clamp(reflected.y * 0.5 + 0.5, 0.0, 1.0));
+    let probe_tint = mix(vec3<f32>(1.0), albedo, metallic);
+    return mix(sky_lobe * probe_tint, albedo * params.skycolor.rgb * 0.18, clamp(roughness, 0.0, 1.0));
+}
+
+fn reflection_resolution_lane(pixel: vec2<u32>, roughness: f32) -> bool {
+    if (params.renderer_mode == RENDERER_MODE_CINEMATIC_PATH_TRACE) { return true; }
+    if (params.renderer_mode == RENDERER_MODE_RASTER_GAME) { return ((pixel.x & 3u) == 0u) && ((pixel.y & 3u) == 0u); }
+    if (roughness >= REFLECT_ROUGH_RT_ALLOWED) { return ((pixel.x & 1u) == 0u) && ((pixel.y & 1u) == 0u); }
+    return ((pixel.x ^ pixel.y) & 1u) == 0u;
+}
+
+fn screen_space_reflection_history(pixel: vec2<u32>, dims: vec2<u32>, hit_pos: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, roughness: f32) -> vec4<f32> {
+    let reflected = normalize(reflect(view_dir, normal));
+    var screen_dir = vec2<f32>(dot(reflected, params.camera_right.xyz), dot(reflected, params.camera_up.xyz));
+    let len_dir = length(screen_dir);
+    if (len_dir < 1e-3 || dot(reflected, params.camera_front.xyz) <= -0.2) {
+        return vec4<f32>(0.0);
+    }
+    screen_dir = screen_dir / len_dir;
+    let start_depth = length(hit_pos - params.camera_pos.xyz);
+    var best = vec4<f32>(0.0);
+    for (var i: i32 = 1; i <= REFLECT_SSR_STEPS; i = i + 1) {
+        let step_px = f32(i) * REFLECT_SSR_STRIDE_PX * mix(0.75, 1.6, roughness);
+        let sample_f = vec2<f32>(pixel) + screen_dir * step_px;
+        if (any(sample_f < vec2<f32>(0.0)) || any(sample_f >= vec2<f32>(dims))) { break; }
+        let sample_px = vec2<i32>(sample_f);
+        let sample_depth = textureLoad(depth_tex, sample_px, 0).x;
+        if (sample_depth >= 0.9999) { continue; }
+        let sample_uv = (vec2<f32>(sample_px) + vec2<f32>(0.5)) / vec2<f32>(dims);
+        var sample_clip = vec4<f32>(sample_uv * 2.0 - vec2<f32>(1.0), sample_depth, 1.0);
+        var sample_world = params.inv_view_proj * sample_clip;
+        sample_world = sample_world / sample_world.w;
+        let sample_linear_depth = length(sample_world.xyz - params.camera_pos.xyz);
+        let expected_depth = start_depth + step_px * 0.015;
+        let depth_ok = abs(sample_linear_depth - expected_depth) < 0.35 + roughness * 1.25;
+        let sample_normal = normalize(textureLoad(gbuf_normal, sample_px, 0).xyz * 2.0 - vec3<f32>(1.0));
+        let normal_ok = max(dot(sample_normal, normal), 0.0);
+        if (depth_ok && normal_ok > 0.35) {
+            let history_color = textureLoad(color_history_tex, sample_px, 0).rgb;
+            let confidence = normal_ok * (1.0 - f32(i) / f32(REFLECT_SSR_STEPS + 1));
+            best = vec4<f32>(history_color, confidence);
+            break;
+        }
+    }
+    return best;
+}
+
+fn object_is_reflection_important(hit_pos: vec3<f32>, view_dir: vec3<f32>, metallic: f32, roughness: f32) -> bool {
+    let primary = object_tlas_intersect(params.camera_pos.xyz, normalize(hit_pos - params.camera_pos.xyz), -1);
+    if (primary.idx < 0) {
+        return metallic > 0.75 && roughness < 0.12;
+    }
+    let obj = objects[u32(primary.idx)];
+    return obj.shadow_importance >= 0.5 || primary.idx == params.selected_index || metallic > 0.75 || obj.is_glass != 0u;
+}
+
+fn hybrid_reflection_for_raster(pixel: vec2<u32>, dims: vec2<u32>, hit_pos: vec3<f32>, normal: vec3<f32>, view_dir: vec3<f32>, albedo: vec3<f32>, metallic: f32, roughness: f32, fresnel: vec3<f32>, rng: ptr<function, u32>) -> vec3<f32> {
+    let probe = reflection_probe_fallback(albedo, normal, view_dir, roughness, metallic) * fresnel;
+    if (params.raytraced_reflections_enabled == 0u || roughness > REFLECT_ROUGH_PROBE_ONLY) {
+        return probe * select(0.35, 1.0, roughness <= REFLECT_ROUGH_PROBE_ONLY);
+    }
+
+    let ssr = screen_space_reflection_history(pixel, dims, hit_pos, normal, view_dir, roughness);
+    var fallback = mix(probe, ssr.rgb * fresnel, clamp(ssr.a, 0.0, 0.9));
+    if (ssr.a > 0.55) {
+        return fallback;
+    }
+
+    let fallback_insufficient = ssr.a < 0.25;
+    let smooth_enough = roughness < REFLECT_ROUGH_RT_ALLOWED;
+    let important = smooth_enough && object_is_reflection_important(hit_pos, view_dir, metallic, roughness);
+    let rt_allowed = smooth_enough && important && fallback_insufficient && reflection_resolution_lane(pixel, roughness);
+    if (rt_allowed) {
+        let refl_dir = normalize(reflect(view_dir, normal));
+        let traced = trace_ray(hit_pos + normal * 0.01, refl_dir, 1, rng).color * fresnel;
+        return mix(fallback, traced, 1.0 - roughness);
+    }
+
+    if (roughness >= REFLECT_ROUGH_RT_ALLOWED && roughness <= REFLECT_ROUGH_PROBE_ONLY) {
+        fallback = mix(probe, fallback, 0.5);
+    }
+    return fallback;
+}
+
 fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u32>) {
     let dims = textureDimensions(color_tex);
     let albedo_sample = textureLoad(gbuf_albedo, vec2<i32>(id), 0);
@@ -2156,7 +2250,8 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
     let spec = pow(max(dot(normal, half_vec), 0.0), spec_power);
     let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - max(dot(-view_dir, half_vec), 0.0), 5.0);
     var direct = (albedo * (1.0 - metallic) / 3.14159265 + fresnel * spec) * params.dir_light_color.rgb * params.dir_light_dir.w * n_dot_l * visibility;
-    var ambient = albedo * params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * 0.18;
+    let reflection = hybrid_reflection_for_raster(id, dims, hit_pos, normal, view_dir, albedo, metallic, roughness, fresnel, rng);
+    var ambient = albedo * params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * 0.18 + reflection;
     var gi = vec3<f32>(0.0);
     if (params.renderer_mode == RENDERER_MODE_HYBRID_EFFECTS && gi_params.quality != 3u) {
         gi = sample_diffuse_gi(hit_pos + normal * 0.01, normal, rng);
@@ -2256,25 +2351,32 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
-                    let rr = russian_roulette(1, rough, &rng_state);
-                    if (rr == 0.0) { final_col = primary.color; }
-                    else if (rough <= 0.02) {
+                    let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
+                    let cos_theta = abs(dot(-view_dir, surf_normal));
+                    let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
+                    let probe = reflection_probe_fallback(mat.baseColorFactor.rgb, surf_normal, view_dir, rough, mat.metallicFactor);
+                    let important = obj.shadow_importance >= 0.5 || primary.obj_idx == params.selected_index || mat.metallicFactor > 0.75 || obj.is_glass != 0u;
+                    let rt_lane = params.raytraced_reflections_enabled != 0u && reflection_resolution_lane(id.xy, rough);
+                    if (rough > REFLECT_ROUGH_PROBE_ONLY) {
+                        final_col = primary.color + probe * fresnel * 0.25;
+                    } else if (rough >= REFLECT_ROUGH_RT_ALLOWED) {
+                        final_col = primary.color + probe * fresnel * 0.5;
+                        if (important && rt_lane) {
+                            let h = sample_ggx(surf_normal, rough, &rng_state);
+                            let refl_dir = normalize(reflect(view_dir, h));
+                            let res = trace_ray(hit_pos + h * 0.01, refl_dir, 1, &rng_state);
+                            final_col = mix(final_col, mix(primary.color, res.color, fresnel), 0.35);
+                        }
+                    } else if (important && rt_lane) {
                         let refl_dir = normalize(reflect(view_dir, surf_normal));
-                        let res = trace_ray(hit_pos + surf_normal * 0.01, refl_dir, 1, &rng_state);
-                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
-                        let cos_theta = abs(dot(-view_dir, surf_normal));
-                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
-                        final_col = mix(primary.color, res.color * rr, fresnel);
-                    } else if (rough < 0.96) {
-                        let h = sample_ggx(surf_normal, rough, &rng_state);
-                        let refl_dir = normalize(reflect(view_dir, h));
-                        let res = trace_ray(hit_pos + h * 0.01, refl_dir, 1, &rng_state);
-                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
-                        let cos_theta = abs(dot(-view_dir, surf_normal));
-                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
-                        final_col = mix(primary.color, res.color * rr, fresnel);
+                        let rr = russian_roulette(1, rough, &rng_state);
+                        if (rr == 0.0) { final_col = primary.color + probe * fresnel; }
+                        else {
+                            let res = trace_ray(hit_pos + surf_normal * 0.01, refl_dir, 1, &rng_state);
+                            final_col = mix(primary.color, res.color * rr, fresnel);
+                        }
                     } else {
-                        final_col = primary.color;
+                        final_col = primary.color + probe * fresnel;
                     }
                 }
         } else {
@@ -2306,25 +2408,32 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (obj.is_glass > 0u) {
                 final_col = shade_glass(view_dir, surf_normal, hit_pos, 0, mat_idx, obj, &rng_state);            } else {
                     let rough = mat.roughnessFactor;
-                    let rr = russian_roulette(1, rough, &rng_state);
-                    if (rr == 0.0) { final_col = primary.color; }
-                    else if (rough <= 0.02) {
+                    let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
+                    let cos_theta = abs(dot(-view_dir, surf_normal));
+                    let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
+                    let probe = reflection_probe_fallback(mat.baseColorFactor.rgb, surf_normal, view_dir, rough, mat.metallicFactor);
+                    let important = obj.shadow_importance >= 0.5 || primary.obj_idx == params.selected_index || mat.metallicFactor > 0.75 || obj.is_glass != 0u;
+                    let rt_lane = params.raytraced_reflections_enabled != 0u && reflection_resolution_lane(id.xy, rough);
+                    if (rough > REFLECT_ROUGH_PROBE_ONLY) {
+                        final_col = primary.color + probe * fresnel * 0.25;
+                    } else if (rough >= REFLECT_ROUGH_RT_ALLOWED) {
+                        final_col = primary.color + probe * fresnel * 0.5;
+                        if (important && rt_lane) {
+                            let h = sample_ggx(surf_normal, rough, &rng_state);
+                            let refl_dir = normalize(reflect(view_dir, h));
+                            let res = trace_ray(hit_pos + h * 0.01, refl_dir, 1, &rng_state);
+                            final_col = mix(final_col, mix(primary.color, res.color, fresnel), 0.35);
+                        }
+                    } else if (important && rt_lane) {
                         let refl_dir = normalize(reflect(view_dir, surf_normal));
-                        let res = trace_ray(hit_pos + surf_normal * 0.01, refl_dir, 1, &rng_state);
-                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
-                        let cos_theta = abs(dot(-view_dir, surf_normal));
-                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
-                        final_col = mix(primary.color, res.color * rr, fresnel);
-                    } else if (rough < 0.96) {
-                        let h = sample_ggx(surf_normal, rough, &rng_state);
-                        let refl_dir = normalize(reflect(view_dir, h));
-                        let res = trace_ray(hit_pos + h * 0.01, refl_dir, 1, &rng_state);
-                        let F0 = mix(vec3<f32>(0.04), mat.baseColorFactor.rgb, mat.metallicFactor);
-                        let cos_theta = abs(dot(-view_dir, surf_normal));
-                        let fresnel = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cos_theta, 5.0);
-                        final_col = mix(primary.color, res.color * rr, fresnel);
+                        let rr = russian_roulette(1, rough, &rng_state);
+                        if (rr == 0.0) { final_col = primary.color + probe * fresnel; }
+                        else {
+                            let res = trace_ray(hit_pos + surf_normal * 0.01, refl_dir, 1, &rng_state);
+                            final_col = mix(primary.color, res.color * rr, fresnel);
+                        }
                     } else {
-                        final_col = primary.color;
+                        final_col = primary.color + probe * fresnel;
                     }
                 }
         } else {
