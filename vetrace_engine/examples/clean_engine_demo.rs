@@ -1,7 +1,7 @@
+use vetrace_engine::Engine;
 use vetrace_engine::app::App;
 use vetrace_engine::components::components::Transform;
 use vetrace_engine::rendering::RenderParams;
-use vetrace_engine::Engine;
 /// Simple game application demonstrating the new clean engine API
 struct SimpleGame {
     entity_count: usize,
@@ -105,6 +105,7 @@ impl App for SimpleGame {
             cloud_temporal_quality: 1,
             cloud_shadow_mode: 0,
             atmosphere_sun_controls: [0.00465, 1.0, 1.0, 0.0],
+            renderer_mode: vetrace_engine::rendering::renderer::RendererMode::RasterGame,
             clouds: Vec::new(),
         };
 

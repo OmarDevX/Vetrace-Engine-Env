@@ -187,8 +187,20 @@ struct Params {
     cloud_sample_count: u32,
     cloud_temporal_quality: u32,
     cloud_shadow_mode: u32,
+    renderer_mode: u32,
+    _pad_renderer_mode: vec3<u32>,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
+
+
+const RENDERER_MODE_RASTER_GAME: u32 = 0u;
+const RENDERER_MODE_HYBRID_EFFECTS: u32 = 1u;
+const RENDERER_MODE_PATH_TRACE_PREVIEW: u32 = 2u;
+const RENDERER_MODE_CINEMATIC_PATH_TRACE: u32 = 3u;
+
+fn uses_path_traced_primary_visibility() -> bool {
+    return params.renderer_mode == RENDERER_MODE_PATH_TRACE_PREVIEW || params.renderer_mode == RENDERER_MODE_CINEMATIC_PATH_TRACE;
+}
 
 // -----------------------------
 // Bindings
@@ -2063,6 +2075,66 @@ fn shade_glass(
 }
 
 
+
+fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u32>) {
+    let dims = textureDimensions(color_tex);
+    let albedo_sample = textureLoad(gbuf_albedo, vec2<i32>(id), 0);
+    let encoded_normal = textureLoad(gbuf_normal, vec2<i32>(id), 0);
+    let mat_sample = textureLoad(gbuf_material, vec2<i32>(id), 0);
+    let device_depth = textureLoad(depth_tex, vec2<i32>(id), 0).x;
+
+    var clip = vec4<f32>(uv * 2.0 - vec2<f32>(1.0), 1.0, 1.0);
+    var far_world = params.inv_view_proj * clip;
+    far_world = far_world / far_world.w;
+    let view_dir = normalize(far_world.xyz - params.camera_pos.xyz);
+
+    if (device_depth >= 0.9999 || albedo_sample.a <= 0.0) {
+        let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, 1e9, params.skycolor.rgb, id);
+        textureStore(cloud_radiance_tex, vec2<i32>(id), vec4<f32>(cloud_result.radiance, 1.0));
+        textureStore(cloud_transmittance_tex, vec2<i32>(id), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
+        textureStore(color_tex, vec2<i32>(id), vec4<f32>(cloud_result.color, -1.0));
+        textureStore(normal_tex, vec2<i32>(id), vec4<f32>(0.0, 0.0, 0.0, 1.0));
+        textureStore(gi_noisy, vec2<i32>(id), vec4<f32>(0.0, 0.0, 0.0, -1.0));
+        return;
+    }
+
+    var clip_hit = vec4<f32>(uv * 2.0 - vec2<f32>(1.0), device_depth, 1.0);
+    var world_hit = params.inv_view_proj * clip_hit;
+    world_hit = world_hit / world_hit.w;
+    let hit_pos = world_hit.xyz;
+    let linear_depth = length(hit_pos - params.camera_pos.xyz);
+    let normal = normalize(encoded_normal.xyz * 2.0 - vec3<f32>(1.0));
+    let albedo = albedo_sample.rgb;
+    let metallic = f32(mat_sample.r) / 255.0;
+    let roughness = max(f32(mat_sample.g) / 255.0, 0.04);
+    let light_dir = normalize(-params.dir_light_dir.xyz);
+    let n_dot_l = max(dot(normal, light_dir), 0.0);
+    var visibility = 1.0;
+    if (params.renderer_mode == RENDERER_MODE_HYBRID_EFFECTS && params.raytraced_shadows_enabled != 0u && n_dot_l > 0.0) {
+        let visible = is_visible(hit_pos + normal * 0.02, hit_pos + light_dir * 1000.0, 0xffffffffu, 0xffffffffu);
+        visibility = select(0.0, 1.0, visible);
+    }
+    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    let half_vec = normalize(light_dir - view_dir);
+    let spec_power = max(2.0, (1.0 - roughness) * 128.0);
+    let spec = pow(max(dot(normal, half_vec), 0.0), spec_power);
+    let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - max(dot(-view_dir, half_vec), 0.0), 5.0);
+    var direct = (albedo * (1.0 - metallic) / 3.14159265 + fresnel * spec) * params.dir_light_color.rgb * params.dir_light_dir.w * n_dot_l * visibility;
+    var ambient = albedo * params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * 0.18;
+    var gi = vec3<f32>(0.0);
+    if (params.renderer_mode == RENDERER_MODE_HYBRID_EFFECTS && gi_params.quality != 3u) {
+        gi = sample_diffuse_gi(hit_pos + normal * 0.01, normal, rng);
+        ambient += gi * albedo;
+    }
+    let lit = direct + ambient;
+    let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, linear_depth, lit, id);
+    textureStore(cloud_radiance_tex, vec2<i32>(id), vec4<f32>(cloud_result.radiance, 1.0));
+    textureStore(cloud_transmittance_tex, vec2<i32>(id), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
+    textureStore(color_tex, vec2<i32>(id), vec4<f32>(cloud_result.color, 0.0));
+    textureStore(normal_tex, vec2<i32>(id), vec4<f32>(normal, linear_depth));
+    textureStore(gi_noisy, vec2<i32>(id), vec4<f32>(gi, 0.0));
+}
+
 // -----------------------------
 // Thin-lens camera sampling (DOF)
 // -----------------------------
@@ -2101,6 +2173,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     let uv = (vec2<f32>(f32(id.x), f32(id.y)) + 0.5) / vec2<f32>(dims);
     var rng_state: u32 = init_rng(id.xy, u32(params.frame_number));
+
+    if (!uses_path_traced_primary_visibility()) {
+        shade_raster_visible_pixel(id.xy, uv, &rng_state);
+        return;
+    }
 
     var view_dir: vec3<f32>;
     var hit_pos: vec3<f32>;

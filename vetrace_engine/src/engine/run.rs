@@ -550,6 +550,7 @@ impl Engine {
                 cloud_temporal_quality: 1,
                 cloud_shadow_mode: 0,
                 atmosphere_sun_controls: [0.00465, 1.0, 1.0, 0.0],
+                renderer_mode: crate::rendering::renderer::RendererMode::HybridEffects,
                 clouds,
             };
             #[cfg(feature = "wgpu")]

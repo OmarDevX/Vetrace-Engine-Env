@@ -1,7 +1,7 @@
 use super::types::GI_SDF_RES;
 use sdl2::video::Window;
-use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::SurfaceTargetUnsafe;
+use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::{util::DeviceExt, *};
 
 pub async fn init_wgpu(
@@ -304,6 +304,7 @@ pub fn create_textures(
         format: TextureFormat::R32Float,
         usage: TextureUsages::TEXTURE_BINDING
             | TextureUsages::STORAGE_BINDING
+            | TextureUsages::RENDER_ATTACHMENT
             | TextureUsages::COPY_SRC,
         view_formats: &[],
     });
