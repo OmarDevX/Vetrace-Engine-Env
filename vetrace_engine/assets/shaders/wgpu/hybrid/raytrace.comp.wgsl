@@ -537,7 +537,7 @@ fn cloud_shadow_main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(cloud_shadow_optical_depth_tex);
     if (id.x >= dims.x || id.y >= dims.y) { return; }
     let uv = (vec2<f32>(id.xy) + vec2<f32>(0.5)) / vec2<f32>(dims);
-    let light_dir = normalize(params.dir_light_dir.xyz);
+    let light_dir = normalize(-params.dir_light_dir.xyz);
     let od = directional_cloud_shadow_optical_depth(uv, light_dir);
     textureStore(cloud_shadow_optical_depth_tex, vec2<i32>(id.xy), vec4<f32>(od, 0.0, 0.0, 1.0));
 }
@@ -621,8 +621,8 @@ struct CloudCompositeResult {
 };
 
 fn cloud_history_uv(rd: vec3<f32>, scene_depth: f32) -> vec2<f32> {
-    let world = rd * min(scene_depth, 10000.0);
-    let prev = params.prev_view_proj * vec4<f32>(world + (params.prev_camera_pos.xyz - params.camera_pos.xyz), 1.0);
+    let world = params.camera_pos.xyz + rd * min(scene_depth, 10000.0);
+    let prev = params.prev_view_proj * vec4<f32>(world, 1.0);
     if (abs(prev.w) < 1e-5) { return vec2<f32>(-1.0); }
     let ndc = prev.xy / prev.w;
     return ndc * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
@@ -655,8 +655,9 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
         let requested_steps = select(u32(cloud.shape_params.y), params.cloud_sample_count, params.cloud_sample_count > 0u);
         let steps = max(1u, min(requested_steps, 96u));
         let dt = (t1 - t0) / f32(steps);
+        let primary_jitter = cloud_blue_noise_jitter(pixel, u32(params.frame_number), ci * 131u);
         for (var sidx: u32 = 0u; sidx < steps; sidx = sidx + 1u) {
-            let t = t0 + (f32(sidx) + 0.5) * dt;
+            let t = t0 + (f32(sidx) + primary_jitter) * dt;
             let p = ro + rd * t;
             let sigma = cloud_density(cloud, p);
             if (sigma <= 0.0) { continue; }
@@ -690,10 +691,14 @@ fn composite_clouds(ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32, base_color: 
     }
     let history_uv = cloud_history_uv(rd, scene_depth);
     let history_w = cloud_temporal_rejection(pixel, history_uv, scene_depth, transmittance);
-    let history_radiance = textureSampleLevel(cloud_radiance_history_tex, tex_sampler, history_uv, 0.0).xyz;
-    let history_transmittance = textureSampleLevel(cloud_transmittance_history_tex, tex_sampler, history_uv, 0.0).r;
-    let resolved_radiance = mix(radiance, history_radiance, history_w);
-    let resolved_transmittance = mix(transmittance, history_transmittance, history_w);
+    var resolved_radiance = radiance;
+    var resolved_transmittance = transmittance;
+    if (history_w > 0.0) {
+        let history_radiance = textureSampleLevel(cloud_radiance_history_tex, tex_sampler, history_uv, 0.0).xyz;
+        let history_transmittance = textureSampleLevel(cloud_transmittance_history_tex, tex_sampler, history_uv, 0.0).r;
+        resolved_radiance = mix(radiance, history_radiance, history_w);
+        resolved_transmittance = mix(transmittance, history_transmittance, history_w);
+    }
     let integrated = resolved_radiance + base_color * resolved_transmittance;
     return CloudCompositeResult(sample_aerial_perspective_lut(rd, scene_depth, integrated), resolved_radiance, resolved_transmittance);
 }
