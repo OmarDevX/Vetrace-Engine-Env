@@ -7,6 +7,7 @@ struct Atmosphere {
     absorption_beta: vec4<f32>,
     absorb_params: vec4<f32>,
     ozone_params: vec4<f32>,
+    absorption_layer_params: vec4<f32>,
     multi_scatter_params: vec4<f32>,
 };
 const MAX_ATMOSPHERES: u32 = 8u;
@@ -64,12 +65,20 @@ fn dir_from_uv(uv: vec2<f32>) -> vec3<f32> {
     let r = sqrt(max(0.0, 1.0 - y * y));
     return normalize(vec3<f32>(sin(phi) * r, y, cos(phi) * r));
 }
-fn ozone_density(atmo: Atmosphere, height: f32) -> f32 {
-    let center_altitude = atmo.ozone_params.x;
-    let thickness = max(atmo.ozone_params.y, 1e-3);
-    let strength = max(atmo.ozone_params.z, 0.0);
-    let normalized_altitude = (height - center_altitude) / thickness;
-    return strength * exp(-normalized_altitude * normalized_altitude);
+fn absorption_layer_density(layer: vec4<f32>, altitude: f32) -> f32 {
+    let exp_term = layer.x * exp(clamp(layer.y * altitude, -80.0, 80.0));
+    let linear_term = layer.z * altitude + layer.w;
+    return max(exp_term + linear_term, 0.0);
+}
+
+fn absorption_profile_density(atmo: Atmosphere, height: f32) -> f32 {
+    let lower_width = max(atmo.absorb_params.x, 0.0);
+    let upper_width = max(atmo.absorb_params.y, 0.0);
+    let density_scale = max(atmo.absorb_params.z, 0.0);
+    let lower_density = select(0.0, absorption_layer_density(atmo.ozone_params, height), height <= lower_width);
+    let upper_altitude = max(height - lower_width, 0.0);
+    let upper_density = select(0.0, absorption_layer_density(atmo.absorption_layer_params, height), height > lower_width && upper_altitude <= upper_width);
+    return density_scale * clamp(max(lower_density, upper_density), 0.0, 1.0);
 }
 
 fn multi_scattering_lut_coord(atmo: Atmosphere, origin: vec3<f32>, view_dir: vec3<f32>, sun_dir: vec3<f32>, dims: vec2<u32>) -> vec2<i32> {
@@ -136,7 +145,7 @@ fn integrate_atmosphere(origin: vec3<f32>, dir: vec3<f32>, max_t: f32, multi: ve
         let h = max(0.0, length(sp) - atmo.center_radius.w);
         let d_r = exp(-h * inv_hr);
         let d_m = exp(-h * inv_hm);
-        let d_a = ozone_density(atmo, h);
+        let d_a = absorption_profile_density(atmo, h);
         tau_r += d_r * dt;
         tau_m += d_m * dt;
         tau_a += d_a * dt;
