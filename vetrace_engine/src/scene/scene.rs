@@ -1,5 +1,5 @@
 use crate::materials::PbrMaterial;
-use crate::math::{vec3, Vec3};
+use crate::math::{Vec3, vec3};
 use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, GpuVolumetricCloud, Object};
 
 pub struct Scene {
@@ -293,8 +293,20 @@ impl Scene {
                     shape_params: [
                         cloud.thickness.max(0.001),
                         cloud.primary_steps as f32,
-                        0.0,
-                        0.0,
+                        cloud.shape_scale.max(0.001),
+                        cloud.detail_scale.max(0.001),
+                    ],
+                    weather_params: [
+                        cloud.weather_scale.max(0.0001),
+                        cloud.weather_offset.x,
+                        cloud.weather_offset.z,
+                        cloud.macro_variation,
+                    ],
+                    detail_params: [
+                        cloud.erosion_strength,
+                        cloud.cloud_type,
+                        cloud.anvil_strength,
+                        cloud.curl_strength,
                     ],
                 });
             }

@@ -118,7 +118,9 @@ struct VolumetricCloud {
     wind_steps: vec4<f32>,
     light_padding: vec4<f32>,
     multi_scatter: vec4<f32>,
-    shape_params: vec4<f32>, // x = thickness, y = primary steps
+    shape_params: vec4<f32>, // x=thickness, y=primary steps, z=shape scale, w=detail scale
+    weather_params: vec4<f32>, // x=weather scale, yz=weather offset, w=macro variation
+    detail_params: vec4<f32>, // x=erosion, y=cloud type, z=anvil/top shape, w=curl strength
 };
 
 // --- runtime safety caps ---
@@ -194,6 +196,9 @@ struct Params {
 @group(0) @binding(27) var blue_noise_tex: texture_2d<f32>;
 @group(0) @binding(28) var blue_noise_sampler: sampler;
 @group(0) @binding(29) var transmittance_lut: texture_2d<f32>;
+@group(0) @binding(30) var cloud_shape_noise_tex: texture_3d<f32>;
+@group(0) @binding(31) var cloud_detail_noise_tex: texture_3d<f32>;
+@group(0) @binding(32) var cloud_weather_tex: texture_2d<f32>;
 
 // GI
 struct GiParams { quality: u32, debug_mode: u32, mode: u32, _pad: u32, };
@@ -232,25 +237,46 @@ fn cloud_density(cloud: VolumetricCloud, p: vec3<f32>) -> f32 {
     let altitude = length(rel) - base_radius;
     let height01 = clamp(altitude / thickness, 0.0, 1.0);
 
-    // Unreal-style cloud layers are soft at the base and anvil out near the top.
-    let base_fade = smoothstep(0.0, 0.16, height01);
-    let top_fade = 1.0 - smoothstep(0.72, 1.0, height01);
-    let height_shape = base_fade * top_fade;
-
-    // Advect in the local tangent plane so the pattern wraps around the planet
-    // instead of sliding through a flat world-space slab.
     let up = normalize(select(vec3<f32>(0.0, 1.0, 0.0), rel, length(rel) > 1e-4));
     let east_seed = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(up.y) > 0.95);
     let tangent_x = normalize(cross(east_seed, up));
     let tangent_z = cross(up, tangent_x);
     let wind = (tangent_x * cloud.wind_steps.x + tangent_z * cloud.wind_steps.y) * cloud.wind_steps.z * params.current_time;
-    let noise_p = (p + wind) * max(cloud.coverage_density_noise_phase.z, 0.001);
-    let n = 0.50 * hash31(floor(noise_p)) + 0.32 * hash31(floor(noise_p * 2.03)) + 0.18 * hash31(floor(noise_p * 4.01));
-    let coverage = clamp(cloud.coverage_density_noise_phase.x, 0.0, 1.0);
-    let billow = smoothstep(1.0 - coverage, 1.0, n);
-    return billow * height_shape * max(cloud.coverage_density_noise_phase.y, 0.0);
-}
 
+    let weather_uv = (vec2<f32>(dot(p - center, tangent_x), dot(p - center, tangent_z)) + cloud.weather_params.yz + vec2<f32>(params.current_time * cloud.wind_steps.z * 0.02)) * max(cloud.weather_params.x, 0.0001);
+    let weather = textureSampleLevel(cloud_weather_tex, tex_sampler, weather_uv, 0.0);
+    let weather_coverage = clamp(weather.r + (cloud.coverage_density_noise_phase.x - 0.5) * 1.4, 0.0, 1.0);
+    let weather_density = clamp(weather.g, 0.0, 1.0);
+    let weather_type = clamp(mix(cloud.detail_params.y, weather.b, clamp(cloud.weather_params.w, 0.0, 1.0)), 0.0, 1.0);
+
+    // Curl-like domain distortion from detail noise keeps wind motion from looking like a sliding sheet.
+    let curl_strength = clamp(cloud.detail_params.w, 0.0, 2.0);
+    let curl_a = textureSampleLevel(cloud_detail_noise_tex, tex_sampler, (p + wind) * 0.021, 0.0).rgb - vec3<f32>(0.5);
+    let distorted_p = p + wind + (curl_a.zxy - curl_a.yxz) * (curl_strength * thickness * 0.08);
+
+    let shape_scale = max(cloud.shape_params.z, max(cloud.coverage_density_noise_phase.z, 0.001));
+    let detail_scale = max(cloud.shape_params.w, shape_scale * 4.0);
+    let shape = textureSampleLevel(cloud_shape_noise_tex, tex_sampler, distorted_p * shape_scale, 0.0);
+    let detail = textureSampleLevel(cloud_detail_noise_tex, tex_sampler, distorted_p * detail_scale, 0.0);
+
+    let low_frequency = dot(shape.rgb, vec3<f32>(0.625, 0.25, 0.125));
+    let high_frequency = dot(detail.rgb, vec3<f32>(0.5, 0.35, 0.15));
+
+    let base_fade = smoothstep(0.0, mix(0.05, 0.22, weather_type), height01);
+    let anvil = clamp(cloud.detail_params.z, 0.0, 1.0);
+    let top_start = mix(0.55, 0.86, weather_type) - anvil * 0.18;
+    let top_fade = 1.0 - smoothstep(top_start, 1.0, height01);
+    let anvil_lift = mix(1.0, smoothstep(0.35, 0.9, height01), anvil * weather_type);
+    let height_gradient = base_fade * top_fade * anvil_lift;
+
+    let macro_variation = mix(1.0, mix(0.65, 1.35, weather.a), clamp(cloud.weather_params.w, 0.0, 1.0));
+    let coverage_threshold = mix(1.0, 0.08, weather_coverage);
+    let billow = smoothstep(coverage_threshold - 0.18, coverage_threshold + 0.18, low_frequency * macro_variation);
+    let erosion = clamp(cloud.detail_params.x, 0.0, 1.0) * smoothstep(0.18, 1.0, height01);
+    let eroded = max(billow - high_frequency * erosion, 0.0);
+
+    return eroded * height_gradient * weather_density * max(cloud.coverage_density_noise_phase.y, 0.0);
+}
 fn cloud_shell_interval(cloud: VolumetricCloud, ro: vec3<f32>, rd: vec3<f32>, scene_depth: f32) -> vec2<f32> {
     let center = cloud.center_base_thickness.xyz;
     let inner_radius = max(cloud.center_base_thickness.w, 0.001);

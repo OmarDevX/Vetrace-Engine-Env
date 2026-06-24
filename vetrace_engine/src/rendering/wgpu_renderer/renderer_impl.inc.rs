@@ -47,6 +47,91 @@ fn blue_noise_rgba8_tile() -> Vec<u8> {
     rgba
 }
 
+fn hash_noise_u8(mut x: u32) -> u8 {
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7feb_352d);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846c_a68b);
+    x ^= x >> 16;
+    (x & 0xff) as u8
+}
+
+fn create_cloud_noise_texture_3d(
+    device: &Device,
+    queue: &Queue,
+    size: u32,
+    seed: u32,
+    label: &str,
+) -> (Texture, TextureView) {
+    let mut rgba = Vec::with_capacity((size * size * size * 4) as usize);
+    for z in 0..size {
+        for y in 0..size {
+            for x in 0..size {
+                let h = hash_noise_u8(
+                    x.wrapping_mul(73_856_093)
+                        ^ y.wrapping_mul(19_349_663)
+                        ^ z.wrapping_mul(83_492_791)
+                        ^ seed,
+                );
+                let h2 = hash_noise_u8(u32::from(h) ^ seed.rotate_left(13));
+                let h3 = hash_noise_u8(u32::from(h2) ^ x.wrapping_mul(31) ^ z.wrapping_mul(17));
+                rgba.extend_from_slice(&[h, h2, h3, 255]);
+            }
+        }
+    }
+    let extent = Extent3d {
+        width: size,
+        height: size,
+        depth_or_array_layers: size,
+    };
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some(label),
+        size: extent,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        ImageCopyTexture {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &rgba,
+        ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * size),
+            rows_per_image: Some(size),
+        },
+        extent,
+    );
+    let view = texture.create_view(&TextureViewDescriptor::default());
+    (texture, view)
+}
+
+fn generated_weather_rgba8(size: u32) -> Vec<u8> {
+    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let fx = x as f32 / size as f32;
+            let fy = y as f32 / size as f32;
+            let n = hash_noise_u8(x.wrapping_mul(928_371) ^ y.wrapping_mul(364_479)) as f32 / 255.0;
+            let wave = ((fx * 19.0).sin() * (fy * 17.0).cos() * 0.5 + 0.5) * 0.45 + n * 0.55;
+            rgba.extend_from_slice(&[
+                (wave * 255.0) as u8,
+                ((0.55 + wave * 0.45) * 255.0) as u8,
+                ((0.25 + fy * 0.55) * 255.0) as u8,
+                ((0.35 + n * 0.65) * 255.0) as u8,
+            ]);
+        }
+    }
+    rgba
+}
+
 fn atmosphere_lut_bind_group_entries() -> [BindGroupLayoutEntry; 6] {
     [
         BindGroupLayoutEntry {
@@ -307,6 +392,41 @@ impl WgpuRenderer {
             )
             .expect("blue noise texture"),
         ));
+
+        let (cloud_shape_noise_texture, cloud_shape_noise_view) = create_cloud_noise_texture_3d(device.as_ref(), queue.as_ref(), 32, 0x1234_abcd, "cloud_shape_noise");
+        let (cloud_detail_noise_texture, cloud_detail_noise_view) = create_cloud_noise_texture_3d(device.as_ref(), queue.as_ref(), 32, 0x9675_31ef, "cloud_detail_noise");
+        let cloud_weather_rgba = generated_weather_rgba8(128);
+        let cloud_weather_extent = Extent3d {
+            width: 128,
+            height: 128,
+            depth_or_array_layers: 1,
+        };
+        let cloud_weather_texture = device.create_texture(&TextureDescriptor {
+            label: Some("cloud_weather_map"),
+            size: cloud_weather_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            ImageCopyTexture {
+                texture: &cloud_weather_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &cloud_weather_rgba,
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * 128),
+                rows_per_image: Some(128),
+            },
+            cloud_weather_extent,
+        );
+        let cloud_weather_view = cloud_weather_texture.create_view(&TextureViewDescriptor::default());
 
         let triangle_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("triangles"),
@@ -642,6 +762,36 @@ impl WgpuRenderer {
                     },
                     BindGroupLayoutEntry {
                         binding: 29,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 30,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D3,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 31,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D3,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 32,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Texture {
                             multisampled: false,
@@ -1288,10 +1438,10 @@ impl WgpuRenderer {
                     binding: 28,
                     resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
                 },
-                BindGroupEntry {
-                    binding: 29,
-                    resource: BindingResource::TextureView(&transmittance_lut_view),
-                },
+                BindGroupEntry { binding: 29, resource: BindingResource::TextureView(&transmittance_lut_view) },
+                BindGroupEntry { binding: 30, resource: BindingResource::TextureView(&cloud_shape_noise_view) },
+                BindGroupEntry { binding: 31, resource: BindingResource::TextureView(&cloud_detail_noise_view) },
+                BindGroupEntry { binding: 32, resource: BindingResource::TextureView(&cloud_weather_view) },
             ],
         });
 
@@ -2278,6 +2428,12 @@ impl WgpuRenderer {
             blur_src_view,
             white_texture,
             blue_noise_texture,
+            _cloud_shape_noise_texture: cloud_shape_noise_texture,
+            cloud_shape_noise_view,
+            _cloud_detail_noise_texture: cloud_detail_noise_texture,
+            cloud_detail_noise_view,
+            _cloud_weather_texture: cloud_weather_texture,
+            cloud_weather_view,
             material_textures,
             gi_params_buffer,
             sdfgi_bind_group_layout,
@@ -2730,10 +2886,10 @@ impl WgpuRenderer {
                     binding: 28,
                     resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
                 },
-                BindGroupEntry {
-                    binding: 29,
-                    resource: BindingResource::TextureView(&self.transmittance_lut_view),
-                },
+                BindGroupEntry { binding: 29, resource: BindingResource::TextureView(&self.transmittance_lut_view) },
+                BindGroupEntry { binding: 30, resource: BindingResource::TextureView(&self.cloud_shape_noise_view) },
+                BindGroupEntry { binding: 31, resource: BindingResource::TextureView(&self.cloud_detail_noise_view) },
+                BindGroupEntry { binding: 32, resource: BindingResource::TextureView(&self.cloud_weather_view) },
             ],
         });
 
@@ -3241,10 +3397,10 @@ impl WgpuRenderer {
                     binding: 28,
                     resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
                 },
-                BindGroupEntry {
-                    binding: 29,
-                    resource: BindingResource::TextureView(&self.transmittance_lut_view),
-                },
+                BindGroupEntry { binding: 29, resource: BindingResource::TextureView(&self.transmittance_lut_view) },
+                BindGroupEntry { binding: 30, resource: BindingResource::TextureView(&self.cloud_shape_noise_view) },
+                BindGroupEntry { binding: 31, resource: BindingResource::TextureView(&self.cloud_detail_noise_view) },
+                BindGroupEntry { binding: 32, resource: BindingResource::TextureView(&self.cloud_weather_view) },
             ],
         });
 

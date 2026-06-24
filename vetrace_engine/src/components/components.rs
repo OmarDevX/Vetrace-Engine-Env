@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::export::{ExportKind, ExportedField};
 use crate::inspector::Inspectable;
+use crate::inspector::export::{ExportKind, ExportedField};
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -3120,6 +3120,65 @@ impl Inspectable for Timer {
     }
 }
 #[derive(Debug, Clone, Copy)]
+pub struct CloudProfile {
+    pub shape_scale: f32,
+    pub detail_scale: f32,
+    pub erosion_strength: f32,
+    pub weather_scale: f32,
+    pub cloud_type: f32,
+    pub anvil_strength: f32,
+    pub macro_variation: f32,
+}
+
+impl CloudProfile {
+    pub const CUMULUS: Self = Self {
+        shape_scale: 0.18,
+        detail_scale: 1.25,
+        erosion_strength: 0.35,
+        weather_scale: 0.025,
+        cloud_type: 0.35,
+        anvil_strength: 0.15,
+        macro_variation: 0.45,
+    };
+    pub const STRATOCUMULUS: Self = Self {
+        shape_scale: 0.12,
+        detail_scale: 0.9,
+        erosion_strength: 0.2,
+        weather_scale: 0.018,
+        cloud_type: 0.2,
+        anvil_strength: 0.05,
+        macro_variation: 0.35,
+    };
+    pub const CIRRUS: Self = Self {
+        shape_scale: 0.08,
+        detail_scale: 1.8,
+        erosion_strength: 0.55,
+        weather_scale: 0.012,
+        cloud_type: 0.85,
+        anvil_strength: 0.65,
+        macro_variation: 0.7,
+    };
+    pub const STORM: Self = Self {
+        shape_scale: 0.16,
+        detail_scale: 1.1,
+        erosion_strength: 0.18,
+        weather_scale: 0.02,
+        cloud_type: 0.65,
+        anvil_strength: 0.9,
+        macro_variation: 0.6,
+    };
+    pub const OVERCAST: Self = Self {
+        shape_scale: 0.10,
+        detail_scale: 0.75,
+        erosion_strength: 0.12,
+        weather_scale: 0.014,
+        cloud_type: 0.1,
+        anvil_strength: 0.0,
+        macro_variation: 0.18,
+    };
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct VolumetricCloud {
     pub coverage: f32,
     pub density: f32,
@@ -3128,6 +3187,15 @@ pub struct VolumetricCloud {
     pub wind_direction: Vec3,
     pub wind_speed: f32,
     pub noise_scale: f32,
+    pub shape_scale: f32,
+    pub detail_scale: f32,
+    pub erosion_strength: f32,
+    pub weather_scale: f32,
+    pub weather_offset: Vec3,
+    pub cloud_type: f32,
+    pub anvil_strength: f32,
+    pub macro_variation: f32,
+    pub curl_strength: f32,
     pub phase_anisotropy: f32,
     pub primary_steps: i32,
     pub cloud_light_steps: i32,
@@ -3159,6 +3227,15 @@ impl Default for VolumetricCloud {
             wind_direction: Vec3::new(1.0, 0.0, 0.0),
             wind_speed: 0.25,
             noise_scale: 0.35,
+            shape_scale: CloudProfile::CUMULUS.shape_scale,
+            detail_scale: CloudProfile::CUMULUS.detail_scale,
+            erosion_strength: CloudProfile::CUMULUS.erosion_strength,
+            weather_scale: CloudProfile::CUMULUS.weather_scale,
+            weather_offset: Vec3::ZERO,
+            cloud_type: CloudProfile::CUMULUS.cloud_type,
+            anvil_strength: CloudProfile::CUMULUS.anvil_strength,
+            macro_variation: CloudProfile::CUMULUS.macro_variation,
+            curl_strength: 0.08,
             phase_anisotropy: 0.55,
             primary_steps: 48,
             cloud_light_steps: 6,
@@ -3230,6 +3307,69 @@ impl Inspectable for VolumetricCloud {
                     max: 10.0,
                 },
                 value: &mut self.noise_scale as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "shape_scale",
+                kind: ExportKind::Slider {
+                    min: 0.001,
+                    max: 5.0,
+                },
+                value: &mut self.shape_scale as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "detail_scale",
+                kind: ExportKind::Slider {
+                    min: 0.001,
+                    max: 20.0,
+                },
+                value: &mut self.detail_scale as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "erosion_strength",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.erosion_strength as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "weather_scale",
+                kind: ExportKind::Slider {
+                    min: 0.0001,
+                    max: 1.0,
+                },
+                value: &mut self.weather_scale as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "weather_offset",
+                kind: ExportKind::Text,
+                value: &mut self.weather_offset as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<Vec3>(),
+            },
+            ExportedField {
+                name: "cloud_type",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.cloud_type as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "anvil_strength",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.anvil_strength as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "macro_variation",
+                kind: ExportKind::Slider { min: 0.0, max: 1.0 },
+                value: &mut self.macro_variation as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<f32>(),
+            },
+            ExportedField {
+                name: "curl_strength",
+                kind: ExportKind::Slider { min: 0.0, max: 2.0 },
+                value: &mut self.curl_strength as *mut _ as *mut dyn std::any::Any,
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
