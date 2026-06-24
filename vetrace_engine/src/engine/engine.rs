@@ -23,7 +23,7 @@ use crate::ecs::{Component, World};
 use crate::engine::component_io::{apply_component_data, export_component_data};
 use crate::engine::core::EngineCore;
 use crate::events::{Event as CustomEvent, LuaEvent, SceneEvents};
-use crate::input::{window::WindowManager, Input};
+use crate::input::{Input, window::WindowManager};
 use crate::inspector::Inspectable;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
@@ -33,7 +33,7 @@ use crate::rendering::Renderer;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
 use crate::scene::{
-    loader::{save_scene, ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile},
+    loader::{ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile, save_scene},
     scene::Scene,
 };
 use crate::systems::collision::CollisionEvent;
@@ -485,10 +485,10 @@ impl Engine {
                 for (i, node) in self.scene.bvh_nodes.iter().enumerate().take(5) {
                     // Show first 5 nodes
                     println!(
-                        "   BVH Node {}: center={:?}, radius={}, children={:?}",
+                        "   BVH Node {}: min={:?}, max={:?}, children={:?}",
                         i,
-                        &node.center_radius[0..3],
-                        node.center_radius[3],
+                        &node.bounds_min[0..3],
+                        &node.bounds_max[0..3],
                         node.children
                     );
                 }
@@ -581,9 +581,12 @@ impl Engine {
         // Shift BVH nodes so bounding volumes track the camera-relative objects
         let mut bvh_nodes: Vec<_> = self.scene.get_bvh_nodes().to_vec();
         for node in &mut bvh_nodes {
-            node.center_radius[0] -= cam_pos.x;
-            node.center_radius[1] -= cam_pos.y;
-            node.center_radius[2] -= cam_pos.z;
+            node.bounds_min[0] -= cam_pos.x;
+            node.bounds_min[1] -= cam_pos.y;
+            node.bounds_min[2] -= cam_pos.z;
+            node.bounds_max[0] -= cam_pos.x;
+            node.bounds_max[1] -= cam_pos.y;
+            node.bounds_max[2] -= cam_pos.z;
         }
 
         for node in &mut tri_bvh_nodes {
@@ -987,8 +990,8 @@ impl Engine {
     /// Process primitive objects from scene.objects (spheres, cubes, etc.)
     /// This replicates the primitive object processing from run.rs line 199-288
     fn process_primitive_objects(&mut self) {
-        use crate::scene::object::GpuMaterial;
         use crate::CustomMaterial;
+        use crate::scene::object::GpuMaterial;
         use std::collections::HashMap;
 
         // Assemble GPU materials for every scene object, generating

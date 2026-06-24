@@ -1,15 +1,15 @@
-use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
+use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
+use crate::Behaviour;
+use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
+use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
-use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
-use crate::Behaviour;
-use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -408,9 +408,12 @@ impl Engine {
             let have_atmos = !atmos.is_empty();
             let mut bvh_nodes: Vec<_> = scene.get_bvh_nodes().to_vec();
             for node in &mut bvh_nodes {
-                node.center_radius[0] -= cam_pos.x;
-                node.center_radius[1] -= cam_pos.y;
-                node.center_radius[2] -= cam_pos.z;
+                node.bounds_min[0] -= cam_pos.x;
+                node.bounds_min[1] -= cam_pos.y;
+                node.bounds_min[2] -= cam_pos.z;
+                node.bounds_max[0] -= cam_pos.x;
+                node.bounds_max[1] -= cam_pos.y;
+                node.bounds_max[2] -= cam_pos.z;
             }
             for node in &mut tri_bvh_nodes {
                 node.bounds_min[0] -= cam_pos.x;
