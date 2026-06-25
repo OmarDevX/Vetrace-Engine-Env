@@ -278,3 +278,213 @@ pub struct PbrRenderData {
     pub model: [[f32; 4]; 4],
     pub joint_mats: Option<Vec<[[f32; 4]; 4]>>,
 }
+
+#[cfg(test)]
+mod layout_tests {
+    use super::ShaderParams;
+    use crate::scene::{
+        bvh::GpuBvhNode,
+        object::{GpuCustomMaterial, GpuMaterial, GpuObject, GpuTriangle},
+        tri_bvh::GpuTriBvhNode,
+    };
+
+    #[test]
+    fn gpu_struct_sizes_match_wgsl_layouts() {
+        assert_eq!(std::mem::size_of::<ShaderParams>(), 1744);
+        assert_eq!(std::mem::size_of::<GpuObject>(), 136);
+        assert_eq!(std::mem::size_of::<GpuTriangle>(), 128);
+        assert_eq!(std::mem::size_of::<GpuMaterial>(), 96);
+        assert_eq!(std::mem::size_of::<GpuCustomMaterial>(), 144);
+        assert_eq!(std::mem::size_of::<GpuBvhNode>(), 48);
+        assert_eq!(std::mem::size_of::<GpuTriBvhNode>(), 48);
+    }
+
+    const SHADER_PARAMS_PREFIX: &[&str] = &[
+        "camera_pos",
+        "camera_front",
+        "camera_up",
+        "camera_right",
+        "prev_camera_pos",
+        "fov",
+        "num_objects",
+        "is_fisheye",
+        "_pad0",
+        "skycolor",
+        "taa_jitter",
+        "current_time",
+        "frame_number",
+        "selected_index",
+        "max_bounces",
+        "light_samples",
+        "dir_shadow_samples",
+        "shadow_mode",
+        "raytraced_shadows_enabled",
+        "shadow_quality",
+        "max_shadow_rays",
+        "emissive_shadow_samples",
+        "directional_shadow_samples",
+        "cloud_object_shadows_enabled",
+        "max_rt_shadow_distance",
+        "rt_shadow_ray_t_max",
+        "min_soft_shadow_radius",
+        "raytraced_reflections_enabled",
+        "inv_view_proj",
+        "prev_view_proj",
+        "dir_light_dir",
+        "dir_light_color",
+        "sky_occlusion",
+        "total_triangles",
+        "total_bvh_nodes",
+        "total_tri_bvh_nodes",
+        "dof_aperture",
+        "dof_focus_dist",
+        "dof_enable",
+        "_pad_dof",
+        "atmosphere",
+        "atmo_count",
+        "cloud_count",
+        "atmosphere_mode",
+        "atmosphere_sun_controls",
+        "cloud_history_weight",
+        "cloud_sample_count",
+        "cloud_temporal_quality",
+        "cloud_shadow_mode",
+        "renderer_mode",
+        "rt_debug_view",
+        "rt_debug_counters",
+        "max_traversal_steps",
+        "max_transparent_surfaces",
+        "shadow_max_distance",
+        "reflection_max_distance",
+        "gi_max_distance",
+        "min_ray_offset",
+        "atmos",
+    ];
+
+    const MATERIAL_PARAMS_FIELDS: &[&str] = &[
+        "baseColorFactor",
+        "emissiveFactor",
+        "emissiveStrength",
+        "metallicFactor",
+        "roughnessFactor",
+        "ior",
+        "baseColorTex",
+        "f0",
+        "has_custom_material",
+        "custom_material_id",
+        "material_flags0",
+        "material_flags1",
+        "material_flags2",
+        "material_flags3",
+        "material_flags4",
+        "material_flags5",
+        "material_flags6",
+    ];
+
+    #[test]
+    fn wgsl_params_prefixes_match_shader_params() {
+        for (name, source) in WGSL_PARAMS_SHADERS {
+            let fields = wgsl_struct_fields(source, "Params");
+            assert!(
+                SHADER_PARAMS_PREFIX.starts_with(&fields),
+                "{name} Params does not match ShaderParams prefix; fields were {fields:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn wgsl_material_params_match_gpu_material_stride_fields() {
+        for (name, source) in WGSL_MATERIAL_SHADERS {
+            let fields = wgsl_struct_fields(source, "MaterialParams");
+            assert_eq!(
+                fields, MATERIAL_PARAMS_FIELDS,
+                "{name} MaterialParams must keep seven trailing u32 flag fields so WGSL stride matches 96-byte GpuMaterial"
+            );
+            assert!(
+                !source.contains("mat._pad2"),
+                "{name} still reads the old vec3 padding field"
+            );
+        }
+    }
+
+    const WGSL_PARAMS_SHADERS: &[(&str, &str)] = &[
+        (
+            "raytrace.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/raytrace.comp.wgsl"),
+        ),
+        (
+            "pathtrace.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+        ),
+        (
+            "denoise.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/denoise.comp.wgsl"),
+        ),
+        (
+            "rt_denoise.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/rt_denoise.comp.wgsl"),
+        ),
+        (
+            "sdfgi_prepass.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/sdfgi_prepass.comp.wgsl"),
+        ),
+        (
+            "sdfgi_inject.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/sdfgi_inject.comp.wgsl"),
+        ),
+        (
+            "transmittance_lut.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/atmosphere/transmittance_lut.comp.wgsl"),
+        ),
+        (
+            "sky_view_lut.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/atmosphere/sky_view_lut.comp.wgsl"),
+        ),
+        (
+            "multi_scattering_lut.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/atmosphere/multi_scattering_lut.comp.wgsl"),
+        ),
+        (
+            "aerial_perspective_lut.comp.wgsl",
+            include_str!(
+                "../../../assets/shaders/wgpu/atmosphere/aerial_perspective_lut.comp.wgsl"
+            ),
+        ),
+    ];
+
+    const WGSL_MATERIAL_SHADERS: &[(&str, &str)] = &[
+        (
+            "raytrace.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/raytrace.comp.wgsl"),
+        ),
+        (
+            "pathtrace.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+        ),
+    ];
+
+    fn wgsl_struct_fields<'a>(source: &'a str, struct_name: &str) -> Vec<&'a str> {
+        let struct_start = source
+            .find(&format!("struct {struct_name} {{"))
+            .unwrap_or_else(|| panic!("{struct_name} struct not found"));
+        let body_start = source[struct_start..]
+            .find('{')
+            .map(|offset| struct_start + offset + 1)
+            .unwrap();
+        let body_end = source[body_start..]
+            .find("};")
+            .map(|offset| body_start + offset)
+            .unwrap();
+
+        source[body_start..body_end]
+            .lines()
+            .flat_map(|line| {
+                line.split_once("//")
+                    .map_or(line, |(code, _)| code)
+                    .split(',')
+            })
+            .filter_map(|field| field.split_once(':').map(|(name, _)| name.trim()))
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
+}

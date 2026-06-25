@@ -51,6 +51,7 @@ struct TriBvhNode {
     child_tri: vec4<i32>,
 };
 
+// Must match Rust: vetrace_engine/src/scene/object.rs::GpuMaterial
 struct MaterialParams {
     baseColorFactor: vec4<f32>,
     emissiveFactor: vec3<f32>, emissiveStrength: f32,
@@ -60,7 +61,13 @@ struct MaterialParams {
     baseColorTex: u32,
     f0: vec3<f32>, has_custom_material: u32,
     custom_material_id: u32,
-    _pad2: vec3<u32>,
+    material_flags0: u32,
+    material_flags1: u32,
+    material_flags2: u32,
+    material_flags3: u32,
+    material_flags4: u32,
+    material_flags5: u32,
+    material_flags6: u32,
 };
 
 struct CustomMaterialParams {
@@ -151,6 +158,7 @@ const SHADOW_MODE_RT_SOFT     : u32 = 3u;
 const SHADOW_MODE_HYBRID      : u32 = 4u;
 const T_EARLY_OUT             : f32 = 1e-3;
 
+// Must match Rust: vetrace_engine/src/rendering/wgpu_renderer/types.rs::ShaderParams
 struct Params {
     camera_pos: vec4<f32>,
     camera_front: vec4<f32>,

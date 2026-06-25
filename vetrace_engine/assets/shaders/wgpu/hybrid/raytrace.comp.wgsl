@@ -51,6 +51,7 @@ struct TriBvhNode {
     child_tri: vec4<i32>,
 };
 
+// Must match Rust: vetrace_engine/src/scene/object.rs::GpuMaterial
 struct MaterialParams {
     baseColorFactor: vec4<f32>,
     emissiveFactor: vec3<f32>, emissiveStrength: f32,
@@ -60,7 +61,13 @@ struct MaterialParams {
     baseColorTex: u32,
     f0: vec3<f32>, has_custom_material: u32,
     custom_material_id: u32,
-    _pad2: vec3<u32>,
+    material_flags0: u32,
+    material_flags1: u32,
+    material_flags2: u32,
+    material_flags3: u32,
+    material_flags4: u32,
+    material_flags5: u32,
+    material_flags6: u32,
 };
 
 struct CustomMaterialParams {
@@ -154,6 +161,7 @@ const SHADOW_MODE_RT_SOFT     : u32 = 3u;
 const SHADOW_MODE_HYBRID      : u32 = 4u;
 const T_EARLY_OUT             : f32 = 1e-3;
 
+// Must match Rust: vetrace_engine/src/rendering/wgpu_renderer/types.rs::ShaderParams
 struct Params {
     camera_pos: vec4<f32>,
     camera_front: vec4<f32>,
@@ -182,7 +190,7 @@ struct Params {
     max_rt_shadow_distance: f32,
     rt_shadow_ray_t_max: f32,
     min_soft_shadow_radius: f32,
-    _pad_shadow_mode: u32,
+    raytraced_reflections_enabled: u32,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
     dir_light_dir: vec4<f32>,
@@ -2458,9 +2466,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (out_obj >= 0) {
                 let obj = objects[u32(out_obj)];
                 let mat = materials[obj.material_index];
-                let raster_or_probe = (mat._pad2.x & 0x6u) != 0u || obj.casts_raytraced_shadow == 0u;
+                let raster_or_probe = (mat.material_flags0 & 0x6u) != 0u || obj.casts_raytraced_shadow == 0u;
                 let rough_probe = mat.roughnessFactor > 0.6;
-                if ((mat._pad2.x & 0x1u) != 0u && !rough_probe) { debug_col = vec3<f32>(0.0, 1.0, 0.15); }
+                if ((mat.material_flags0 & 0x1u) != 0u && !rough_probe) { debug_col = vec3<f32>(0.0, 1.0, 0.15); }
                 else if (raster_or_probe || rough_probe) { debug_col = vec3<f32>(0.0, 0.75, 1.0); }
                 else if (params.raytraced_shadows_enabled == 0u) { debug_col = vec3<f32>(1.0, 0.65, 0.0); }
                 else { debug_col = vec3<f32>(0.15, 0.25, 1.0); }

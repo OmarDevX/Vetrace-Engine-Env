@@ -11,6 +11,7 @@ struct Atmosphere {
     multi_scatter_params: vec4<f32>,
 };
 const MAX_ATMOSPHERES: u32 = 8u;
+// Must match Rust: vetrace_engine/src/rendering/wgpu_renderer/types.rs::ShaderParams
 struct Params {
     camera_pos: vec4<f32>,
     camera_front: vec4<f32>,
@@ -29,13 +30,17 @@ struct Params {
     max_bounces: i32,
     light_samples: i32,
     dir_shadow_samples: i32,
+    shadow_mode: u32,
     raytraced_shadows_enabled: u32,
     shadow_quality: u32,
     max_shadow_rays: u32,
     emissive_shadow_samples: u32,
     directional_shadow_samples: u32,
     cloud_object_shadows_enabled: u32,
-    _pad_shadow: vec2<u32>,
+    max_rt_shadow_distance: f32,
+    rt_shadow_ray_t_max: f32,
+    min_soft_shadow_radius: f32,
+    raytraced_reflections_enabled: u32,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
     dir_light_dir: vec4<f32>,
@@ -53,6 +58,19 @@ struct Params {
     cloud_count: u32,
     atmosphere_mode: u32,
     atmosphere_sun_controls: vec4<f32>,
+    cloud_history_weight: f32,
+    cloud_sample_count: u32,
+    cloud_temporal_quality: u32,
+    cloud_shadow_mode: u32,
+    renderer_mode: u32,
+    rt_debug_view: u32,
+    rt_debug_counters: u32,
+    max_traversal_steps: u32,
+    max_transparent_surfaces: u32,
+    shadow_max_distance: f32,
+    reflection_max_distance: f32,
+    gi_max_distance: f32,
+    min_ray_offset: f32,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 struct Scattering { color: vec3<f32>, transmittance: vec3<f32> };
