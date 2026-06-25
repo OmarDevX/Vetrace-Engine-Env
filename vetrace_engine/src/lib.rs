@@ -10,17 +10,17 @@
 // Main engine
 pub mod engine;
 pub use engine::{
-    apply_component_data, export_component_data, Actor, Engine, EngineCore, PhysicsState, Prefab,
-    Stage, World,
+    Actor, Engine, EngineCore, PhysicsState, Prefab, Stage, World, apply_component_data,
+    export_component_data,
 };
 
 // Core systems
 pub mod rendering;
-pub use rendering::{Renderer, RenderParams};
+pub use rendering::{RenderParams, Renderer};
 
 // ECS
 pub mod ecs;
-pub use ecs::{Entity, Component};
+pub use ecs::{Component, Entity};
 
 // Asset management
 pub mod assets;
@@ -31,15 +31,17 @@ pub mod input;
 pub use input::Input;
 
 // Other core modules
-pub mod math;
-pub mod materials;
 pub mod custom_material;
 pub mod gpu;
 pub mod lod;
+pub mod materials;
+pub mod math;
+pub use custom_material::{
+    CustomMaterial, MaterialOutputContract, MaterialParameter, RaytraceShaderCompiler,
+};
 pub use lod::{
     AutoLod, AutoLodProcessor, LodLevel, LodSettings, LodStats, MeshData, SimplifiedMesh,
 };
-pub use custom_material::{CustomMaterial, MaterialParameter, RaytraceShaderCompiler};
 // Legacy modules (for migration)
 pub mod scene {
     pub mod bvh;
@@ -50,17 +52,17 @@ pub mod scene {
     pub mod tri_bvh;
 }
 
-pub mod events;
-pub mod shared;
-pub mod net;
-pub mod systems;
-pub mod ui;
+pub mod app;
 pub mod behaviour;
 pub mod components;
+pub mod events;
 pub mod inspector;
-pub mod app;
+pub mod net;
+pub mod shared;
+pub mod systems;
+pub mod ui;
 
 // Legacy exports
-pub use events::Event;
-pub use input::{window::WindowManager};
 pub use ecs::behaviour::Behaviour;
+pub use events::Event;
+pub use input::window::WindowManager;

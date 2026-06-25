@@ -17,6 +17,34 @@ struct RtEffectParams {
 @group(0) @binding(6) var effect_out: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(7) var<uniform> rt_params: RtEffectParams;
 
+
+struct MaterialData {
+    base_color: vec3<f32>,
+    alpha: f32,
+    normal: vec3<f32>,
+    roughness: f32,
+    metallic: f32,
+    transmission: f32,
+    ior: f32,
+    custom_flags: u32,
+};
+
+fn load_material_data(pixel: vec2<i32>) -> MaterialData {
+    let albedo = textureLoad(albedo_tex, pixel, 0);
+    let n = textureLoad(normal_tex, pixel, 0);
+    let m = textureLoad(material_tex, pixel, 0);
+    return MaterialData(
+        albedo.rgb,
+        albedo.a,
+        normalize(n.xyz * 2.0 - vec3<f32>(1.0)),
+        clamp(f32(m.g) / 255.0, 0.04, 1.0),
+        f32(m.r) / 255.0,
+        f32(m.b) / 255.0,
+        max(n.w * 4.0, 1.0),
+        m.a
+    );
+}
+
 fn unpack_normal(pixel: vec2<i32>) -> vec3<f32> {
     return normalize(textureLoad(normal_tex, pixel, 0).xyz * 2.0 - vec3<f32>(1.0));
 }
@@ -41,10 +69,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (rt_params.enabled == 0u) { miss(pixel); return; }
     let depth = textureLoad(depth_tex, pixel, 0).x;
     if (depth >= 0.9999) { miss(pixel); return; }
-    let roughness = clamp(textureLoad(roughness_tex, pixel, 0).x, 0.0, 1.0);
-    let albedo = textureLoad(albedo_tex, pixel, 0).rgb;
-    let material = textureLoad(material_tex, pixel, 0);
-    let transmission = f32(material.b) / 255.0;
-    let refracted = albedo * transmission * (1.0 - roughness * 0.5);
+    let material = load_material_data(pixel);
+    let roughness = material.roughness;
+    let transmission = max(material.transmission, 1.0 - material.alpha);
+    let refracted = material.base_color * transmission * (1.0 - roughness * 0.5) / max(material.ior / 1.5, 0.5);
     textureStore(effect_out, pixel, vec4<f32>(refracted, transmission));
 }

@@ -1,18 +1,31 @@
 use super::Engine;
+use crate::AutoLod;
+use crate::Behaviour;
 use crate::components::components::{
     AngularVelocity, Animation, Atmosphere, AudioSource, Bloom, CameraAttachment, Collider,
     FreeFlightControls, Lerp, LookAt, Material, Player, PostProcessing, Renderable, Rotate,
     ScriptComponent, Shape, Transform, Velocity, VolumetricCloud, VolumetricFog,
+};
+use crate::custom_material::{
+    CUSTOM_MATERIAL_OUTPUT_EMISSIVE, CUSTOM_MATERIAL_OUTPUT_NORMALS,
+    CUSTOM_MATERIAL_OUTPUT_RAYTRACING_COMPATIBLE, CUSTOM_MATERIAL_OUTPUT_SURFACE_COLOR,
+    CUSTOM_MATERIAL_OUTPUT_TRANSPARENCY, CustomMaterial,
 };
 use crate::ecs::{Component, Entity, World};
 use crate::engine::component_io::apply_component_data;
 use crate::inspector::Inspectable;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::loader::ComponentFactory;
-use crate::AutoLod;
-use crate::Behaviour;
 use egui::{self, Slider, TextEdit};
 use std::rc::Rc;
+
+fn set_flag(flags: &mut u32, flag: u32, enabled: bool) {
+    if enabled {
+        *flags |= flag;
+    } else {
+        *flags &= !flag;
+    }
+}
 
 impl Engine {
     pub fn register_default_factories(&mut self) {
@@ -62,6 +75,62 @@ impl Engine {
         });
         self.auto_register_component::<Player>("Player");
         self.auto_register_component::<Material>("Material");
+        self.register_component::<CustomMaterial>("CustomMaterial", |mat, ui| {
+            ui.horizontal(|ui| {
+                ui.label("Material type");
+                ui.text_edit_singleline(&mut mat.material_type);
+            });
+            ui.label("Outputs affected by this shader:");
+            let mut surface = mat.affects_output(CUSTOM_MATERIAL_OUTPUT_SURFACE_COLOR);
+            let mut normals = mat.affects_output(CUSTOM_MATERIAL_OUTPUT_NORMALS);
+            let mut emissive = mat.affects_output(CUSTOM_MATERIAL_OUTPUT_EMISSIVE);
+            let mut transparency = mat.affects_output(CUSTOM_MATERIAL_OUTPUT_TRANSPARENCY);
+            let mut rt = mat.affects_output(CUSTOM_MATERIAL_OUTPUT_RAYTRACING_COMPATIBLE);
+            if ui
+                .checkbox(&mut surface, "surface color only / base color")
+                .changed()
+            {
+                set_flag(
+                    &mut mat.output_flags,
+                    CUSTOM_MATERIAL_OUTPUT_SURFACE_COLOR,
+                    surface,
+                );
+            }
+            if ui.checkbox(&mut normals, "normals").changed() {
+                set_flag(
+                    &mut mat.output_flags,
+                    CUSTOM_MATERIAL_OUTPUT_NORMALS,
+                    normals,
+                );
+            }
+            if ui.checkbox(&mut emissive, "emissive").changed() {
+                set_flag(
+                    &mut mat.output_flags,
+                    CUSTOM_MATERIAL_OUTPUT_EMISSIVE,
+                    emissive,
+                );
+            }
+            if ui.checkbox(&mut transparency, "transparency").changed() {
+                set_flag(
+                    &mut mat.output_flags,
+                    CUSTOM_MATERIAL_OUTPUT_TRANSPARENCY,
+                    transparency,
+                );
+            }
+            if ui.checkbox(&mut rt, "raytracing-compatible").changed() {
+                set_flag(
+                    &mut mat.output_flags,
+                    CUSTOM_MATERIAL_OUTPUT_RAYTRACING_COMPATIBLE,
+                    rt,
+                );
+            }
+            ui.checkbox(&mut mat.raster_only, "raster-only");
+            for warning in mat.validation_warnings() {
+                ui.colored_label(egui::Color32::YELLOW, warning);
+            }
+            ui.label("WGSL source");
+            ui.add(TextEdit::multiline(&mut mat.shader_source).desired_rows(8));
+        });
         self.auto_register_component::<Collider>("Collider");
         self.register_component::<Renderable>("Renderable", |rend, ui| {
             ui.horizontal(|ui| {
