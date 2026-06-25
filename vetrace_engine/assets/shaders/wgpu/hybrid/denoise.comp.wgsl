@@ -1,3 +1,4 @@
+// ACTIVE PRODUCTION: generic post raytrace denoise/temporal resolve compute shader.
 // Hybrid GI denoiser
 
 // Must match Rust: vetrace_engine/src/rendering/wgpu_renderer/types.rs::ShaderParams

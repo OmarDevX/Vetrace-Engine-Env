@@ -409,10 +409,6 @@ mod layout_tests {
 
     const WGSL_PARAMS_SHADERS: &[(&str, &str)] = &[
         (
-            "raytrace.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/hybrid/raytrace.comp.wgsl"),
-        ),
-        (
             "pathtrace.comp.wgsl",
             include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
         ),
@@ -452,16 +448,10 @@ mod layout_tests {
         ),
     ];
 
-    const WGSL_MATERIAL_SHADERS: &[(&str, &str)] = &[
-        (
-            "raytrace.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/hybrid/raytrace.comp.wgsl"),
-        ),
-        (
-            "pathtrace.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
-        ),
-    ];
+    const WGSL_MATERIAL_SHADERS: &[(&str, &str)] = &[(
+        "pathtrace.comp.wgsl",
+        include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+    )];
 
     fn wgsl_struct_fields<'a>(source: &'a str, struct_name: &str) -> Vec<&'a str> {
         let struct_start = source

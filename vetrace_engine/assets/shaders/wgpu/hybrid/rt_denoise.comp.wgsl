@@ -1,3 +1,4 @@
+// ACTIVE PRODUCTION: raytrace-specific denoise compute shader.
 // Full screen temporal denoiser for the ray traced color buffer
 
 // Must match Rust: vetrace_engine/src/rendering/wgpu_renderer/types.rs::ShaderParams
