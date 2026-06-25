@@ -6,8 +6,15 @@ use wgpu::TextureView;
 // Higher resolution improves SDFGI quality on larger objects
 pub const GI_SDF_RES: u32 = 64;
 pub const GI_QUALITY_OFF: u32 = 3;
-pub const GI_MODE_SDF: u32 = 0;
-pub const GI_MODE_PATH: u32 = 1;
+pub const GI_MODE_OFF: u32 = 0;
+pub const GI_MODE_BAKED_LIGHTMAP: u32 = 1;
+pub const GI_MODE_LIGHT_PROBES: u32 = 2;
+pub const GI_MODE_SDFGI: u32 = 3;
+pub const GI_MODE_RTGI_ONE_BOUNCE: u32 = 4;
+pub const GI_MODE_PATH_TRACED_PREVIEW: u32 = 5;
+// Back-compat aliases for older call sites.
+pub const GI_MODE_SDF: u32 = GI_MODE_SDFGI;
+pub const GI_MODE_PATH: u32 = GI_MODE_PATH_TRACED_PREVIEW;
 
 /// Matrix that converts OpenGL NDC to WGPU's coordinate system.
 /// Accounts for the different Y orientation and depth range.

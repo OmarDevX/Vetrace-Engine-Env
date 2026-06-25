@@ -58,6 +58,10 @@ struct Object {
     casts_raytraced_shadow: u32,
     shadow_importance: f32,
     max_shadow_distance: f32,
+    scene_flags: u32,
+    gi_flags: u32,
+    _gi_pad0: u32,
+    _gi_pad1: u32,
 };
 struct PostFxUniforms {
     dof_enabled: u32,

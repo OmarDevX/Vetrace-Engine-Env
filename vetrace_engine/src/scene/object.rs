@@ -30,6 +30,10 @@ pub struct GpuObject {
     pub casts_raytraced_shadow: u32,
     pub shadow_importance: f32,
     pub max_shadow_distance: f32,
+    pub scene_flags: u32,
+    pub gi_flags: u32,
+    pub _gi_pad0: u32,
+    pub _gi_pad1: u32,
 }
 impl Default for GpuObject {
     fn default() -> Self {
@@ -54,6 +58,10 @@ impl Default for GpuObject {
             casts_raytraced_shadow: 0,
             shadow_importance: 0.0,
             max_shadow_distance: 100.0,
+            scene_flags: SCENE_FLAG_STATIC_GEOMETRY,
+            gi_flags: 0,
+            _gi_pad0: 0,
+            _gi_pad1: 0,
             orientation: [0.0, 0.0, 0.0, 1.0],
         }
     }
@@ -221,6 +229,12 @@ pub const MAX_VOLUMETRIC_CLOUDS: usize = 8;
 /// Maximum number of atmospheres supported in the scene and shader.
 pub const MAX_ATMOSPHERES: usize = 8;
 
+pub const SCENE_FLAG_STATIC_GEOMETRY: u32 = 1 << 0;
+pub const SCENE_FLAG_DYNAMIC_GEOMETRY: u32 = 1 << 1;
+pub const SCENE_FLAG_STATIC_LIGHT: u32 = 1 << 2;
+pub const SCENE_FLAG_DYNAMIC_LIGHT: u32 = 1 << 3;
+pub const SCENE_FLAG_EMISSIVE_STATIC_SURFACE: u32 = 1 << 4;
+
 #[derive(Clone, Debug, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Object {
     pub position: [f32; 3],
@@ -253,6 +267,8 @@ pub struct Object {
     pub casts_raytraced_shadow: bool,
     pub shadow_importance: f32,
     pub max_shadow_distance: f32,
+    pub scene_flags: u32,
+    pub gi_flags: u32,
 }
 
 impl Object {
@@ -294,6 +310,8 @@ impl Object {
             casts_raytraced_shadow: false,
             shadow_importance: 0.0,
             max_shadow_distance: 100.0,
+            scene_flags: SCENE_FLAG_STATIC_GEOMETRY,
+            gi_flags: 0,
         }
     }
     pub fn to_gpu(&self) -> GpuObject {
@@ -318,6 +336,20 @@ impl Object {
             casts_raytraced_shadow: self.casts_raytraced_shadow as u32,
             shadow_importance: self.shadow_importance,
             max_shadow_distance: self.max_shadow_distance,
+            scene_flags: self.scene_flags
+                | if self.is_static {
+                    SCENE_FLAG_STATIC_GEOMETRY
+                } else {
+                    SCENE_FLAG_DYNAMIC_GEOMETRY
+                },
+            gi_flags: self.gi_flags
+                | if self.is_static && self.emission > 0.0 {
+                    SCENE_FLAG_EMISSIVE_STATIC_SURFACE
+                } else {
+                    0
+                },
+            _gi_pad0: 0,
+            _gi_pad1: 0,
             orientation: self.orientation,
         }
     }
@@ -553,6 +585,8 @@ impl Default for Object {
             casts_raytraced_shadow: false,
             shadow_importance: 0.0,
             max_shadow_distance: 100.0,
+            scene_flags: SCENE_FLAG_STATIC_GEOMETRY,
+            gi_flags: 0,
         }
     }
 }
