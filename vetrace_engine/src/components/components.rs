@@ -2490,6 +2490,13 @@ pub struct PostProcessing {
     pub history_clamp_k: f32,
     pub temporal_blend: f32,
     pub gi_temporal_blend: f32,
+    pub shadow_history_weight: f32,
+    pub reflection_history_weight: f32,
+    pub cloud_history_weight: f32,
+    /// 0 generic, 1 shadows, 2 reflections, 3 GI, 4 DOF accumulation, 5 clouds.
+    pub denoise_mode: u32,
+    /// 0 off, 1 history accept/reject, 2 motion, 3 variance, 4 denoised/noisy split.
+    pub denoise_debug_view: u32,
     pub exposure: f32,
     pub auto_exposure: bool,
     pub atmosphere: bool,
@@ -2527,6 +2534,11 @@ impl Default for PostProcessing {
             // Higher values accumulate more history in the temporal filter
             temporal_blend: 1.0,
             gi_temporal_blend: 0.1,
+            shadow_history_weight: 0.92,
+            reflection_history_weight: 0.82,
+            cloud_history_weight: 0.90,
+            denoise_mode: 0,
+            denoise_debug_view: 0,
             exposure: 1.0,
             auto_exposure: false,
             atmosphere: true,
@@ -2563,6 +2575,9 @@ impl PostProcessing {
             max_bounces: 1,
             temporal_blend: 1.0,
             gi_temporal_blend: 0.2,
+            shadow_history_weight: 0.88,
+            reflection_history_weight: 0.78,
+            cloud_history_weight: 0.85,
             atmosphere: true,
             fog_max_opacity: 0.5,
             ..Self::default()
@@ -2745,6 +2760,59 @@ impl Inspectable for PostProcessing {
             ui.add(egui::Slider::new(&mut self.temporal_blend, 0.0..=10.0));
             ui.label("GI Blend");
             ui.add(egui::Slider::new(&mut self.gi_temporal_blend, 0.0..=1.0));
+            ui.label("Shadow History Weight");
+            ui.add(egui::Slider::new(
+                &mut self.shadow_history_weight,
+                0.0..=0.99,
+            ));
+            ui.label("Reflection History Weight");
+            ui.add(egui::Slider::new(
+                &mut self.reflection_history_weight,
+                0.0..=0.99,
+            ));
+            ui.label("Cloud History Weight");
+            ui.add(egui::Slider::new(
+                &mut self.cloud_history_weight,
+                0.0..=0.99,
+            ));
+            ui.label("Specialized Mode");
+            egui::ComboBox::from_id_source("denoise_mode_pp")
+                .selected_text(match self.denoise_mode {
+                    1 => "Shadow",
+                    2 => "Reflection",
+                    3 => "GI",
+                    4 => "DOF",
+                    5 => "Cloud",
+                    _ => "Generic",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.denoise_mode, 0, "Generic");
+                    ui.selectable_value(&mut self.denoise_mode, 1, "Shadow");
+                    ui.selectable_value(&mut self.denoise_mode, 2, "Reflection");
+                    ui.selectable_value(&mut self.denoise_mode, 3, "GI");
+                    ui.selectable_value(&mut self.denoise_mode, 4, "DOF Accumulation");
+                    ui.selectable_value(&mut self.denoise_mode, 5, "Cloud Temporal");
+                });
+            ui.label("Debug View");
+            egui::ComboBox::from_id_source("denoise_debug_pp")
+                .selected_text(match self.denoise_debug_view {
+                    1 => "History Accepted/Rejected",
+                    2 => "Motion Vectors",
+                    3 => "Variance",
+                    4 => "Denoised vs Noisy",
+                    _ => "Off",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.denoise_debug_view, 0, "Off");
+                    ui.selectable_value(
+                        &mut self.denoise_debug_view,
+                        1,
+                        "History Accepted/Rejected",
+                    );
+                    ui.selectable_value(&mut self.denoise_debug_view, 2, "Motion Vectors");
+                    ui.selectable_value(&mut self.denoise_debug_view, 3, "Variance");
+                    ui.selectable_value(&mut self.denoise_debug_view, 4, "Denoised vs Noisy");
+                });
         });
 
         ui.collapsing("Depth of Field", |ui| {

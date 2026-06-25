@@ -111,13 +111,22 @@ struct PostFxUniforms {
     fog_color_r: f32,
     fog_color_g: f32,
     fog_color_b: f32,
+    fog_base_height: f32,
+    fog_height_falloff: f32,
+    fog_max_opacity: f32,
+    fog_inscatter_r: f32,
+    fog_inscatter_g: f32,
+    fog_inscatter_b: f32,
     history_clamp_k: f32,
     temporal_blend: f32,
     gi_temporal_blend: f32,
+    shadow_history_weight: f32,
+    reflection_history_weight: f32,
+    cloud_history_weight: f32,
+    denoise_mode: u32,
+    denoise_debug_view: u32,
     _pad0: u32,
     _pad1: u32,
-    _pad2: u32,
-    _pad3: u32,
 };
 
 @group(0) @binding(0) var noisy_tex: texture_2d<f32>;
@@ -208,15 +217,58 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }
     textureStore(motion_tex, coord, vec4<f32>(motion, 0.0, 0.0));
-    var alpha: f32;
-    if (use_history) {
-        // `temporal_blend` is exposed to users as an accumulation strength
-        // slider where larger values should keep more history. Convert it to
-        // the current-frame weight used by mix(prev, current, alpha).
-        alpha = 1.0 / (max(postfx.temporal_blend, 0.0) + 1.0);
-    } else {
-        alpha = 1.0;
+    var history_weight = 1.0 - (1.0 / (max(postfx.temporal_blend, 0.0) + 1.0));
+    // Specialized modes keep the generic temporal denoiser as the base but
+    // select per-effect history persistence. This lets shadows, reflections,
+    // GI, DOF lens samples, and clouds tune ghosting independently while still
+    // sharing depth, normal, object-ID, motion/reprojection, and clamp logic.
+    if (postfx.denoise_mode == 1u) {
+        history_weight = clamp(postfx.shadow_history_weight, 0.0, 0.99);
+    } else if (postfx.denoise_mode == 2u) {
+        history_weight = clamp(postfx.reflection_history_weight, 0.0, 0.99);
+    } else if (postfx.denoise_mode == 3u) {
+        history_weight = clamp(postfx.gi_temporal_blend, 0.0, 0.99);
+    } else if (postfx.denoise_mode == 4u) {
+        history_weight = clamp(max(postfx.reflection_history_weight, postfx.gi_temporal_blend), 0.0, 0.98);
+    } else if (postfx.denoise_mode == 5u) {
+        history_weight = clamp(postfx.cloud_history_weight, 0.0, 0.99);
     }
-    let blended = mix(prev_color, current, alpha);
-    textureStore(accum_tex, coord, vec4<f32>(blended, f32(obj)));
+    let alpha = select(1.0, 1.0 - history_weight, use_history);
+
+    // Clamp reprojected history to the current 3x3 neighborhood to prevent
+    // bright outliers and to expose ghosting cleanly in debug views.
+    var nmin = current;
+    var nmax = current;
+    var mean = vec3<f32>(0.0);
+    var m2 = vec3<f32>(0.0);
+    var count = 0.0;
+    for (var yy = -1; yy <= 1; yy = yy + 1) {
+        for (var xx = -1; xx <= 1; xx = xx + 1) {
+            let c = clamp(coord + vec2<i32>(xx, yy), vec2<i32>(0), vec2<i32>(dims) - vec2<i32>(1));
+            let v = textureLoad(noisy_tex, c, 0).rgb;
+            nmin = min(nmin, v);
+            nmax = max(nmax, v);
+            count = count + 1.0;
+            let d = v - mean;
+            mean = mean + d / count;
+            m2 = m2 + d * (v - mean);
+        }
+    }
+    let variance = max(dot(m2 / max(count - 1.0, 1.0), vec3<f32>(0.3333)), 0.0);
+    let sigma = vec3<f32>(sqrt(variance)) * max(postfx.history_clamp_k, 0.0);
+    let clamped_history = clamp(prev_color, max(nmin, mean - sigma), min(nmax, mean + sigma));
+    let blended = mix(clamped_history, current, alpha);
+    textureStore(variance_tex, coord, vec4<f32>(variance, 0.0, 0.0, 0.0));
+
+    var out_color = blended;
+    if (postfx.denoise_debug_view == 1u) {
+        out_color = select(vec3<f32>(1.0, 0.15, 0.05), vec3<f32>(0.05, 1.0, 0.2), use_history);
+    } else if (postfx.denoise_debug_view == 2u) {
+        out_color = vec3<f32>(abs(motion) * 64.0, 0.0);
+    } else if (postfx.denoise_debug_view == 3u) {
+        out_color = vec3<f32>(min(variance * 8.0, 1.0));
+    } else if (postfx.denoise_debug_view == 4u) {
+        out_color = select(current, blended, id.x < dims.x / 2u);
+    }
+    textureStore(accum_tex, coord, vec4<f32>(out_color, f32(obj)));
 }
