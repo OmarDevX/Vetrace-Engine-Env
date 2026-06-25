@@ -1,15 +1,15 @@
+use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
-use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
-use crate::Behaviour;
-use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
-use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
+use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
+use crate::Behaviour;
+use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -443,6 +443,14 @@ impl Engine {
             let mut emissive_shadow_samples = 1u32;
             let mut directional_shadow_samples = 1u32;
             let mut cloud_object_shadows_enabled = 1u32;
+            let mut rt_debug_view = 0u32;
+            let mut rt_debug_counters = 0u32;
+            let mut shadow_max_distance = 250.0f32;
+            let mut reflection_max_distance = 80.0f32;
+            let mut gi_max_distance = 60.0f32;
+            let mut max_traversal_steps = 512u32;
+            let mut max_transparent_surfaces = 8u32;
+            let mut min_ray_offset = 0.01f32;
             let mut dof_aperture = 0.0f32;
             let mut dof_focus_dist = 0.0f32;
             let mut dof_enable = 0u32;
@@ -476,6 +484,14 @@ impl Engine {
                     emissive_shadow_samples = pp.emissive_shadow_samples.min(8);
                     directional_shadow_samples = pp.directional_shadow_samples.min(8);
                     cloud_object_shadows_enabled = pp.cloud_object_shadows_enabled as u32;
+                    rt_debug_view = pp.rt_debug_view;
+                    rt_debug_counters = pp.rt_debug_counters as u32;
+                    shadow_max_distance = pp.shadow_max_distance;
+                    reflection_max_distance = pp.reflection_max_distance;
+                    gi_max_distance = pp.gi_max_distance;
+                    max_traversal_steps = pp.max_traversal_steps;
+                    max_transparent_surfaces = pp.max_transparent_surfaces;
+                    min_ray_offset = pp.min_ray_offset;
                     atmosphere = pp.atmosphere;
                     if let Some(d) = &pp.dof {
                         dof_enable = 1;
@@ -524,10 +540,18 @@ impl Engine {
                 emissive_shadow_samples,
                 directional_shadow_samples,
                 cloud_object_shadows_enabled,
-                max_rt_shadow_distance: dir_light.max_shadow_distance,
-                rt_shadow_ray_t_max: dir_light.max_shadow_distance,
+                max_rt_shadow_distance: dir_light.max_shadow_distance.min(shadow_max_distance),
+                rt_shadow_ray_t_max: dir_light.max_shadow_distance.min(shadow_max_distance),
                 min_soft_shadow_radius: 0.03,
                 _pad_shadow_mode: 0,
+                rt_debug_view,
+                rt_debug_counters,
+                max_traversal_steps,
+                max_transparent_surfaces,
+                shadow_max_distance,
+                reflection_max_distance,
+                gi_max_distance,
+                min_ray_offset,
                 inv_view_proj: {
                     let (w, h) = self.renderer.screen_dimensions();
                     let aspect = w as f32 / h as f32;

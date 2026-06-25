@@ -134,6 +134,9 @@ struct VolumetricCloud {
 
 // --- runtime safety caps ---
 const MAX_TLAS_ITERS          : u32 = 8u;
+const DEFAULT_MAX_TRAVERSAL_STEPS : u32 = 512u;
+const DEFAULT_MAX_TRANSPARENT_SURFACES : u32 = 8u;
+const DEFAULT_MIN_RAY_OFFSET : f32 = 0.01;
 const MAX_SCATTER_STEPS       : i32 = 24;
 const MAX_LIGHT_STEPS         : i32 = 6;
 const MAX_ATMO_LIGHTS         : u32 = 2u;
@@ -204,7 +207,14 @@ struct Params {
     cloud_temporal_quality: u32,
     cloud_shadow_mode: u32,
     renderer_mode: u32,
-    _pad_renderer_mode: vec3<u32>,
+    rt_debug_view: u32,
+    rt_debug_counters: u32,
+    max_traversal_steps: u32,
+    max_transparent_surfaces: u32,
+    shadow_max_distance: f32,
+    reflection_max_distance: f32,
+    gi_max_distance: f32,
+    min_ray_offset: f32,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 
@@ -1263,7 +1273,7 @@ fn trace_gi(hit_pos: vec3<f32>, normal: vec3<f32>, rng: ptr<function, u32>) -> v
 }
 
 fn path_trace_gi(p: vec3<f32>, n: vec3<f32>, rng: ptr<function, u32>) -> vec3<f32> {
-    let origin = p + n * 0.01;
+    let origin = p + n * max(params.min_ray_offset, DEFAULT_MIN_RAY_OFFSET);
     let dir = normalize(n + random_cone_offset(rng));
     return trace_ray_no_gi(origin, dir, 0, rng).color;
 }
@@ -1324,7 +1334,7 @@ fn aabb_hit(o: vec3<f32>, d: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>, tmax_c
     return (tmax >= max(tmin, 0.0)) && (tmin <= tmax_cap);
 }
 
-struct MeshHit { n: vec3<f32>, t: f32, tri: u32, uv: vec2<f32>, };
+struct MeshHit { n: vec3<f32>, t: f32, tri: u32, uv: vec2<f32>, bvh_visits: u32, tri_tests: u32, terminated: u32, };
 
 fn mesh_intersect(origin: vec3<f32>, dir: vec3<f32>, obj: Object) -> MeshHit {
     var best_t = NO_HIT;
@@ -1336,22 +1346,27 @@ fn mesh_intersect(origin: vec3<f32>, dir: vec3<f32>, obj: Object) -> MeshHit {
     var sp: i32 = 0;
     let root = i32(obj.tri_bvh_start);
     if (root < 0) {
-        return MeshHit(vec3<f32>(0.0, 0.0, 1.0), NO_HIT, 0xffffffffu, vec2<f32>(0.0));
+        return MeshHit(vec3<f32>(0.0, 0.0, 1.0), NO_HIT, 0xffffffffu, vec2<f32>(0.0), 0u, 0u, 0u);
     }
     stack[sp] = root; sp = sp + 1;
 
+    var steps: u32 = 0u; var bvh_visits: u32 = 0u; var tri_tests: u32 = 0u; var terminated: u32 = 0u;
     loop {
         if (sp == 0) { break; }
+        steps = steps + 1u;
+        if (steps > max(params.max_traversal_steps, 1u)) { terminated = 1u; break; }
         sp = sp - 1;
         let ni = u32(stack[sp]);
         if (!in_bounds_tri_node(ni)) { continue; }
         let node = tri_bvh_nodes[ni];
+        bvh_visits = bvh_visits + 1u;
         if (!aabb_hit(origin, dir, node.bmin.xyz, node.bmax.xyz, best_t)) { continue; }
         let c0 = node.child_tri.x; let c1 = node.child_tri.y;
         if (c0 < 0 && c1 < 0) {
             let ti = u32(node.child_tri.z);
             if (in_bounds_tri(ti)) {
                 let tri = triangles[ti];
+                tri_tests = tri_tests + 1u;
                 let hit = tri_intersect(origin, dir, tri.v0, tri.e1, tri.e2);
                 if (hit.t < best_t) {
                     best_t = hit.t;
@@ -1368,10 +1383,10 @@ fn mesh_intersect(origin: vec3<f32>, dir: vec3<f32>, obj: Object) -> MeshHit {
     }
 
     if (best_t >= 1e19) {
-        return MeshHit(vec3<f32>(0.0, 0.0, 1.0), NO_HIT, 0xffffffffu, vec2<f32>(0.0));
+        return MeshHit(vec3<f32>(0.0, 0.0, 1.0), NO_HIT, 0xffffffffu, vec2<f32>(0.0), bvh_visits, tri_tests, terminated);
     }
 
-    return MeshHit(best_n, best_t, best_tri, best_uv);
+    return MeshHit(best_n, best_t, best_tri, best_uv, bvh_visits, tri_tests, terminated);
 }
 
 
@@ -1430,6 +1445,17 @@ fn aabb_hit(o: vec3<f32>, d: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>, t_cap:
     return t_far >= t_near && t_near < t_cap;
 }
 
+fn aabb_near(o: vec3<f32>, d: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>, t_cap: f32) -> f32 {
+    let inv_d = 1.0 / d;
+    let t0 = (bmin - o) * inv_d;
+    let t1 = (bmax - o) * inv_d;
+    let tsm = min(t0, t1);
+    let tbig = max(t0, t1);
+    let t_near = max(max(tsm.x, tsm.y), max(tsm.z, 0.0));
+    let t_far = min(min(tbig.x, tbig.y), tbig.z);
+    return select(1e20, t_near, t_far >= t_near && t_near < t_cap);
+}
+
 fn in_bounds_tlas(i: u32) -> bool { return i < params.total_bvh_nodes; }
 fn in_bounds_tri_node(i: u32) -> bool { return i < params.total_tri_bvh_nodes; }
 fn in_bounds_tri(i: u32) -> bool { return i < params.total_triangles; }
@@ -1450,20 +1476,24 @@ fn hit_alpha(obj_idx: u32, tri_idx: u32, uv: vec2<f32>) -> f32 {
     return select(0.0, 1.0, a >= 0.5);
 }
 
-struct ObjHit { t: f32, n: vec3<f32>, idx: i32, tri: u32, uv: vec2<f32>, };
+struct ObjHit { t: f32, n: vec3<f32>, idx: i32, tri: u32, uv: vec2<f32>, tlas_visits: u32, blas_visits: u32, tri_tests: u32, terminated: u32, };
 
 fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
-    var best = ObjHit(1e20, vec3<f32>(0.0, 0.0, 1.0), -1, 0xffffffffu, vec2<f32>(0.0));
+    var best = ObjHit(1e20, vec3<f32>(0.0, 0.0, 1.0), -1, 0xffffffffu, vec2<f32>(0.0), 0u, 0u, 0u, 0u);
     if (params.total_bvh_nodes == 0u) { return best; }
     var stack: array<i32, 256>; var sp: i32 = 0;
     let root: i32 = 0; stack[sp] = root; sp = sp + 1;
+    var steps: u32 = 0u;
 
     loop {
         if (sp == 0) { break; }
+        steps = steps + 1u;
+        if (steps > max(params.max_traversal_steps, 1u)) { best.terminated = 1u; break; }
         sp = sp - 1;
         let ni = u32(stack[sp]);
         if (!in_bounds_tlas(ni)) { continue; }
         let node = bvh_nodes[ni];
+        best.tlas_visits = best.tlas_visits + 1u;
         if (!aabb_hit(o, d, node.bmin.xyz, node.bmax.xyz, best.t)) { continue; }
 
         let c0 = node.child_object.x; let c1 = node.child_object.y;
@@ -1479,6 +1509,7 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
                     if (oref.is_mesh > 0u) {
                         let res = mesh_intersect(o, d, oref);
                         t = res.t; n = res.n; tri_idx = res.tri; uv = res.uv;
+                        best.blas_visits += res.bvh_visits; best.tri_tests += res.tri_tests; best.terminated = max(best.terminated, res.terminated);
                     } else if (oref.is_cube > 0u) {
                         let bh = cube_hit(o, d, oref.position, oref.size, oref.orientation, oref.scale);
                         t = bh.t;
@@ -1510,6 +1541,7 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
                     if (oref.is_mesh > 0u) {
                         let res = mesh_intersect(o, d, oref);
                         t = res.t; n = res.n; tri_idx = res.tri; uv = res.uv;
+                        best.blas_visits += res.bvh_visits; best.tri_tests += res.tri_tests; best.terminated = max(best.terminated, res.terminated);
                     } else if (oref.is_cube > 0u) {
                         let bh = cube_hit(o, d, oref.position, oref.size, oref.orientation, oref.scale);
                         t = bh.t;
@@ -1532,8 +1564,16 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
                 }
             }
         } else {
-            if (c0 >= 0 && sp < 256) { stack[sp] = c0; sp = sp + 1; }
-            if (c1 >= 0 && sp < 256) { stack[sp] = c1; sp = sp + 1; }
+            var n0 = 1e20; var n1 = 1e20;
+            if (c0 >= 0 && in_bounds_tlas(u32(c0))) { let cn = bvh_nodes[u32(c0)]; n0 = aabb_near(o, d, cn.bmin.xyz, cn.bmax.xyz, best.t); }
+            if (c1 >= 0 && in_bounds_tlas(u32(c1))) { let cn = bvh_nodes[u32(c1)]; n1 = aabb_near(o, d, cn.bmin.xyz, cn.bmax.xyz, best.t); }
+            if (n0 < n1) {
+                if (n1 < 1e19 && sp < 256) { stack[sp] = c1; sp = sp + 1; }
+                if (n0 < 1e19 && sp < 256) { stack[sp] = c0; sp = sp + 1; }
+            } else {
+                if (n0 < 1e19 && sp < 256) { stack[sp] = c0; sp = sp + 1; }
+                if (n1 < 1e19 && sp < 256) { stack[sp] = c1; sp = sp + 1; }
+            }
         }
     }
     return best;
@@ -1609,9 +1649,9 @@ fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip
 
 fn is_visible(origin: vec3<f32>, end_pos: vec3<f32>, skip_a: u32, skip_b: u32) -> bool {
     var dir = end_pos - origin;
-    let dist = length(dir);
+    let dist = min(length(dir), params.shadow_max_distance);
     dir = dir / dist;
-    return !object_tlas_any_hit(origin, dir, min(dist - 0.01, params.rt_shadow_ray_t_max), skip_a, skip_b);
+    return !object_tlas_any_hit(origin, dir, min(dist - max(params.min_ray_offset, DEFAULT_MIN_RAY_OFFSET), min(params.rt_shadow_ray_t_max, params.shadow_max_distance)), skip_a, skip_b);
 }
 
 fn rt_shadow_mode_enabled() -> bool {
@@ -1881,7 +1921,7 @@ fn shade_no_gi(hit: vec3<f32>, normal: vec3<f32>, obj_idx: u32, tri_idx: u32, uv
 // -----------------------------
 // Rays
 // -----------------------------
-struct RayResult { color: vec3<f32>, depth: f32, normal: vec3<f32>, obj_idx: i32, tri_idx: u32, };
+struct RayResult { color: vec3<f32>, depth: f32, normal: vec3<f32>, obj_idx: i32, tri_idx: u32, tlas_visits: u32, blas_visits: u32, tri_tests: u32, shadow_rays: u32, reflection_rays: u32, gi_rays: u32, terminated: u32, };
 // ---- helpers for size-scaled eps and skipping self ----
 fn object_extent(obj: Object) -> f32 {
     let s = obj.size * obj.scale;
@@ -1901,15 +1941,20 @@ fn trace_ray_base(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
     var norm = vec3<f32>(0.0, 0.0, 1.0);
     var obj_idx = -1;
     var tri_idx = 0u;
+    let max_ray_distance = select(1e20, params.reflection_max_distance, depth > 0);
+    var tlas_visits = 0u; var blas_visits = 0u; var tri_tests = 0u; var terminated = 0u;
     for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
         if (d >= params.max_bounces) { break; }
         let hit = object_tlas_intersect(o, dir, s);
+        tlas_visits += hit.tlas_visits; blas_visits += hit.blas_visits; tri_tests += hit.tri_tests; terminated = max(terminated, hit.terminated);
         if (hit.idx < 0) { break; }
         let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
         t_total = t_total + hit.t;
+        if (t_total > max_ray_distance) { terminated = 1u; break; }
         if (alpha < 0.5) {
-            o = o + dir * (hit.t + 0.001);
-            t_total = t_total + 0.001;
+            if (iter >= params.max_transparent_surfaces) { terminated = 1u; break; }
+            o = o + dir * (hit.t + params.min_ray_offset);
+            t_total = t_total + params.min_ray_offset;
             s = -1;
             continue;
         }
@@ -1929,18 +1974,18 @@ fn trace_ray_base(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
         obj_idx = hit.idx;
         tri_idx = hit.tri;
         if (atten <= 0.0) {
-            return RayResult(col, t_total, norm, obj_idx, tri_idx);
+            return RayResult(col, t_total, norm, obj_idx, tri_idx, tlas_visits, blas_visits, tri_tests, 0u, u32(depth > 0), 0u, terminated);
         }
         let obj = objects[u32(hit.idx)];
         if (d >= 1) {
             let mat = materials[obj.material_index];
             let rr = russian_roulette(d, mat.roughnessFactor, rng);
             if (rr == 0.0) {
-                return RayResult(col, t_total, norm, obj_idx, tri_idx);
+                return RayResult(col, t_total, norm, obj_idx, tri_idx, tlas_visits, blas_visits, tri_tests, 0u, u32(depth > 0), 0u, terminated);
             }
             atten = atten * rr;
         }
-        let eps = surf_eps(obj);
+        let eps = max(surf_eps(obj), params.min_ray_offset);
         o = hit_pos + dir * eps;
         t_total = t_total + eps;
         s = hit.idx;
@@ -1948,7 +1993,7 @@ fn trace_ray_base(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<functi
     }
     let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
     col = col + sky * atten;
-    return RayResult(col, 1.0, norm, obj_idx, tri_idx);
+    return RayResult(col, 1.0, norm, obj_idx, tri_idx, tlas_visits, blas_visits, tri_tests, 0u, u32(depth > 0), 0u, terminated);
 }
 
 fn trace_ray_base_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>, skip: i32) -> RayResult {
@@ -1961,15 +2006,20 @@ fn trace_ray_base_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<
     var norm = vec3<f32>(0.0, 0.0, 1.0);
     var obj_idx = -1;
     var tri_idx = 0u;
+    let max_ray_distance = select(params.gi_max_distance, params.reflection_max_distance, depth > 0);
+    var tlas_visits = 0u; var blas_visits = 0u; var tri_tests = 0u; var terminated = 0u;
     for (var iter: u32 = 0u; iter < MAX_TLAS_ITERS; iter = iter + 1u) {
         if (d >= params.max_bounces) { break; }
         let hit = object_tlas_intersect(o, dir, s);
+        tlas_visits += hit.tlas_visits; blas_visits += hit.blas_visits; tri_tests += hit.tri_tests; terminated = max(terminated, hit.terminated);
         if (hit.idx < 0) { break; }
         let alpha = hit_alpha(u32(hit.idx), hit.tri, hit.uv);
         t_total = t_total + hit.t;
+        if (t_total > max_ray_distance) { terminated = 1u; break; }
         if (alpha < 0.5) {
-            o = o + dir * (hit.t + 0.001);
-            t_total = t_total + 0.001;
+            if (iter >= params.max_transparent_surfaces) { terminated = 1u; break; }
+            o = o + dir * (hit.t + params.min_ray_offset);
+            t_total = t_total + params.min_ray_offset;
             s = -1;
             continue;
         }
@@ -1984,18 +2034,18 @@ fn trace_ray_base_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<
         obj_idx = hit.idx;
         tri_idx = hit.tri;
         if (atten <= 0.0) {
-            return RayResult(col, t_total, norm, obj_idx, tri_idx);
+            return RayResult(col, t_total, norm, obj_idx, tri_idx, tlas_visits, blas_visits, tri_tests, 0u, u32(depth > 0), 0u, terminated);
         }
         let obj = objects[u32(hit.idx)];
         if (d >= 1) {
             let mat = materials[obj.material_index];
             let rr = russian_roulette(d, mat.roughnessFactor, rng);
             if (rr == 0.0) {
-                return RayResult(col, t_total, norm, obj_idx, tri_idx);
+                return RayResult(col, t_total, norm, obj_idx, tri_idx, tlas_visits, blas_visits, tri_tests, 0u, u32(depth > 0), 0u, terminated);
             }
             atten = atten * rr;
         }
-        let eps = surf_eps(obj);
+        let eps = max(surf_eps(obj), params.min_ray_offset);
         o = hit_pos + dir * eps;
         t_total = t_total + eps;
         s = hit.idx;
@@ -2003,7 +2053,7 @@ fn trace_ray_base_no_gi(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<
     }
     let sky = apply_atmosphere(origin, dir, 1e9, params.skycolor.xyz);
     col = col + sky * atten;
-    return RayResult(col, 1.0, norm, obj_idx, tri_idx);
+    return RayResult(col, 1.0, norm, obj_idx, tri_idx, tlas_visits, blas_visits, tri_tests, 0u, u32(depth > 0), 0u, terminated);
 }
 
 fn trace_ray(origin: vec3<f32>, dir: vec3<f32>, depth: i32, rng: ptr<function, u32>) -> RayResult {
@@ -2049,7 +2099,7 @@ fn shade_glass(
     let refl_dir = normalize(reflect(view_dir, m_enter));
     let ndotR    = abs(dot(normal, refl_dir));
     let eps_R    = mix(0.002, 0.02, 1.0 - ndotR);
-    let refl_col = trace_ray(hit_pos + refl_dir * eps_R, refl_dir, depth + 1, rng).color;
+    let refl_col = trace_ray(hit_pos + refl_dir * max(eps_R, params.min_ray_offset), refl_dir, depth + 1, rng).color;
 
     // Entry refraction (air -> glass). If TIR happens on the entry microfacet, fall back to reflection.
     let refr_in = refract_ray(view_dir, m_enter, mat.ior);
@@ -2189,7 +2239,7 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
     let n_dot_l = max(dot(normal, light_dir), 0.0);
     var visibility = 1.0;
     if (params.renderer_mode == RENDERER_MODE_HYBRID_EFFECTS && params.raytraced_shadows_enabled != 0u && n_dot_l > 0.0) {
-        let visible = is_visible(hit_pos + normal * 0.02, hit_pos + light_dir * 1000.0, 0xffffffffu, 0xffffffffu);
+        let visible = is_visible(hit_pos + normal * 0.02, hit_pos + light_dir * params.shadow_max_distance, 0xffffffffu, 0xffffffffu);
         visibility = select(0.0, 1.0, visible);
     }
     let f0 = mix(vec3<f32>(0.04), albedo, metallic);
@@ -2241,6 +2291,11 @@ fn sample_camera_ray(view_dir: vec3<f32>, rng: ptr<function, u32>) -> CamRay {
     return CamRay(ro, rd);
 }
 
+fn heatmap(v: f32) -> vec3<f32> {
+    let x = clamp(v, 0.0, 1.0);
+    return clamp(vec3<f32>(x * 2.0, 1.0 - abs(x * 2.0 - 1.0), (1.0 - x) * 2.0), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 // -----------------------------
 // Main
 // -----------------------------
@@ -2266,6 +2321,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var gi_pos: vec3<f32>;
     var gi_normal: vec3<f32>;
     var final_col: vec3<f32>;
+    var debug_ro = vec3<f32>(0.0);
+    var debug_rd = vec3<f32>(0.0);
 
     if (params.is_fisheye != 0) {
         var uvn = uv * 2.0 - vec2<f32>(1.0);
@@ -2279,6 +2336,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         view_dir = cos(theta) * fwd + sin(theta) * (cos(phi) * rvec + sin(phi) * upv);
 
         let cam_ray = sample_camera_ray(view_dir, &rng_state);
+        debug_ro = cam_ray.ro; debug_rd = cam_ray.rd;
         let primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
         hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
         view_dir = cam_ray.rd;
@@ -2329,6 +2387,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         view_dir = normalize(world.xyz);
 
         let cam_ray = sample_camera_ray(view_dir, &rng_state);
+        debug_ro = cam_ray.ro; debug_rd = cam_ray.rd;
         let primary = trace_ray(cam_ray.ro, cam_ray.rd, 0, &rng_state);
         hit_pos = cam_ray.ro + cam_ray.rd * primary.depth;
         view_dir = cam_ray.rd;
@@ -2384,6 +2443,22 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let cloud_result = composite_clouds(vec3<f32>(0.0), view_dir, cloud_scene_depth, final_col, id.xy);
     textureStore(cloud_radiance_tex, vec2<i32>(id.xy), vec4<f32>(cloud_result.radiance, 1.0));
     textureStore(cloud_transmittance_tex, vec2<i32>(id.xy), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
+    var debug_col = vec3<f32>(0.0);
+    if (params.rt_debug_view != 0u) {
+        let primary_dbg = object_tlas_intersect(debug_ro, debug_rd, -1);
+        let ray_cost = f32(primary_dbg.tlas_visits + primary_dbg.blas_visits + primary_dbg.tri_tests);
+        if (params.rt_debug_view == 1u) { debug_col = heatmap(ray_cost / 128.0); }
+        else if (params.rt_debug_view == 2u) { debug_col = heatmap(f32(primary_dbg.tri_tests) / 64.0); }
+        else if (params.rt_debug_view == 3u) { debug_col = heatmap(f32(primary_dbg.tlas_visits + primary_dbg.blas_visits) / 128.0); }
+        else if (params.rt_debug_view == 4u) { debug_col = heatmap(f32(primary_dbg.tlas_visits + primary_dbg.blas_visits) / 96.0); }
+        else if (params.rt_debug_view == 5u) { debug_col = heatmap(f32(primary_dbg.blas_visits + primary_dbg.tri_tests) / 128.0); }
+        textureStore(color_tex, vec2<i32>(id.xy), vec4(debug_col, f32(out_obj)));
+        textureStore(depth_tex, vec2<i32>(id.xy), vec4(out_depth, 0.0, 0.0, 1.0));
+        textureStore(normal_tex, vec2<i32>(id.xy), vec4(out_normal, out_depth));
+        textureStore(gi_noisy, vec2<i32>(id.xy), vec4<f32>(debug_col, f32(out_obj)));
+        return;
+    }
+
     let L = cloud_result.color;
     let max_lum = 10.0;
     let lum = dot(L, vec3<f32>(0.299, 0.587, 0.114));

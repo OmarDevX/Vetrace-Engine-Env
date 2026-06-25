@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::Inspectable;
 use crate::inspector::export::{ExportKind, ExportedField};
+use crate::inspector::Inspectable;
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -2497,6 +2497,15 @@ pub struct PostProcessing {
     pub denoise_mode: u32,
     /// 0 off, 1 history accept/reject, 2 motion, 3 variance, 4 denoised/noisy split.
     pub denoise_debug_view: u32,
+    /// 0 off, 1 ray cost, 2 overdraw/triangle density, 3 BVH visits, 4 shadow ray cost, 5 reflection ray cost.
+    pub rt_debug_view: u32,
+    pub rt_debug_counters: bool,
+    pub shadow_max_distance: f32,
+    pub reflection_max_distance: f32,
+    pub gi_max_distance: f32,
+    pub max_traversal_steps: u32,
+    pub max_transparent_surfaces: u32,
+    pub min_ray_offset: f32,
     pub exposure: f32,
     pub auto_exposure: bool,
     pub atmosphere: bool,
@@ -2539,6 +2548,14 @@ impl Default for PostProcessing {
             cloud_history_weight: 0.90,
             denoise_mode: 0,
             denoise_debug_view: 0,
+            rt_debug_view: 0,
+            rt_debug_counters: false,
+            shadow_max_distance: 250.0,
+            reflection_max_distance: 80.0,
+            gi_max_distance: 60.0,
+            max_traversal_steps: 512,
+            max_transparent_surfaces: 8,
+            min_ray_offset: 0.01,
             exposure: 1.0,
             auto_exposure: false,
             atmosphere: true,
@@ -2573,6 +2590,12 @@ impl PostProcessing {
             light_samples: 1,
             dir_light_samples: 1,
             max_bounces: 1,
+            shadow_max_distance: 80.0,
+            reflection_max_distance: 40.0,
+            gi_max_distance: 30.0,
+            max_traversal_steps: 192,
+            max_transparent_surfaces: 4,
+            min_ray_offset: 0.02,
             temporal_blend: 1.0,
             gi_temporal_blend: 0.2,
             shadow_history_weight: 0.88,
@@ -2751,6 +2774,48 @@ impl Inspectable for PostProcessing {
             ui.add(egui::Slider::new(&mut self.dir_light_samples, 1..=8));
             ui.label("Max Bounces");
             ui.add(egui::Slider::new(&mut self.max_bounces, 1..=8));
+
+            ui.separator();
+            ui.label("Ray Debug View");
+            egui::ComboBox::from_id_source("rt_debug_view_pp")
+                .selected_text(match self.rt_debug_view {
+                    1 => "Ray Cost",
+                    2 => "Overdraw/Triangle Density",
+                    3 => "BVH Node Visits",
+                    4 => "Shadow Ray Cost",
+                    5 => "Reflection Ray Cost",
+                    _ => "Off",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.rt_debug_view, 0, "Off");
+                    ui.selectable_value(&mut self.rt_debug_view, 1, "Ray Cost");
+                    ui.selectable_value(&mut self.rt_debug_view, 2, "Overdraw/Triangle Density");
+                    ui.selectable_value(&mut self.rt_debug_view, 3, "BVH Node Visits");
+                    ui.selectable_value(&mut self.rt_debug_view, 4, "Shadow Ray Cost");
+                    ui.selectable_value(&mut self.rt_debug_view, 5, "Reflection Ray Cost");
+                });
+            ui.checkbox(&mut self.rt_debug_counters, "Collect RT Debug Counters");
+            ui.label("Shadow Max Distance");
+            ui.add(egui::Slider::new(
+                &mut self.shadow_max_distance,
+                1.0..=2000.0,
+            ));
+            ui.label("Reflection Max Distance");
+            ui.add(egui::Slider::new(
+                &mut self.reflection_max_distance,
+                1.0..=1000.0,
+            ));
+            ui.label("GI Max Distance");
+            ui.add(egui::Slider::new(&mut self.gi_max_distance, 1.0..=1000.0));
+            ui.label("Max Traversal Steps");
+            ui.add(egui::Slider::new(&mut self.max_traversal_steps, 16..=2048));
+            ui.label("Max Transparent Surfaces");
+            ui.add(egui::Slider::new(
+                &mut self.max_transparent_surfaces,
+                0..=32,
+            ));
+            ui.label("Minimum Ray Offset");
+            ui.add(egui::Slider::new(&mut self.min_ray_offset, 0.0001..=0.1));
         });
 
         ui.collapsing("Denoiser", |ui| {
