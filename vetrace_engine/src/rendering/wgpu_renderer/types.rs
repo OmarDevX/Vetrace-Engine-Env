@@ -278,3 +278,24 @@ pub struct PbrRenderData {
     pub model: [[f32; 4]; 4],
     pub joint_mats: Option<Vec<[[f32; 4]; 4]>>,
 }
+
+#[cfg(test)]
+mod layout_tests {
+    use super::ShaderParams;
+    use crate::scene::{
+        bvh::GpuBvhNode,
+        object::{GpuCustomMaterial, GpuMaterial, GpuObject, GpuTriangle},
+        tri_bvh::GpuTriBvhNode,
+    };
+
+    #[test]
+    fn gpu_struct_sizes_match_wgsl_layouts() {
+        assert_eq!(std::mem::size_of::<ShaderParams>(), 1744);
+        assert_eq!(std::mem::size_of::<GpuObject>(), 136);
+        assert_eq!(std::mem::size_of::<GpuTriangle>(), 128);
+        assert_eq!(std::mem::size_of::<GpuMaterial>(), 96);
+        assert_eq!(std::mem::size_of::<GpuCustomMaterial>(), 144);
+        assert_eq!(std::mem::size_of::<GpuBvhNode>(), 48);
+        assert_eq!(std::mem::size_of::<GpuTriBvhNode>(), 48);
+    }
+}
