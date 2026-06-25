@@ -1443,7 +1443,7 @@ fn mesh_any_hit(origin: vec3<f32>, dir: vec3<f32>, obj: Object, t_cap: f32) -> b
 // -----------------------------
 // TLAS traversal
 // -----------------------------
-fn aabb_hit(o: vec3<f32>, d: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>, t_cap: f32) -> bool {
+fn tlas_aabb_hit(o: vec3<f32>, d: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>, t_cap: f32) -> bool {
     let inv_d = 1.0 / d;
     let t0 = (bmin - o) * inv_d;
     let t1 = (bmax - o) * inv_d;
@@ -1503,7 +1503,7 @@ fn object_tlas_intersect(o: vec3<f32>, d: vec3<f32>, skip: i32) -> ObjHit {
         if (!in_bounds_tlas(ni)) { continue; }
         let node = bvh_nodes[ni];
         best.tlas_visits = best.tlas_visits + 1u;
-        if (!aabb_hit(o, d, node.bmin.xyz, node.bmax.xyz, best.t)) { continue; }
+        if (!tlas_aabb_hit(o, d, node.bmin.xyz, node.bmax.xyz, best.t)) { continue; }
 
         let c0 = node.child_object.x; let c1 = node.child_object.y;
         if (c0 < 0 && c1 < 0) {
@@ -1599,7 +1599,7 @@ fn object_tlas_any_hit(o: vec3<f32>, d: vec3<f32>, t_cap: f32, skip_a: u32, skip
         let ni = u32(stack[sp]);
         if (!in_bounds_tlas(ni)) { continue; }
         let node = bvh_nodes[ni];
-        if (!aabb_hit(o, d, node.bmin.xyz, node.bmax.xyz, t_cap)) { continue; }
+        if (!tlas_aabb_hit(o, d, node.bmin.xyz, node.bmax.xyz, t_cap)) { continue; }
 
         let c0 = node.child_object.x; let c1 = node.child_object.y;
         if (c0 < 0 && c1 < 0) {
@@ -1861,7 +1861,7 @@ fn shade_base(
             let n_dot_l = max(dot(surface_normal, normalize(to_light)), 0.0);
             let energy = max(max(lm.baseColorFactor.r, lm.baseColorFactor.g), lm.baseColorFactor.b) * lm.emissiveStrength;
             let radius = max(lobj.radius * max(max(lobj.scale.x, lobj.scale.y), lobj.scale.z), 0.25);
-            let screen_influence = clamp(radius * inversesqrt(dist2), 0.0, 1.0);
+            let screen_influence = clamp(radius * inverseSqrt(dist2), 0.0, 1.0);
             let visibility_relevance = max(lobj.shadow_importance, select(0.35, 1.0, lobj.casts_raytraced_shadow != 0u));
             let w = max(0.0, energy * (0.15 + n_dot_l) * (0.25 + screen_influence) * visibility_relevance / dist2);
             if (w <= 0.0) { continue; }
@@ -2215,7 +2215,7 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
     let albedo_sample = textureLoad(gbuf_albedo, vec2<i32>(id), 0);
     let encoded_normal = textureLoad(gbuf_normal, vec2<i32>(id), 0);
     let mat_sample = textureLoad(gbuf_material, vec2<i32>(id), 0);
-    let device_depth = textureLoad(depth_tex, vec2<i32>(id), 0).x;
+    let device_depth = textureLoad(depth_tex, vec2<i32>(id)).x;
 
     var clip = vec4<f32>(uv * 2.0 - vec2<f32>(1.0), 1.0, 1.0);
     var far_world = params.inv_view_proj * clip;

@@ -110,6 +110,7 @@ impl App for RainbowExample {
                 material_type: "rainbow".to_string(),
                 shader_source: RAINBOW_WGSL.to_string(),
                 parameters: params,
+                ..Default::default()
             };
 
             engine.insert_custom_material(e, custom);

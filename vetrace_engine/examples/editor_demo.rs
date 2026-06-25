@@ -3,6 +3,7 @@
 //! This example demonstrates the new application framework with the editor plugin.
 //! It shows how to create an application that includes the full editor interface.
 
+use sdl2::keyboard::Keycode;
 use vetrace_engine::app::{app, App, InputEvent};
 use vetrace_engine::engine::engine::Engine;
 
@@ -83,8 +84,8 @@ impl App for EditorDemoApp {
         
         match event {
             InputEvent::KeyPressed { key } => {
-                match key.as_str() {
-                    "F1" => {
+                match *key {
+                    Keycode::F1 => {
                         println!("🆘 Help:");
                         println!("   F1 - Show this help");
                         println!("   F2 - Create demo scene");
@@ -92,21 +93,21 @@ impl App for EditorDemoApp {
                         println!("   F5 - Save scene");
                         println!("   F9 - Load scene");
                     }
-                    "F2" => {
+                    Keycode::F2 => {
                         println!("🎬 Creating new demo scene...");
                         engine.clear_scene();
                         self.create_demo_scene(engine);
                     }
-                    "F3" => {
+                    Keycode::F3 => {
                         println!("🗑️  Clearing scene...");
                         engine.clear_scene();
                         self.scene_loaded = false;
                     }
-                    "F5" => {
+                    Keycode::F5 => {
                         println!("💾 Save scene functionality would go here");
                         // The editor plugin handles file operations through its UI
                     }
-                    "F9" => {
+                    Keycode::F9 => {
                         println!("📂 Load scene functionality would go here");
                         // The editor plugin handles file operations through its UI
                     }
@@ -127,7 +128,6 @@ impl EditorDemoApp {
         sphere1.position = [-2.0, 0.0, 0.0];
         sphere1.radius = 1.0;
         sphere1.color = [1.0, 0.5, 0.1]; // Orange
-        sphere1.metallic = 0.9;
         sphere1.roughness = 0.1;
         engine.spawn_object(sphere1);
         
@@ -137,7 +137,6 @@ impl EditorDemoApp {
         cube.size = [1.5, 1.5, 1.5];
         cube.is_cube = true;
         cube.color = [0.2, 0.8, 0.3]; // Green
-        cube.metallic = 0.0;
         cube.roughness = 0.8;
         engine.spawn_object(cube);
         
@@ -146,9 +145,8 @@ impl EditorDemoApp {
         sphere2.position = [2.0, 0.0, 0.0];
         sphere2.radius = 0.8;
         sphere2.color = [0.2, 0.4, 1.0]; // Blue
-        sphere2.metallic = 0.0;
         sphere2.roughness = 0.3;
-        sphere2.emission_strength = 2.0;
+        sphere2.emission = 2.0;
         engine.spawn_object(sphere2);
         
         // Small red sphere
@@ -156,7 +154,6 @@ impl EditorDemoApp {
         small_sphere.position = [0.0, -1.5, 1.0];
         small_sphere.radius = 0.5;
         small_sphere.color = [1.0, 0.2, 0.2]; // Red
-        small_sphere.metallic = 0.5;
         small_sphere.roughness = 0.5;
         engine.spawn_object(small_sphere);
         
@@ -166,7 +163,6 @@ impl EditorDemoApp {
         ground.size = [10.0, 0.1, 10.0];
         ground.is_cube = true;
         ground.color = [0.7, 0.7, 0.7]; // Gray
-        ground.metallic = 0.0;
         ground.roughness = 0.9;
         engine.spawn_object(ground);
         

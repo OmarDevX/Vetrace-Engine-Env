@@ -30,7 +30,7 @@ impl App for TopDownLua {
         engine.auto_register_component::<UILayout>("UILayout");
         engine.auto_register_component::<UIScreenSpace>("UIScreenSpace");
         engine.auto_register_component::<Score>("Score");
-        engine.sandbox_window.skycolor= [0.0, 0.0, 0.0];
+        engine.sky_color= [0.0, 0.0, 0.0];
         let mut player_obj = Object::default();
         player_obj.is_static = false;
         player_obj.size = [0.5, 0.5, 0.5];

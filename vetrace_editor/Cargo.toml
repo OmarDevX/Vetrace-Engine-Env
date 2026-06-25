@@ -18,7 +18,7 @@ egui-wgpu = { version = "0.28", optional = true }
 epi = { version = "0.17", optional = true }
 
 # File dialogs and system integration
-rfd = "0.15"
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 
 # Transform gizmos
 transform-gizmo-egui = "0.3"

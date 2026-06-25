@@ -37,6 +37,7 @@ impl SceneSetup {
                 direction: [-1.0, -1.0, -1.0], // Light coming from upper-left
                 color: [255.0, 255.0, 255.0],  // White light
                 intensity: 1.0,                 // Full intensity
+                ..Default::default()
             },
         );
         
