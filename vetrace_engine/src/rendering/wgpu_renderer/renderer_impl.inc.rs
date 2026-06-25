@@ -4838,6 +4838,10 @@ impl WgpuRenderer {
         if fx.temporal_blend != self.post_fx_uniforms.temporal_blend
             || fx.history_clamp_k != self.post_fx_uniforms.history_clamp_k
             || fx.gi_temporal_blend != self.post_fx_uniforms.gi_temporal_blend
+            || fx.shadow_history_weight != self.post_fx_uniforms.shadow_history_weight
+            || fx.reflection_history_weight != self.post_fx_uniforms.reflection_history_weight
+            || fx.cloud_history_weight != self.post_fx_uniforms.cloud_history_weight
+            || fx.denoise_mode != self.post_fx_uniforms.denoise_mode
         {
             self.reset_frame();
         }

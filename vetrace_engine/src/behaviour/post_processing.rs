@@ -1,7 +1,7 @@
 use crate::{
+    Behaviour,
     components::components::{CameraAttachment, PostProcessing, VolumetricFog},
     engine::engine::Engine,
-    Behaviour,
 };
 
 #[cfg(feature = "wgpu")]
@@ -131,10 +131,13 @@ impl Default for PostFxUniforms {
             history_clamp_k: 1.5,
             temporal_blend: 1.0,
             gi_temporal_blend: 0.1,
+            shadow_history_weight: 0.92,
+            reflection_history_weight: 0.82,
+            cloud_history_weight: 0.90,
+            denoise_mode: 0,
+            denoise_debug_view: 0,
             _pad0: 0,
             _pad1: 0,
-            _pad2: 0,
-            _pad3: 0,
         }
     }
 }
@@ -233,6 +236,11 @@ impl Behaviour for PostProcessBehaviour {
                 uniforms.history_clamp_k = pp.history_clamp_k;
                 uniforms.temporal_blend = pp.temporal_blend;
                 uniforms.gi_temporal_blend = pp.gi_temporal_blend;
+                uniforms.shadow_history_weight = pp.shadow_history_weight;
+                uniforms.reflection_history_weight = pp.reflection_history_weight;
+                uniforms.cloud_history_weight = pp.cloud_history_weight;
+                uniforms.denoise_mode = pp.denoise_mode;
+                uniforms.denoise_debug_view = pp.denoise_debug_view;
                 uniforms.fog_base_height = pp.fog_base_height;
                 uniforms.fog_height_falloff = pp.fog_height_falloff;
                 uniforms.fog_max_opacity = pp.fog_max_opacity;

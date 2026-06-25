@@ -90,10 +90,13 @@ pub struct PostFxUniforms {
     pub history_clamp_k: f32,
     pub temporal_blend: f32,
     pub gi_temporal_blend: f32,
+    pub shadow_history_weight: f32,
+    pub reflection_history_weight: f32,
+    pub cloud_history_weight: f32,
+    pub denoise_mode: u32,
+    pub denoise_debug_view: u32,
     pub _pad0: u32,
     pub _pad1: u32,
-    pub _pad2: u32,
-    pub _pad3: u32,
 }
 
 impl Default for PostFxUniforms {
@@ -156,10 +159,13 @@ impl Default for PostFxUniforms {
             // Higher values accumulate more history in the temporal filter
             temporal_blend: 1.0,
             gi_temporal_blend: 0.1,
+            shadow_history_weight: 0.92,
+            reflection_history_weight: 0.82,
+            cloud_history_weight: 0.90,
+            denoise_mode: 0,
+            denoise_debug_view: 0,
             _pad0: 0,
             _pad1: 0,
-            _pad2: 0,
-            _pad3: 0,
         }
     }
 }
