@@ -3,13 +3,11 @@
 //! This example demonstrates the new application framework with the editor plugin.
 //! It shows how to create a simple application that includes the full editor interface.
 
+use sdl2::keyboard::Keycode;
 use vetrace_engine::app::{app, plugin::Plugin, App, InputEvent};
 use vetrace_engine::engine::engine::Engine;
-use sdl2::keyboard::Keycode;
 // Import the editor plugin
 extern crate vetrace_editor;
-use std::cell::RefCell;
-use std::rc::Rc;
 use vetrace_editor::EditorPlugin;
 
 /// Simple demo plugin to show how the plugin system works
@@ -84,14 +82,12 @@ impl Plugin for DemoPlugin {
 }
 /// Simple demo application
 struct DemoApp {
-    frame_count: u32,
     last_mouse_pos: (i32, i32),
 }
 
 impl DemoApp {
     fn new() -> Self {
         Self {
-            frame_count: 0,
             last_mouse_pos: (0, 0),
         }
     }
@@ -140,10 +136,38 @@ impl App for DemoApp {
                 direction: [-1.0, -1.0, -1.0], // Light coming from upper-left
                 color: [255.0, 255.0, 255.0],  // White light
                 intensity: 1.0,                // Full intensity
+                ..Default::default()
             },
         );
-    }
 
+        // Seed the demo with visible geometry directly in front of the default
+        // camera. Without scene objects the renderer has nothing but the
+        // background/editor UI to draw, which makes the example look like it is
+        // stuck on a black screen even though the app loop is running.
+        use vetrace_engine::scene::object::Object;
+
+        let mut cube = Object::default();
+        cube.position = [4.0, 0.0, 0.0];
+        cube.size = [1.5, 1.5, 1.5];
+        cube.is_cube = true;
+        cube.color = [0.15, 0.75, 1.0];
+        cube.roughness = 0.35;
+        cube.emission = 0.25;
+        engine.spawn_object(cube);
+
+        let mut ground = Object::default();
+        ground.position = [4.0, -1.25, 0.0];
+        ground.size = [6.0, 0.15, 6.0];
+        ground.is_cube = true;
+        ground.color = [0.6, 0.6, 0.65];
+        ground.roughness = 0.9;
+        engine.spawn_object(ground);
+
+        println!(
+            "🎭 App framework demo scene initialized with {} visible objects",
+            engine.scene.objects.len()
+        );
+    }
 
     fn render(&mut self, engine: &mut Engine) {
         engine.render_frame();

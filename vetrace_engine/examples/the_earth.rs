@@ -364,6 +364,7 @@ impl App for TheEarthExample {
                 direction: [-0.35, -1.0, -0.25],
                 color: [255.0, 248.0, 232.0],
                 intensity: 4.0,
+                ..Default::default()
             },
         );
 

@@ -27,7 +27,7 @@ serde_json = "1.0.140"
 bincode = "1.3"
 once_cell = "1.21.3"
 mlua = { version = "0.11.0-beta.3", features = ["lua54", "vendored"] }
-rfd = "0.15"
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 rapier3d = "0.26.1"
 bvh = "0.11"
 image = { version = "0.25", features = ["png", "jpeg"] }
@@ -50,7 +50,7 @@ version = "0.17"
 optional = true
 
 [features]
-default = ["sdl2_use-pkgconfig", "use_epi", "wgpu"]
+default = ["sdl2_bundled", "use_epi", "wgpu"]
 
 sdl2_unsafe_textures = ["sdl2/unsafe_textures"]
 sdl2_gfx = ["sdl2/gfx"]
