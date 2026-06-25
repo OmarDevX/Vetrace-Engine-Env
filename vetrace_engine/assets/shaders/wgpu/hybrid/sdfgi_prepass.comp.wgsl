@@ -24,11 +24,13 @@ struct Object {
     _gi_pad1: u32,
 };
 
+// Must match Rust: vetrace_engine/src/rendering/wgpu_renderer/types.rs::ShaderParams
 struct Params {
     camera_pos: vec4<f32>,
     camera_front: vec4<f32>,
     camera_up: vec4<f32>,
     camera_right: vec4<f32>,
+    prev_camera_pos: vec4<f32>,
     fov: f32,
     num_objects: i32,
     is_fisheye: i32,
@@ -51,7 +53,7 @@ struct Params {
     max_rt_shadow_distance: f32,
     rt_shadow_ray_t_max: f32,
     min_soft_shadow_radius: f32,
-    _pad_shadow_mode: u32,
+    raytraced_reflections_enabled: u32,
     inv_view_proj: mat4x4<f32>,
 };
 
