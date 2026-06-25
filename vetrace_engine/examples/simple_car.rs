@@ -252,6 +252,7 @@ fn main() {
         color: [255.0, 255.0, 255.0],
         intensity: 10.0,
         direction: [-1.0, -1.0, -1.0],
+        ..Default::default()
     };
     engine.world.insert(camera, ps);
     engine.world.insert(camera, dl);
