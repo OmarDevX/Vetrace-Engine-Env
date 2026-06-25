@@ -3816,6 +3816,11 @@ impl WgpuRenderer {
         let mut effective_gi_mode = params.gi_mode;
         let mut effective_cloud_sample_count = params.cloud_sample_count;
         let mut effective_cloud_temporal_quality = params.cloud_temporal_quality;
+        let mut effective_cloud_shadow_mode = params.cloud_shadow_mode;
+        let mut effective_cloud_count = params
+            .clouds
+            .len()
+            .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS) as u32;
         let mut effective_renderer_mode = params.renderer_mode;
         match params.profile {
             crate::rendering::renderer::RendererProfile::Indoor60FPS => {
@@ -3827,17 +3832,32 @@ impl WgpuRenderer {
                 effective_shadow_quality = 0;
                 effective_max_shadow_rays = 0;
                 effective_cloud_object_shadows = 0;
-                effective_cloud_sample_count = if effective_cloud_sample_count == 0 { 24 } else { effective_cloud_sample_count.min(24) };
+                effective_cloud_sample_count = if effective_cloud_sample_count == 0 {
+                    12
+                } else {
+                    effective_cloud_sample_count.min(12)
+                };
                 effective_cloud_temporal_quality = 1;
+                // Indoor maps should not spend time on heavy sky/cloud work when
+                // the sky is normally occluded. Keep atmosphere LUTs available for
+                // windows/portals, but make cloud passes a no-op.
+                effective_cloud_count = 0;
             }
             crate::rendering::renderer::RendererProfile::Low => {
                 effective_max_bounces = effective_max_bounces.min(1);
                 effective_light_samples = effective_light_samples.min(1);
                 effective_dir_shadow_samples = effective_dir_shadow_samples.min(1);
                 effective_max_shadow_rays = effective_max_shadow_rays.min(1);
+                effective_cloud_sample_count = if effective_cloud_sample_count == 0 {
+                    16
+                } else {
+                    effective_cloud_sample_count.min(16)
+                };
             }
             crate::rendering::renderer::RendererProfile::Cinematic => {
                 effective_renderer_mode = crate::rendering::renderer::RendererMode::CinematicPathTrace;
+                // Cinematic can opt into expensive per-hit volumetric cloud shadowing.
+                effective_cloud_shadow_mode = 1;
             }
             _ => {}
         }
@@ -3928,16 +3948,13 @@ impl WgpuRenderer {
             _pad_dof: 0,
             atmosphere: params.atmosphere,
             atmo_count: params.atmos.len() as u32,
-            cloud_count: params
-                .clouds
-                .len()
-                .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS) as u32,
+            cloud_count: effective_cloud_count,
             atmosphere_mode: params.atmosphere_mode,
             atmosphere_sun_controls: params.atmosphere_sun_controls,
             cloud_history_weight: params.cloud_history_weight,
             cloud_sample_count: effective_cloud_sample_count,
             cloud_temporal_quality: effective_cloud_temporal_quality,
-            cloud_shadow_mode: params.cloud_shadow_mode,
+            cloud_shadow_mode: effective_cloud_shadow_mode,
             renderer_mode: effective_renderer_mode as u32,
             _pad_renderer_mode: [0; 3],
             atmos: {
@@ -4306,7 +4323,7 @@ impl WgpuRenderer {
                 (super::setup::AERIAL_PERSPECTIVE_LUT_DEPTH + 3) / 4,
             );
         }
-        {
+        if effective_cloud_count > 0 && effective_cloud_shadow_mode == 0 {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("cloud_directional_shadow"),
                 timestamp_writes: None,
@@ -4315,25 +4332,27 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
             cpass.dispatch_workgroups((512 + 7) / 8, (512 + 7) / 8, 1);
         }
-        encoder.copy_texture_to_texture(
-            ImageCopyTexture {
-                texture: &self.cloud_shadow_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            ImageCopyTexture {
-                texture: &self.cloud_shadow_history_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            Extent3d {
-                width: 512,
-                height: 512,
-                depth_or_array_layers: 1,
-            },
-        );
+        if effective_cloud_count > 0 && effective_cloud_shadow_mode == 0 {
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.cloud_shadow_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.cloud_shadow_history_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: 512,
+                    height: 512,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("raytrace"),

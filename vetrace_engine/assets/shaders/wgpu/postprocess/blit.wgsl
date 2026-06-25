@@ -486,6 +486,22 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         color = vec4<f32>(color.rgb * light.color * lighting, color.a);
     }
 
+    // ---------- Height fog / aerial-density post effect ----------
+    // Runs before DOF so the final depth-of-field filter sees the fully lit,
+    // cloud/atmosphere-composited, fogged scene color. The fog ray stops at the
+    // shared final scene depth, whether that depth came from raster primaries or
+    // path-traced primaries.
+    if (postfx.fog_density > 0.0) {
+        let depth01 = textureSample(depth_tex, nearest_samp, in.uv).r;
+        if (depth01 < 0.999999) {
+            let world_pos = reconstruct_world_pos(in.uv, depth01);
+            let fog = height_fog_amount(params.camera_pos.xyz, world_pos);
+            let fog_color = vec3<f32>(postfx.fog_color_r, postfx.fog_color_g, postfx.fog_color_b) *
+                vec3<f32>(postfx.fog_inscatter_r, postfx.fog_inscatter_g, postfx.fog_inscatter_b);
+            color = vec4<f32>(mix(color.rgb, fog_color, fog), color.a);
+        }
+    }
+
     // ================== BOKEH DOF ==================
     if (postfx.dof_enabled != 0u) {
         let dims = vec2<f32>(textureDimensions(tex));
@@ -517,7 +533,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         }
         blur = clamp(blur, 0.0, 1.0);
 
-        let noise = rand(in.uv, dims) * postfx.dof_namount * blur;
+        let noise = rand(in.uv + params.taa_jitter + params.prev_taa_jitter * 0.37, dims) * postfx.dof_namount * blur;
         let w = texel.x * blur * postfx.dof_max_blur + noise.x;
         let h = texel.y * blur * postfx.dof_max_blur + noise.y;
 
@@ -580,18 +596,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         if (total > 0.0) {
             glow = glow / total;
             color = vec4<f32>(color.rgb + glow * postfx.bloom_intensity, color.a);
-        }
-    }
-
-    // ---------- Height fog ----------
-    if (postfx.fog_density > 0.0) {
-        let depth01 = textureSample(depth_tex, nearest_samp, in.uv).r;
-        if (depth01 < 0.999999) {
-            let world_pos = reconstruct_world_pos(in.uv, depth01);
-            let fog = height_fog_amount(params.camera_pos.xyz, world_pos);
-            let fog_color = vec3<f32>(postfx.fog_color_r, postfx.fog_color_g, postfx.fog_color_b) *
-                vec3<f32>(postfx.fog_inscatter_r, postfx.fog_inscatter_g, postfx.fog_inscatter_b);
-            color = vec4<f32>(mix(color.rgb, fog_color, fog), color.a);
         }
     }
 

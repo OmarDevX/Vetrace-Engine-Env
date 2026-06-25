@@ -2129,7 +2129,10 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
     let view_dir = normalize(far_world.xyz - params.camera_pos.xyz);
 
     if (device_depth >= 0.9999 || albedo_sample.a <= 0.0) {
-        let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, 1e9, params.skycolor.rgb, id);
+        // Raster-primary and hybrid modes still use the LUT atmosphere path;
+        // clouds remain a separate pass composited against final scene depth.
+        let sky = apply_atmosphere(params.camera_pos.xyz, view_dir, 1e9, params.skycolor.rgb);
+        let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, 1e9, sky, id);
         textureStore(cloud_radiance_tex, vec2<i32>(id), vec4<f32>(cloud_result.radiance, 1.0));
         textureStore(cloud_transmittance_tex, vec2<i32>(id), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
         textureStore(color_tex, vec2<i32>(id), vec4<f32>(cloud_result.color, -1.0));
@@ -2166,7 +2169,7 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
         gi = sample_diffuse_gi(hit_pos + normal * 0.01, normal, rng);
         ambient += gi * albedo;
     }
-    let lit = direct + ambient;
+    let lit = apply_atmosphere(params.camera_pos.xyz, view_dir, linear_depth, direct + ambient);
     let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, linear_depth, lit, id);
     textureStore(cloud_radiance_tex, vec2<i32>(id), vec4<f32>(cloud_result.radiance, 1.0));
     textureStore(cloud_transmittance_tex, vec2<i32>(id), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
