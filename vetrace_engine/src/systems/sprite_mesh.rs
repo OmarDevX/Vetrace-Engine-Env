@@ -205,6 +205,7 @@ impl Behaviour for SpriteMeshSystem {
                     normal_tex: None,
                     occlusion_tex: None,
                     emissive_tex: None,
+                    fallback_tags: crate::materials::MATERIAL_TAG_RASTER_ONLY,
                 },
             );
         }

@@ -2452,6 +2452,20 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         else if (params.rt_debug_view == 3u) { debug_col = heatmap(f32(primary_dbg.tlas_visits + primary_dbg.blas_visits) / 128.0); }
         else if (params.rt_debug_view == 4u) { debug_col = heatmap(f32(primary_dbg.tlas_visits + primary_dbg.blas_visits) / 96.0); }
         else if (params.rt_debug_view == 5u) { debug_col = heatmap(f32(primary_dbg.blas_visits + primary_dbg.tri_tests) / 128.0); }
+        else if (params.rt_debug_view == 6u) {
+            // Fallback overlay: green = RT/high quality, cyan = SSR/probe/material fallback,
+            // amber = raster/contact fallback, blue = ambient/lightmap-style fallback.
+            if (out_obj >= 0) {
+                let obj = objects[u32(out_obj)];
+                let mat = materials[obj.material_index];
+                let raster_or_probe = (mat._pad2.x & 0x6u) != 0u || obj.casts_raytraced_shadow == 0u;
+                let rough_probe = mat.roughnessFactor > 0.6;
+                if ((mat._pad2.x & 0x1u) != 0u && !rough_probe) { debug_col = vec3<f32>(0.0, 1.0, 0.15); }
+                else if (raster_or_probe || rough_probe) { debug_col = vec3<f32>(0.0, 0.75, 1.0); }
+                else if (params.raytraced_shadows_enabled == 0u) { debug_col = vec3<f32>(1.0, 0.65, 0.0); }
+                else { debug_col = vec3<f32>(0.15, 0.25, 1.0); }
+            } else { debug_col = vec3<f32>(0.02, 0.02, 0.05); }
+        }
         textureStore(color_tex, vec2<i32>(id.xy), vec4(debug_col, f32(out_obj)));
         textureStore(depth_tex, vec2<i32>(id.xy), vec4(out_depth, 0.0, 0.0, 1.0));
         textureStore(normal_tex, vec2<i32>(id.xy), vec4(out_normal, out_depth));

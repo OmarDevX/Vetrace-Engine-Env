@@ -2463,6 +2463,62 @@ impl GlobalIlluminationMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EffectFallbackPolicy {
+    /// Pixels using a lower tier can be visualized with RT debug view 6.
+    pub debug_overlay: bool,
+    /// Objects smaller than this approximate radius skip RT unless tagged as hero.
+    pub min_rt_object_radius: f32,
+    /// Objects farther than this skip RT unless tagged as hero.
+    pub max_rt_distance: f32,
+    /// Materials at or above this roughness use SSR/probe instead of RT reflections.
+    pub max_rt_reflection_roughness: f32,
+    /// Indoor scenes disable cloud/object shadowing and prefer probes/lightmaps.
+    pub indoor_scene: bool,
+}
+
+impl EffectFallbackPolicy {
+    pub fn for_profile(profile: RendererProfile) -> Self {
+        match profile {
+            RendererProfile::Ultra | RendererProfile::Cinematic => Self {
+                debug_overlay: false,
+                min_rt_object_radius: 0.05,
+                max_rt_distance: 300.0,
+                max_rt_reflection_roughness: 0.45,
+                indoor_scene: false,
+            },
+            RendererProfile::High => Self {
+                debug_overlay: false,
+                min_rt_object_radius: 0.10,
+                max_rt_distance: 180.0,
+                max_rt_reflection_roughness: 0.35,
+                indoor_scene: false,
+            },
+            RendererProfile::Balanced => Self {
+                debug_overlay: false,
+                min_rt_object_radius: 0.20,
+                max_rt_distance: 100.0,
+                max_rt_reflection_roughness: 0.28,
+                indoor_scene: false,
+            },
+            RendererProfile::Indoor60FPS => Self {
+                debug_overlay: false,
+                min_rt_object_radius: 0.35,
+                max_rt_distance: 55.0,
+                max_rt_reflection_roughness: 0.22,
+                indoor_scene: true,
+            },
+            RendererProfile::Low => Self {
+                debug_overlay: false,
+                min_rt_object_radius: 0.50,
+                max_rt_distance: 45.0,
+                max_rt_reflection_roughness: 0.18,
+                indoor_scene: false,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PostProcessing {
     pub profile: RendererProfile,
@@ -2513,6 +2569,7 @@ pub struct PostProcessing {
     pub fog_height_falloff: f32,
     pub fog_max_opacity: f32,
     pub fog_inscattering_tint: [f32; 3],
+    pub fallback_policy: EffectFallbackPolicy,
 }
 
 impl Default for PostProcessing {
@@ -2563,6 +2620,7 @@ impl Default for PostProcessing {
             fog_height_falloff: 0.0,
             fog_max_opacity: 1.0,
             fog_inscattering_tint: [1.0, 1.0, 1.0],
+            fallback_policy: EffectFallbackPolicy::for_profile(RendererProfile::Balanced),
         }
     }
 }
@@ -2603,6 +2661,7 @@ impl PostProcessing {
             cloud_history_weight: 0.85,
             atmosphere: true,
             fog_max_opacity: 0.5,
+            fallback_policy: EffectFallbackPolicy::for_profile(RendererProfile::Indoor60FPS),
             ..Self::default()
         }
     }
@@ -2625,6 +2684,7 @@ impl PostProcessing {
             light_samples: 1,
             dir_light_samples: 1,
             max_bounces: 1,
+            fallback_policy: EffectFallbackPolicy::for_profile(RendererProfile::Low),
             ..Self::default()
         }
     }
@@ -2656,6 +2716,13 @@ impl Inspectable for PostProcessing {
         if ui.button("Apply Indoor60FPS preset").clicked() {
             *self = PostProcessing::indoor_60_fps();
         }
+        if ui.button("Apply profile fallback policy").clicked() {
+            self.fallback_policy = EffectFallbackPolicy::for_profile(self.profile);
+        }
+        ui.checkbox(
+            &mut self.fallback_policy.debug_overlay,
+            "Fallback debug overlay",
+        );
 
         ui.label("Exposure");
         // Allow a wider exposure range so scenes can be brightened

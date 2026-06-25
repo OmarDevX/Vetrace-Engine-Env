@@ -202,11 +202,28 @@ impl Engine {
                     ior: mat.ior,
                     base_color_tex: tex_idx,
                     f0,
+                    _pad2: [mat.fallback_tags, 0, 0, 0, 0, 0, 0],
                     ..Default::default()
                 });
             }
 
             let cam = self.active_camera_info();
+            let mut fallback_policy =
+                crate::components::components::EffectFallbackPolicy::for_profile(
+                    crate::components::components::RendererProfile::Balanced,
+                );
+            for (ent, _cam_att) in self
+                .world
+                .query::<crate::components::components::CameraAttachment>()
+            {
+                if let Some(pp) = self
+                    .world
+                    .get::<crate::components::components::PostProcessing>(ent)
+                {
+                    fallback_policy = pp.fallback_policy;
+                }
+                break;
+            }
             let scene = &mut self.scene;
             for (i, obj) in scene.objects.iter_mut().enumerate() {
                 // See if the object has a material component in the world
@@ -253,6 +270,7 @@ impl Engine {
                             ior: mat.ior,
                             base_color_tex: tex_idx,
                             f0,
+                            _pad2: [mat.fallback_tags, 0, 0, 0, 0, 0, 0],
                             ..Default::default()
                         });
                         idx
@@ -320,6 +338,29 @@ impl Engine {
                 obj.position[0] -= cam_pos.x;
                 obj.position[1] -= cam_pos.y;
                 obj.position[2] -= cam_pos.z;
+                let dist = (obj.position[0] * obj.position[0]
+                    + obj.position[1] * obj.position[1]
+                    + obj.position[2] * obj.position[2])
+                    .sqrt();
+                let tags = gpu_materials
+                    .get(obj.material_index as usize)
+                    .map(|m| m._pad2[0])
+                    .unwrap_or(0);
+                let hero_reflection =
+                    (tags & crate::materials::MATERIAL_TAG_NEEDS_ACCURATE_REFLECTION) != 0;
+                let raster_only = (tags & crate::materials::MATERIAL_TAG_RASTER_ONLY) != 0;
+                let rough = gpu_materials
+                    .get(obj.material_index as usize)
+                    .map(|m| m.roughness_factor)
+                    .unwrap_or(1.0);
+                if raster_only
+                    || (!hero_reflection
+                        && (obj.radius < fallback_policy.min_rt_object_radius
+                            || dist > fallback_policy.max_rt_distance
+                            || rough > fallback_policy.max_rt_reflection_roughness))
+                {
+                    obj.casts_raytraced_shadow = 0;
+                }
             }
             let mut gpu_triangles: Vec<_> = raw_triangles.to_vec();
             let mut tri_bvh_nodes: Vec<_> = scene.get_tri_bvh_nodes().to_vec();
@@ -493,6 +534,7 @@ impl Engine {
                     max_transparent_surfaces = pp.max_transparent_surfaces;
                     min_ray_offset = pp.min_ray_offset;
                     atmosphere = pp.atmosphere;
+                    fallback_policy = pp.fallback_policy;
                     if let Some(d) = &pp.dof {
                         dof_enable = 1;
                         dof_aperture = d.aperture();
@@ -501,6 +543,17 @@ impl Engine {
                 }
                 break;
             }
+
+            if fallback_policy.debug_overlay {
+                rt_debug_view = 6;
+            }
+            if fallback_policy.indoor_scene {
+                cloud_object_shadows_enabled = 0;
+            }
+            shadow_max_distance = shadow_max_distance.min(fallback_policy.max_rt_distance.max(1.0));
+            reflection_max_distance =
+                reflection_max_distance.min(fallback_policy.max_rt_distance.max(1.0));
+            gi_max_distance = gi_max_distance.min(fallback_policy.max_rt_distance.max(1.0));
 
             let mut dir_light = crate::components::components::DirectionalLight::default();
             for (_e, light) in self

@@ -105,7 +105,8 @@ pub struct GpuMaterial {
     pub has_custom_material: u32,
     /// Index into the `custom_materials` storage buffer
     pub custom_material_id: u32,
-    /// Extra padding to keep struct size 96 bytes, matching WGSL layout
+    /// Extra padding to keep struct size 96 bytes, matching WGSL layout.
+    /// _pad2[0] mirrors MATERIAL_TAG_* fallback hints from PbrMaterial.
     pub _pad2: [u32; 7],
 }
 

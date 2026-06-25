@@ -205,6 +205,7 @@ impl AssetManager {
                     normal_tex,
                     occlusion_tex,
                     emissive_tex,
+                    fallback_tags: if emissive.iter().any(|&e| e > 0.0) { crate::materials::MATERIAL_TAG_EMISSIVE_STATIC } else { crate::materials::MATERIAL_TAG_CAN_USE_PROBE },
                 };
                 self.materials.write().insert(name.clone(), mat.clone());
                 mats.push(mat);
