@@ -138,6 +138,7 @@ const MAX_SCATTER_STEPS       : i32 = 24;
 const MAX_LIGHT_STEPS         : i32 = 6;
 const MAX_ATMO_LIGHTS         : u32 = 2u;
 const MAX_LIGHT_SAMPLES       : u32 = 8u;
+const MAX_IMPORTANT_PIXEL_LIGHTS : u32 = 4u;
 const MAX_DIR_SHADOW_SAMPLES  : u32 = 8u;
 const SHADOW_QUALITY_OFF      : u32 = 0u;
 const SHADOW_QUALITY_LOW      : u32 = 1u;
@@ -1787,37 +1788,71 @@ fn shade_base(
 
     let light_count: u32 = light_header.count;
     if (light_count > 0u) {
-        let choice = u32(rand(rng) * f32(light_count));
-        let idx = light_indices[choice];
-        if (idx != obj_idx) {
-            let light = objects[idx];
+        // Bounded per-pixel reservoir over a tiny candidate set. The CPU keeps
+        // light_indices sorted by importance, so many emissive lights do not
+        // translate into linear RT shadow work here.
+        let candidate_count = min(light_count, MAX_IMPORTANT_PIXEL_LIGHTS);
+        let tile_raw = vec2<u32>(floor((hit.xy + vec2<f32>(1024.0)) / 8.0));
+        let tile_x = tile_raw.x % 16u;
+        let tile_y = tile_raw.y % 16u;
+        let start = (tile_x + tile_y * 13u + u32(params.frame_number)) % candidate_count;
+        var chosen_idx = 0xffffffffu;
+        var chosen_weight = 0.0;
+        var weight_sum = 0.0;
+        for (var c = 0u; c < MAX_IMPORTANT_PIXEL_LIGHTS; c = c + 1u) {
+            if (c >= candidate_count) { break; }
+            let list_i = (start + c) % candidate_count;
+            let idx = light_indices[list_i];
+            if (idx == obj_idx) { continue; }
+            let lobj = objects[idx];
+            let lm = materials[lobj.material_index];
+            if (lm.emissiveStrength <= 0.0) { continue; }
+            let to_light = lobj.position - hit;
+            let dist2 = max(dot(to_light, to_light), 1.0);
+            let n_dot_l = max(dot(surface_normal, normalize(to_light)), 0.0);
+            let energy = max(max(lm.baseColorFactor.r, lm.baseColorFactor.g), lm.baseColorFactor.b) * lm.emissiveStrength;
+            let radius = max(lobj.radius * max(max(lobj.scale.x, lobj.scale.y), lobj.scale.z), 0.25);
+            let screen_influence = clamp(radius * inversesqrt(dist2), 0.0, 1.0);
+            let visibility_relevance = max(lobj.shadow_importance, select(0.35, 1.0, lobj.casts_raytraced_shadow != 0u));
+            let w = max(0.0, energy * (0.15 + n_dot_l) * (0.25 + screen_influence) * visibility_relevance / dist2);
+            if (w <= 0.0) { continue; }
+            weight_sum = weight_sum + w;
+            if (rand(rng) * weight_sum <= w) {
+                chosen_idx = idx;
+                chosen_weight = w;
+            }
+        }
+        if (chosen_idx != 0xffffffffu && chosen_weight > 0.0) {
+            if (gi_params.debug_mode == 7u) {
+                let h = f32((chosen_idx * 1103515245u + 12345u) & 255u) / 255.0;
+                return vec4<f32>(vec3<f32>(h, fract(h * 7.0), fract(h * 13.0)), material_result.transparency);
+            }
+            let light = objects[chosen_idx];
             let lm = materials[light.material_index];
-            if (lm.emissiveStrength > 0.0) {
-                let light_pos = light.position;
-                var light_target = light_pos;
-                var light_area = 1.0;
-                if (light.is_cube > 0u) {
-                    let size = light.size * light.scale;
-                    light_area = 2.0 * (size.x * size.y + size.y * size.z + size.z * size.x);
-                    let local = random_cube_surface(rng) * (size * 0.5);
-                    light_target = light_pos + quat_rotate(light.orientation, local);
-                } else {
-                    let r = light.radius * light.scale.x;
-                    light_area = 4.0 * PI * r * r;
-                    let local = random_in_unit_sphere(rng) * r;
-                    light_target = light_pos + local;
-                }
-                let ldir = normalize(light_target - hit);
-                let diff = max(dot(surface_normal, ldir), 0.0);
-                if (diff > 0.0) {
-                    let visibility = soft_shadow(hit + surface_normal * 0.01, surface_normal, light, idx, rng);
-                    if (visibility > 0.0) {
-                        let dist = length(light_target - hit);
-                        let attenuation = 1.0 / max(dist * dist, 1.0);
-                        let weight = f32(light_count);
-                        let L = lm.baseColorFactor.rgb * lm.emissiveStrength;
-                        col += base * L * diff * visibility * attenuation * weight * light_area;
-                    }
+            let light_pos = light.position;
+            var light_target = light_pos;
+            var light_area = 1.0;
+            if (light.is_cube > 0u) {
+                let size = light.size * light.scale;
+                light_area = 2.0 * (size.x * size.y + size.y * size.z + size.z * size.x);
+                let local = random_cube_surface(rng) * (size * 0.5);
+                light_target = light_pos + quat_rotate(light.orientation, local);
+            } else {
+                let r = light.radius * light.scale.x;
+                light_area = 4.0 * PI * r * r;
+                let local = random_in_unit_sphere(rng) * r;
+                light_target = light_pos + local;
+            }
+            let ldir = normalize(light_target - hit);
+            let diff = max(dot(surface_normal, ldir), 0.0);
+            if (diff > 0.0) {
+                let visibility = soft_shadow(hit + surface_normal * 0.01, surface_normal, light, chosen_idx, rng);
+                if (visibility > 0.0) {
+                    let dist = length(light_target - hit);
+                    let attenuation = 1.0 / max(dist * dist, 1.0);
+                    let mis_weight = weight_sum / chosen_weight;
+                    let L = lm.baseColorFactor.rgb * lm.emissiveStrength;
+                    col += base * L * diff * visibility * attenuation * mis_weight * light_area;
                 }
             }
         }

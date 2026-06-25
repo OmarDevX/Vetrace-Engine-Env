@@ -3519,13 +3519,47 @@ impl WgpuRenderer {
             contents: bytemuck::cast_slice(&custom_vec),
             usage: BufferUsages::STORAGE,
         });
-        let mut lights: Vec<u32> = Vec::new();
+        const MAX_IMPORTANT_LIGHTS: usize = 256;
+        let camera_pos = Vec3::new(self.prev_cam_pos[0], self.prev_cam_pos[1], self.prev_cam_pos[2]);
+        let camera_front = Vec3::new(self.prev_cam_front[0], self.prev_cam_front[1], self.prev_cam_front[2]);
+        let mut lights: Vec<(u32, f32)> = Vec::new();
         for (i, obj) in objects.iter().enumerate() {
             let mi = obj.material_index as usize;
             if mi < materials.len() && materials[mi].emissive_strength > 0.0 {
-                lights.push(i as u32);
+                let mat = materials[mi];
+                let light_pos = Vec3::from_array(obj.position);
+                let to_light = light_pos - camera_pos;
+                let dist2 = to_light.length_squared().max(1.0);
+                let color_intensity = mat
+                    .base_color_factor
+                    .iter()
+                    .take(3)
+                    .copied()
+                    .fold(0.0_f32, f32::max)
+                    * mat.emissive_strength;
+                let radius = (obj.radius * obj.scale.iter().copied().fold(0.0_f32, f32::max)).max(0.25);
+                let distance_score = 1.0 / dist2;
+                let screen_influence = (radius / dist2.sqrt()).clamp(0.0, 1.0);
+                let view_relevance = if camera_front.length_squared() > 0.0 {
+                    let facing = camera_front.normalize().dot(to_light.normalize_or_zero());
+                    (facing * 0.5 + 0.5).clamp(0.1, 1.0)
+                } else {
+                    1.0
+                };
+                let visibility_relevance = obj
+                    .shadow_importance
+                    .max(if obj.casts_raytraced_shadow != 0 { 1.0 } else { 0.35 });
+                let score = color_intensity
+                    * (0.25 + distance_score * 64.0)
+                    * (0.25 + screen_influence)
+                    * view_relevance
+                    * visibility_relevance;
+                lights.push((i as u32, score));
             }
         }
+        lights.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        lights.truncate(MAX_IMPORTANT_LIGHTS);
+        let lights: Vec<u32> = lights.into_iter().map(|(idx, _)| idx).collect();
         let light_header = LightListHeader {
             count: lights.len() as u32,
         };
