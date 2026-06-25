@@ -285,15 +285,38 @@ impl WgpuRenderer {
         tri_bvh: &[GpuTriBvhNode],
         materials: &[crate::scene::object::GpuMaterial],
     ) {
-        let mut hasher = DefaultHasher::new();
-        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(objects));
-        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(triangles));
-        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(bvh));
-        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(tri_bvh));
-        Self::hash_bytes(&mut hasher, bytemuck::cast_slice(materials));
-        let hash = hasher.finish();
-        if self.gi_cache.static_scene_hash != hash {
-            self.gi_cache.static_scene_hash = hash;
+        let static_objects: Vec<GpuObject> = objects
+            .iter()
+            .copied()
+            .filter(|object| {
+                object.scene_flags & crate::scene::object::SCENE_FLAG_DYNAMIC_GEOMETRY == 0
+            })
+            .collect();
+
+        let mut scene_hasher = DefaultHasher::new();
+        Self::hash_bytes(&mut scene_hasher, bytemuck::cast_slice(&static_objects));
+        Self::hash_bytes(&mut scene_hasher, bytemuck::cast_slice(triangles));
+        Self::hash_bytes(&mut scene_hasher, bytemuck::cast_slice(bvh));
+        Self::hash_bytes(&mut scene_hasher, bytemuck::cast_slice(tri_bvh));
+        Self::hash_bytes(&mut scene_hasher, bytemuck::cast_slice(materials));
+        let scene_hash = scene_hasher.finish();
+
+        let mut geometry_hasher = DefaultHasher::new();
+        Self::hash_bytes(&mut geometry_hasher, bytemuck::cast_slice(&static_objects));
+        Self::hash_bytes(&mut geometry_hasher, bytemuck::cast_slice(triangles));
+        Self::hash_bytes(&mut geometry_hasher, bytemuck::cast_slice(bvh));
+        Self::hash_bytes(&mut geometry_hasher, bytemuck::cast_slice(tri_bvh));
+        let geometry_hash = geometry_hasher.finish();
+
+        let mut material_light_hasher = DefaultHasher::new();
+        Self::hash_bytes(&mut material_light_hasher, bytemuck::cast_slice(materials));
+        let material_light_hash = material_light_hasher.finish();
+
+        if self.gi_cache.static_scene_hash != scene_hash {
+            self.gi_cache.scene_hash = scene_hash;
+            self.gi_cache.geometry_hash = geometry_hash;
+            self.gi_cache.material_light_hash = material_light_hash;
+            self.gi_cache.static_scene_hash = scene_hash;
             self.gi_cache.mark_dirty();
         }
     }
@@ -309,8 +332,11 @@ impl WgpuRenderer {
     ) -> std::io::Result<()> {
         let settings_hash = Self::bake_settings_hash(params);
         let contents = format!(
-            "vetrace_lighting_bake_v1\nscene_hash={}\nbake_settings_hash={}\nbackend=sdfgi\nartifacts=gi_sdf,gi_radiance,lightmap,probes\n",
-            self.gi_cache.static_scene_hash, settings_hash
+            "vetrace_lighting_bake_v1\nscene_hash={}\ngeometry_hash={}\nmaterial_light_hash={}\nbake_settings_hash={}\nbackend=scalable_gi\nartifacts=lightmap,probes,optional_sdfgi\ndynamic_policy=sample_probes_or_sdfgi_receive_raster_or_rt_shadows\npath_traced_policy=editor_ground_truth_cinematic_screenshot_bake_validation\n",
+            self.gi_cache.scene_hash,
+            self.gi_cache.geometry_hash,
+            self.gi_cache.material_light_hash,
+            settings_hash
         );
         std::fs::write(&artifact_path, contents)?;
         self.gi_cache.last_baked_scene_hash = self.gi_cache.static_scene_hash;
@@ -327,7 +353,7 @@ impl WgpuRenderer {
         params: &RenderParams,
     ) -> std::io::Result<bool> {
         let contents = std::fs::read_to_string(&artifact_path)?;
-        let scene_hash = format!("scene_hash={}", self.gi_cache.static_scene_hash);
+        let scene_hash = format!("scene_hash={}", self.gi_cache.scene_hash);
         let settings_hash = format!("bake_settings_hash={}", Self::bake_settings_hash(params));
         let matches = contents.contains(&scene_hash) && contents.contains(&settings_hash);
         if matches {
@@ -3794,7 +3820,7 @@ impl WgpuRenderer {
         match params.profile {
             crate::rendering::renderer::RendererProfile::Indoor60FPS => {
                 effective_renderer_mode = crate::rendering::renderer::RendererMode::HybridEffects;
-                effective_gi_mode = GI_MODE_SDF;
+                effective_gi_mode = GI_MODE_LIGHT_PROBES;
                 effective_gi_quality = effective_gi_quality.min(2);
                 effective_max_bounces = 1;
                 effective_raytraced_shadows = 0;
@@ -3818,7 +3844,7 @@ impl WgpuRenderer {
         let adaptive_sample_cap = if self.adaptive_quality < 0.67 { 1 } else if self.adaptive_quality < 0.9 { 2 } else { 8 };
         effective_light_samples = effective_light_samples.min(adaptive_sample_cap);
         effective_dir_shadow_samples = effective_dir_shadow_samples.min(adaptive_sample_cap);
-        effective_max_shadow_rays = effective_max_shadow_rays.min(adaptive_sample_cap);
+        effective_max_shadow_rays = effective_max_shadow_rays.min(adaptive_sample_cap as u32);
         let shader_params = ShaderParams {
             camera_pos: [
                 params.camera_pos[0],
@@ -4202,7 +4228,7 @@ impl WgpuRenderer {
         }
         if !self.is_2d
             && effective_gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
-            && effective_gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDF
+            && effective_gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDFGI
             && self.gi_cache.dirty
         {
             {

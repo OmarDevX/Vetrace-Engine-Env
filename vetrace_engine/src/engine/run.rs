@@ -1,15 +1,15 @@
-use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
+use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
+use crate::Behaviour;
+use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
+use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
-use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
-use crate::Behaviour;
-use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -458,7 +458,11 @@ impl Engine {
                     gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
                     gi_debug_mode = pp.gi_debug_mode;
                     renderer_profile = pp.profile.into();
-                    gi_mode = if pp.path_traced_gi { 1 } else { 0 };
+                    gi_mode = if pp.path_traced_gi {
+                        crate::rendering::wgpu_renderer::GI_MODE_PATH_TRACED_PREVIEW
+                    } else {
+                        pp.gi_mode.as_u32()
+                    };
                     light_samples = pp.light_samples as i32;
                     dir_light_samples = pp.dir_light_samples as i32;
                     max_bounces = pp.max_bounces as i32;

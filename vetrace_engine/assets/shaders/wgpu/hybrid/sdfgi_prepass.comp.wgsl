@@ -18,6 +18,10 @@ struct Object {
     casts_raytraced_shadow: u32,
     shadow_importance: f32,
     max_shadow_distance: f32,
+    scene_flags: u32,
+    gi_flags: u32,
+    _gi_pad0: u32,
+    _gi_pad1: u32,
 };
 
 struct Params {
@@ -95,7 +99,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var dist = 1e9;
     for (var i: u32 = 0u; i < u32(params.num_objects); i = i + 1u) {
         let obj = objects[i];
-        dist = min(dist, object_sdf(world_pos, obj));
+        if ((obj.scene_flags & 2u) == 0u) {
+            dist = min(dist, object_sdf(world_pos, obj));
+        }
     }
     let maxR = length(SDF_SIZE);
     dist = clamp(dist, -maxR, maxR);

@@ -208,6 +208,9 @@ pub struct WgpuRenderer {
 #[derive(Default)]
 struct GiCacheState {
     dirty: bool,
+    scene_hash: u64,
+    geometry_hash: u64,
+    material_light_hash: u64,
     static_scene_hash: u64,
     last_baked_scene_hash: u64,
     bake_settings_hash: u64,

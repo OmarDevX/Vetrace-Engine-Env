@@ -23,7 +23,7 @@ use crate::ecs::{Component, World};
 use crate::engine::component_io::{apply_component_data, export_component_data};
 use crate::engine::core::EngineCore;
 use crate::events::{Event as CustomEvent, LuaEvent, SceneEvents};
-use crate::input::{window::WindowManager, Input};
+use crate::input::{Input, window::WindowManager};
 use crate::inspector::Inspectable;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
@@ -33,7 +33,7 @@ use crate::rendering::Renderer;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
 use crate::scene::{
-    loader::{save_scene, ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile},
+    loader::{ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile, save_scene},
     scene::Scene,
 };
 use crate::systems::collision::CollisionEvent;
@@ -656,7 +656,11 @@ impl Engine {
                 gi_quality = if pp.gi_enabled { pp.gi_quality } else { 3 };
                 gi_debug_mode = pp.gi_debug_mode;
                 renderer_profile = pp.profile.into();
-                gi_mode = if pp.path_traced_gi { 1 } else { 0 };
+                gi_mode = if pp.path_traced_gi {
+                    crate::rendering::wgpu_renderer::GI_MODE_PATH_TRACED_PREVIEW
+                } else {
+                    pp.gi_mode.as_u32()
+                };
                 light_samples = pp.light_samples as i32;
                 dir_light_samples = pp.dir_light_samples as i32;
                 max_bounces = pp.max_bounces as i32;
@@ -1014,8 +1018,8 @@ impl Engine {
     /// Process primitive objects from scene.objects (spheres, cubes, etc.)
     /// This replicates the primitive object processing from run.rs line 199-288
     fn process_primitive_objects(&mut self) {
-        use crate::scene::object::GpuMaterial;
         use crate::CustomMaterial;
+        use crate::scene::object::GpuMaterial;
         use std::collections::HashMap;
 
         // Assemble GPU materials for every scene object, generating

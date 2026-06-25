@@ -1,7 +1,7 @@
 use crate::ecs::Component;
 use crate::gpu::MeshHandle;
-use crate::inspector::export::{ExportKind, ExportedField};
 use crate::inspector::Inspectable;
+use crate::inspector::export::{ExportKind, ExportedField};
 use crate::materials::PbrMaterial;
 use crate::net::sync::NetSyncComponent;
 use glam::{Vec2, Vec3};
@@ -2294,6 +2294,7 @@ pub struct DirectionalLight {
     /// 0.0 = never promote in Hybrid, 1.0 = hero light/contact-detail candidate.
     pub shadow_importance: f32,
     pub max_shadow_distance: f32,
+    pub is_static_light: bool,
 }
 
 impl Default for DirectionalLight {
@@ -2306,6 +2307,7 @@ impl Default for DirectionalLight {
             casts_raytraced_shadow: false,
             shadow_importance: 1.0,
             max_shadow_distance: 250.0,
+            is_static_light: true,
         }
     }
 }
@@ -2397,6 +2399,12 @@ impl Inspectable for DirectionalLight {
                 type_id: std::any::TypeId::of::<f32>(),
             },
             ExportedField {
+                name: "is_static_light",
+                kind: ExportKind::Checkbox,
+                value: &mut self.is_static_light as *mut _ as *mut dyn std::any::Any,
+                type_id: std::any::TypeId::of::<bool>(),
+            },
+            ExportedField {
                 name: "max_shadow_distance",
                 kind: ExportKind::Slider {
                     min: 0.0,
@@ -2432,6 +2440,29 @@ impl From<RendererProfile> for crate::rendering::renderer::RendererProfile {
     }
 }
 
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GlobalIlluminationMode {
+    Off = 0,
+    BakedLightmap = 1,
+    LightProbes = 2,
+    SDFGI = 3,
+    RTGIOneBounce = 4,
+    PathTracedPreview = 5,
+}
+
+impl Default for GlobalIlluminationMode {
+    fn default() -> Self {
+        Self::LightProbes
+    }
+}
+
+impl GlobalIlluminationMode {
+    pub fn as_u32(self) -> u32 {
+        self as u32
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PostProcessing {
     pub profile: RendererProfile,
@@ -2440,6 +2471,7 @@ pub struct PostProcessing {
     pub gi_quality: u32,
     pub gi_debug_mode: u32,
     pub gi_enabled: bool,
+    pub gi_mode: GlobalIlluminationMode,
     pub path_traced_gi: bool,
     pub shadow_mode: ShadowMode,
     pub raytraced_shadows_enabled: bool,
@@ -2476,6 +2508,7 @@ impl Default for PostProcessing {
             gi_quality: 0,
             gi_debug_mode: 0,
             gi_enabled: true,
+            gi_mode: GlobalIlluminationMode::LightProbes,
             path_traced_gi: false,
             shadow_mode: ShadowMode::Hybrid,
             raytraced_shadows_enabled: true,
@@ -2513,6 +2546,7 @@ impl PostProcessing {
             profile: RendererProfile::Indoor60FPS,
             gi_enabled: true,
             gi_quality: 2,
+            gi_mode: GlobalIlluminationMode::LightProbes,
             path_traced_gi: false,
             shadow_mode: ShadowMode::RasterShadowMap,
             raytraced_shadows_enabled: false,
@@ -2539,6 +2573,7 @@ impl PostProcessing {
         Self {
             gi_enabled: true,
             path_traced_gi: false,
+            gi_mode: GlobalIlluminationMode::LightProbes,
             shadow_mode: ShadowMode::Hybrid,
             raytraced_shadows_enabled: true,
             raytraced_reflections_enabled: true,
@@ -2609,7 +2644,39 @@ impl Inspectable for PostProcessing {
                     ui.selectable_value(&mut self.gi_quality, 3, "Off");
                 });
 
-            ui.checkbox(&mut self.path_traced_gi, "Path Traced GI");
+            ui.label("GI Mode");
+            egui::ComboBox::from_id_source("gi_mode_pp")
+                .selected_text(format!("{:?}", self.gi_mode))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.gi_mode, GlobalIlluminationMode::Off, "Off");
+                    ui.selectable_value(
+                        &mut self.gi_mode,
+                        GlobalIlluminationMode::BakedLightmap,
+                        "Baked Lightmap",
+                    );
+                    ui.selectable_value(
+                        &mut self.gi_mode,
+                        GlobalIlluminationMode::LightProbes,
+                        "Light Probes",
+                    );
+                    ui.selectable_value(
+                        &mut self.gi_mode,
+                        GlobalIlluminationMode::SDFGI,
+                        "SDFGI Dynamic Regions",
+                    );
+                    ui.selectable_value(
+                        &mut self.gi_mode,
+                        GlobalIlluminationMode::RTGIOneBounce,
+                        "RTGI One Bounce",
+                    );
+                    ui.selectable_value(
+                        &mut self.gi_mode,
+                        GlobalIlluminationMode::PathTracedPreview,
+                        "Path-Traced Preview",
+                    );
+                });
+            self.path_traced_gi = self.gi_mode == GlobalIlluminationMode::PathTracedPreview;
+            ui.checkbox(&mut self.path_traced_gi, "Legacy Path Traced GI");
             if ui.button("Apply GamePerformance preset").clicked() {
                 *self = PostProcessing::game_performance();
             }
