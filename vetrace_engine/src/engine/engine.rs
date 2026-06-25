@@ -18,15 +18,15 @@ use crate::components::generated::{
     FieldType, GeneratedComponent, GeneratedSpec, GeneratedStorage,
 };
 use crate::custom_material::{
-    CUSTOM_MATERIAL_FLAG_FALLBACK_TO_RASTER_DATA, CUSTOM_MATERIAL_FLAG_RASTER_ONLY, CustomMaterial,
-    MaterialParameter,
+    CustomMaterial, MaterialParameter, CUSTOM_MATERIAL_FLAG_FALLBACK_TO_RASTER_DATA,
+    CUSTOM_MATERIAL_FLAG_RASTER_ONLY,
 };
 use crate::ecs::Entity;
 use crate::ecs::{Component, World};
 use crate::engine::component_io::{apply_component_data, export_component_data};
 use crate::engine::core::EngineCore;
 use crate::events::{Event as CustomEvent, LuaEvent, SceneEvents};
-use crate::input::{Input, window::WindowManager};
+use crate::input::{window::WindowManager, Input};
 use crate::inspector::Inspectable;
 use crate::math::{look_at, perspective, vec3_to_array};
 #[cfg(feature = "use_epi")]
@@ -36,7 +36,7 @@ use crate::rendering::Renderer;
 use crate::scene::factories::{player_factory, rotate_factory};
 use crate::scene::object::Object;
 use crate::scene::{
-    loader::{ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile, save_scene},
+    loader::{save_scene, ComponentFactory, ComponentFile, EntityFile, NodeFile, SceneFile},
     scene::Scene,
 };
 use crate::systems::collision::CollisionEvent;
@@ -644,6 +644,14 @@ impl Engine {
         let mut emissive_shadow_samples = 1u32;
         let mut directional_shadow_samples = 1u32;
         let mut cloud_object_shadows_enabled = 1u32;
+        let mut rt_debug_view = 0u32;
+        let mut rt_debug_counters = 0u32;
+        let mut shadow_max_distance = 250.0f32;
+        let mut reflection_max_distance = 80.0f32;
+        let mut gi_max_distance = 60.0f32;
+        let mut max_traversal_steps = 512u32;
+        let mut max_transparent_surfaces = 8u32;
+        let mut min_ray_offset = 0.01f32;
         let mut dof_aperture = 0.0f32;
         let mut dof_focus_dist = 0.0f32;
         let mut dof_enable = 0u32;
@@ -677,6 +685,14 @@ impl Engine {
                 emissive_shadow_samples = pp.emissive_shadow_samples.min(8);
                 directional_shadow_samples = pp.directional_shadow_samples.min(8);
                 cloud_object_shadows_enabled = pp.cloud_object_shadows_enabled as u32;
+                rt_debug_view = pp.rt_debug_view;
+                rt_debug_counters = pp.rt_debug_counters as u32;
+                shadow_max_distance = pp.shadow_max_distance;
+                reflection_max_distance = pp.reflection_max_distance;
+                gi_max_distance = pp.gi_max_distance;
+                max_traversal_steps = pp.max_traversal_steps;
+                max_transparent_surfaces = pp.max_transparent_surfaces;
+                min_ray_offset = pp.min_ray_offset;
                 atmosphere = pp.atmosphere;
                 if let Some(d) = &pp.dof {
                     dof_enable = 1;
@@ -717,10 +733,18 @@ impl Engine {
             emissive_shadow_samples,
             directional_shadow_samples,
             cloud_object_shadows_enabled,
-            max_rt_shadow_distance: dir_light_max_shadow_distance,
-            rt_shadow_ray_t_max: dir_light_max_shadow_distance,
+            max_rt_shadow_distance: dir_light_max_shadow_distance.min(shadow_max_distance),
+            rt_shadow_ray_t_max: dir_light_max_shadow_distance.min(shadow_max_distance),
             min_soft_shadow_radius: 0.03,
             _pad_shadow_mode: 0,
+            rt_debug_view,
+            rt_debug_counters,
+            max_traversal_steps,
+            max_transparent_surfaces,
+            shadow_max_distance,
+            reflection_max_distance,
+            gi_max_distance,
+            min_ray_offset,
             inv_view_proj: {
                 let (w, h) = self.renderer.screen_dimensions();
                 let aspect = w as f32 / h as f32;
@@ -1021,8 +1045,8 @@ impl Engine {
     /// Process primitive objects from scene.objects (spheres, cubes, etc.)
     /// This replicates the primitive object processing from run.rs line 199-288
     fn process_primitive_objects(&mut self) {
-        use crate::CustomMaterial;
         use crate::scene::object::GpuMaterial;
+        use crate::CustomMaterial;
         use std::collections::HashMap;
 
         // Assemble GPU materials for every scene object, generating

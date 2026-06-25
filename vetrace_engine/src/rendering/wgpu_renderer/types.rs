@@ -223,7 +223,14 @@ pub struct ShaderParams {
     pub cloud_temporal_quality: u32,
     pub cloud_shadow_mode: u32,
     pub renderer_mode: u32,
-    pub _pad_renderer_mode: [u32; 3],
+    pub rt_debug_view: u32,
+    pub rt_debug_counters: u32,
+    pub max_traversal_steps: u32,
+    pub max_transparent_surfaces: u32,
+    pub shadow_max_distance: f32,
+    pub reflection_max_distance: f32,
+    pub gi_max_distance: f32,
+    pub min_ray_offset: f32,
     pub atmos: [GpuAtmosphere; MAX_ATMOSPHERES],
 }
 

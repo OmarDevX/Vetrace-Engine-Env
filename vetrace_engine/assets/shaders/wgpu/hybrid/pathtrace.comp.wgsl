@@ -204,7 +204,14 @@ struct Params {
     cloud_temporal_quality: u32,
     cloud_shadow_mode: u32,
     renderer_mode: u32,
-    _pad_renderer_mode: vec3<u32>,
+    rt_debug_view: u32,
+    rt_debug_counters: u32,
+    max_traversal_steps: u32,
+    max_transparent_surfaces: u32,
+    shadow_max_distance: f32,
+    reflection_max_distance: f32,
+    gi_max_distance: f32,
+    min_ray_offset: f32,
     atmos: array<Atmosphere, MAX_ATMOSPHERES>,
 };
 

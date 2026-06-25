@@ -3990,7 +3990,14 @@ impl WgpuRenderer {
             cloud_temporal_quality: effective_cloud_temporal_quality,
             cloud_shadow_mode: effective_cloud_shadow_mode,
             renderer_mode: effective_renderer_mode as u32,
-            _pad_renderer_mode: [0; 3],
+            rt_debug_view: params.rt_debug_view,
+            rt_debug_counters: params.rt_debug_counters,
+            max_traversal_steps: params.max_traversal_steps.max(1),
+            max_transparent_surfaces: params.max_transparent_surfaces,
+            shadow_max_distance: params.shadow_max_distance.max(0.01),
+            reflection_max_distance: params.reflection_max_distance.max(0.01),
+            gi_max_distance: params.gi_max_distance.max(0.01),
+            min_ray_offset: params.min_ray_offset.max(0.00001),
             atmos: {
                 let mut arr = [GpuAtmosphere::default(); MAX_ATMOSPHERES];
                 let count = params.atmos.len().min(MAX_ATMOSPHERES);
