@@ -139,7 +139,9 @@ pub struct GpuCustomMaterial {
     pub sheen_params: [f32; 4], // sheen_strength, sheen_tint.rgb
     pub normal_disp: [f32; 4], // normal_strength, displacement_strength, unused, unused
     pub texture_index: u32,
-    pub _pad: [u32; 3],
+    pub output_flags: u32,
+    pub material_flags: u32,
+    pub _pad: u32,
 }
 
 impl Default for GpuCustomMaterial {
@@ -154,7 +156,9 @@ impl Default for GpuCustomMaterial {
             sheen_params: [0.0, 0.0, 0.0, 0.0],
             normal_disp: [0.0, 0.0, 0.0, 0.0],
             texture_index: 0,
-            _pad: [0; 3],
+            output_flags: 0,
+            material_flags: 0,
+            _pad: 0,
         }
     }
 }

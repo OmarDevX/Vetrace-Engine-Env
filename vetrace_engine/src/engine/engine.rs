@@ -17,7 +17,10 @@ use crate::components::components::{
 use crate::components::generated::{
     FieldType, GeneratedComponent, GeneratedSpec, GeneratedStorage,
 };
-use crate::custom_material::{CustomMaterial, MaterialParameter};
+use crate::custom_material::{
+    CUSTOM_MATERIAL_FLAG_FALLBACK_TO_RASTER_DATA, CUSTOM_MATERIAL_FLAG_RASTER_ONLY, CustomMaterial,
+    MaterialParameter,
+};
 use crate::ecs::Entity;
 use crate::ecs::{Component, World};
 use crate::engine::component_io::{apply_component_data, export_component_data};
@@ -1515,6 +1518,13 @@ impl Engine {
                         m.custom_material_id = id;
                     }
                     let mut gpu = crate::scene::object::GpuCustomMaterial::default();
+                    gpu.output_flags = custom.output_flags;
+                    if custom.raster_only {
+                        gpu.material_flags |= CUSTOM_MATERIAL_FLAG_RASTER_ONLY;
+                    }
+                    if !custom.is_rt_compatible() {
+                        gpu.material_flags |= CUSTOM_MATERIAL_FLAG_FALLBACK_TO_RASTER_DATA;
+                    }
                     for (k, v) in &custom.parameters {
                         match (k.as_str(), v) {
                             ("color_tint", MaterialParameter::Vec3(v)) => {

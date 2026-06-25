@@ -25,6 +25,34 @@ const SSR_STEPS: i32 = 18;
 const SSR_STRIDE: f32 = 9.0;
 const SSR_THICKNESS: f32 = 0.015;
 
+
+struct MaterialData {
+    base_color: vec3<f32>,
+    alpha: f32,
+    normal: vec3<f32>,
+    roughness: f32,
+    metallic: f32,
+    transmission: f32,
+    ior: f32,
+    custom_flags: u32,
+};
+
+fn load_material_data(pixel: vec2<i32>) -> MaterialData {
+    let albedo = textureLoad(albedo_tex, pixel, 0);
+    let n = textureLoad(normal_tex, pixel, 0);
+    let m = textureLoad(material_tex, pixel, 0);
+    return MaterialData(
+        albedo.rgb,
+        albedo.a,
+        normalize(n.xyz * 2.0 - vec3<f32>(1.0)),
+        clamp(f32(m.g) / 255.0, 0.04, 1.0),
+        f32(m.r) / 255.0,
+        f32(m.b) / 255.0,
+        max(n.w * 4.0, 1.0),
+        m.a
+    );
+}
+
 fn unpack_normal(pixel: vec2<i32>) -> vec3<f32> {
     return normalize(textureLoad(normal_tex, pixel, 0).xyz * 2.0 - vec3<f32>(1.0));
 }
@@ -99,12 +127,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (depth >= 0.9999) { miss(pixel); return; }
 
     let world = reconstruct_world(pixel, dims, depth);
-    let n = unpack_normal(pixel);
-    let albedo = textureLoad(albedo_tex, pixel, 0).rgb;
-    let roughness = clamp(textureLoad(roughness_tex, pixel, 0).x, 0.04, 1.0);
+    let material = load_material_data(pixel);
+    let n = material.normal;
+    let albedo = material.base_color;
+    let roughness = material.roughness;
     let object_id = textureLoad(object_id_tex, pixel, 0).r;
     let v = normalize(rt_params.camera_pos.xyz - world);
-    let f0 = mix(vec3<f32>(0.04), albedo, f32(textureLoad(material_tex, pixel, 0).r) / 255.0);
+    let f0 = mix(vec3<f32>(0.04), albedo, material.metallic);
     let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
 
     let probe = probe_reflection(albedo, n, v, roughness);

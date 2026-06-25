@@ -3,9 +3,48 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::ecs::Component;
-use crate::inspector::export::{ExportKind, ExportedField};
 use crate::inspector::Inspectable;
+use crate::inspector::export::{ExportKind, ExportedField};
 use vetrace_engine_macros::Inspectable;
+
+pub const CUSTOM_MATERIAL_OUTPUT_SURFACE_COLOR: u32 = 1 << 0;
+pub const CUSTOM_MATERIAL_OUTPUT_NORMALS: u32 = 1 << 1;
+pub const CUSTOM_MATERIAL_OUTPUT_EMISSIVE: u32 = 1 << 2;
+pub const CUSTOM_MATERIAL_OUTPUT_TRANSPARENCY: u32 = 1 << 3;
+pub const CUSTOM_MATERIAL_OUTPUT_RAYTRACING_COMPATIBLE: u32 = 1 << 4;
+
+pub const CUSTOM_MATERIAL_FLAG_RASTER_ONLY: u32 = 1 << 0;
+pub const CUSTOM_MATERIAL_FLAG_FALLBACK_TO_RASTER_DATA: u32 = 1 << 1;
+
+/// Shared material contract produced by raster custom materials and consumed by RT effect passes.
+#[derive(Debug, Clone, Copy)]
+pub struct MaterialOutputContract {
+    pub base_color: [f32; 4],
+    pub normal: [f32; 3],
+    pub roughness: f32,
+    pub metallic: f32,
+    pub emissive: [f32; 3],
+    pub alpha: f32,
+    pub transmission: f32,
+    pub ior: f32,
+    pub custom_flags: u32,
+}
+
+impl Default for MaterialOutputContract {
+    fn default() -> Self {
+        Self {
+            base_color: [1.0, 1.0, 1.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+            roughness: 0.5,
+            metallic: 0.0,
+            emissive: [0.0, 0.0, 0.0],
+            alpha: 1.0,
+            transmission: 0.0,
+            ior: 1.5,
+            custom_flags: 0,
+        }
+    }
+}
 
 /// User-provided material with custom WGSL evaluation code.
 #[derive(Debug, Clone, Inspectable)]
@@ -16,6 +55,12 @@ pub struct CustomMaterial {
     /// Raw WGSL source for the material function.
     #[export]
     pub shader_source: String,
+    /// Bitmask declaring which shared material-contract outputs the shader affects.
+    #[export]
+    pub output_flags: u32,
+    /// Marks unsupported shaders as raster-only instead of RT-evaluable.
+    #[export]
+    pub raster_only: bool,
     /// Arbitrary parameters exposed to the material function.
     pub parameters: HashMap<String, MaterialParameter>,
 }
@@ -25,6 +70,9 @@ impl Default for CustomMaterial {
         Self {
             material_type: String::new(),
             shader_source: String::new(),
+            output_flags: CUSTOM_MATERIAL_OUTPUT_SURFACE_COLOR
+                | CUSTOM_MATERIAL_OUTPUT_RAYTRACING_COMPATIBLE,
+            raster_only: false,
             parameters: HashMap::new(),
         }
     }
@@ -40,6 +88,30 @@ pub enum MaterialParameter {
     Bool(bool),
     /// Reference to the current screen color buffer.
     ScreenTexture,
+}
+
+impl CustomMaterial {
+    pub fn affects_output(&self, flag: u32) -> bool {
+        (self.output_flags & flag) != 0
+    }
+
+    pub fn is_rt_compatible(&self) -> bool {
+        !self.raster_only && self.affects_output(CUSTOM_MATERIAL_OUTPUT_RAYTRACING_COMPATIBLE)
+    }
+
+    pub fn validation_warnings(&self) -> Vec<&'static str> {
+        let mut warnings = Vec::new();
+        if self.affects_output(CUSTOM_MATERIAL_OUTPUT_NORMALS)
+            || self.affects_output(CUSTOM_MATERIAL_OUTPUT_TRANSPARENCY)
+            || !self.is_rt_compatible()
+        {
+            warnings.push("This custom material uses features unavailable in RT reflections.");
+        }
+        if !self.is_rt_compatible() || self.raster_only {
+            warnings.push("This material will fallback to raster data in RT pass.");
+        }
+        warnings
+    }
 }
 
 impl Component for CustomMaterial {}
