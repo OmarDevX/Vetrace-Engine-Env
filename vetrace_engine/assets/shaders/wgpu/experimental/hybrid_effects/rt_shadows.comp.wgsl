@@ -1,3 +1,4 @@
+// EXPERIMENTAL/FUTURE: moved out of the active hybrid shader directory because Rust does not wire this shader into a pipeline yet. See docs/SHADER_ARCHITECTURE.md.
 struct RtEffectParams {
     inv_view_proj: mat4x4<f32>,
     camera_pos: vec4<f32>,

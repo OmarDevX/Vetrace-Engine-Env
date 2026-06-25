@@ -1,3 +1,4 @@
+// EXPERIMENTAL/FUTURE: moved out of the active hybrid shader directory because Rust does not wire this shader into a pipeline yet. See docs/SHADER_ARCHITECTURE.md.
 @group(0) @binding(0) var raster_direct_tex: texture_storage_2d<rgba16float, read>;
 @group(0) @binding(1) var out_tex: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var baked_gi_buffer: texture_2d<f32>;

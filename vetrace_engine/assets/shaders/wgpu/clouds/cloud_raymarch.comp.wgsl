@@ -1,3 +1,4 @@
+// EXPERIMENTAL/FUTURE: cloud raymarch shader; not currently wired by WgpuRenderer.
 // Initial volumetric cloud raymarch prototype.
 // The production raytrace shader embeds the same data layout so cloud radiance
 // and transmittance can be composited before post-processing.

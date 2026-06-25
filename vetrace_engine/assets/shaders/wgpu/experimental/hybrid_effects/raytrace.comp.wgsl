@@ -1,3 +1,4 @@
+// EXPERIMENTAL/FUTURE: moved out of the active hybrid shader directory because Rust does not wire this shader into a pipeline yet. See docs/SHADER_ARCHITECTURE.md.
 // WGSL path tracer + thin-lens DOF (optimized atmosphere)
 
 // -----------------------------

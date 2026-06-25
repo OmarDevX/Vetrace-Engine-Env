@@ -1,3 +1,4 @@
+// ACTIVE PRODUCTION: monolithic primary ray/path tracing compute shader loaded by WgpuRenderer.
 // WGSL path tracer + thin-lens DOF (optimized atmosphere)
 
 // -----------------------------
