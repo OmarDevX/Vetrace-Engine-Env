@@ -29,6 +29,7 @@ struct Params {
     rt_shadow_ray_t_max: f32,
     min_soft_shadow_radius: f32,
     raytraced_reflections_enabled: u32,
+    _pad_reflections: u32,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
     dir_light_dir: vec4<f32>,

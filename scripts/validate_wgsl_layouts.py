@@ -13,7 +13,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 PARAMS_SHADERS = [
-    "vetrace_engine/assets/shaders/wgpu/hybrid/raytrace.comp.wgsl",
     "vetrace_engine/assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl",
     "vetrace_engine/assets/shaders/wgpu/hybrid/denoise.comp.wgsl",
     "vetrace_engine/assets/shaders/wgpu/hybrid/rt_denoise.comp.wgsl",
@@ -26,7 +25,6 @@ PARAMS_SHADERS = [
 ]
 
 MATERIAL_SHADERS = [
-    "vetrace_engine/assets/shaders/wgpu/hybrid/raytrace.comp.wgsl",
     "vetrace_engine/assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl",
 ]
 
