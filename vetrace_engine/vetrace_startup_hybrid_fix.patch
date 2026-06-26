@@ -1,0 +1,239 @@
+--- /tmp/app_mod.rs.orig	2026-06-26 19:15:00.837905296 +0000
++++ vetrace_engine/src/app/mod.rs	2026-06-26 19:15:01.872711604 +0000
+@@ -138,8 +138,10 @@
+ 
+     /// Build and run the application
+     pub fn run<A: App>(self, mut app: A) -> Result<(), Box<dyn std::error::Error>> {
++        eprintln!("[Vetrace boot] AppBuilder::run: creating Engine...");
+         // Initialize the engine with the configured settings
+         let mut engine = Engine::new(false); // Default to 3D mode
++        eprintln!("[Vetrace boot] AppBuilder::run: Engine created, configuring window/plugins...");
+ 
+         // Configure window
+         engine
+@@ -163,7 +165,9 @@
+         }
+ 
+         // Initialize plugins
++        eprintln!("[Vetrace boot] AppBuilder::run: initializing plugins...");
+         plugin_manager.initialize_plugins(&mut engine)?;
++        eprintln!("[Vetrace boot] AppBuilder::run: plugins initialized.");
+ 
+         // Register a callback that renders plugin UIs
+         let plugin_manager_ptr = &mut plugin_manager as *mut PluginManager;
+@@ -180,7 +184,9 @@
+         }
+ 
+         // Call app setup
++        eprintln!("[Vetrace boot] AppBuilder::run: running app setup...");
+         app.setup(&mut engine);
++        eprintln!("[Vetrace boot] AppBuilder::run: app setup complete; entering main loop.");
+ 
+         // Start engine behaviours and component behaviours so systems like
+         // post-processing run when using the app framework
+--- /tmp/init.rs.orig	2026-06-26 19:15:00.844942028 +0000
++++ vetrace_engine/src/engine/init.rs	2026-06-26 19:15:01.873085637 +0000
+@@ -25,6 +25,7 @@
+ 
+ impl Engine {
+     pub fn new(is_2d: bool) -> Self {
++        eprintln!("[Vetrace boot] Engine::new: begin (is_2d={})", is_2d);
+         // Disable Wayland's drm-syncobj extension by default to avoid
+         // "surface already exists" validation errors on compositors that
+         // don't support or mis-handle the protocol. Users can override this
+@@ -50,11 +51,14 @@
+             }
+         }
+ 
++        eprintln!("[Vetrace boot] Engine::new: initializing SDL2/window...");
+         let sdl_context = sdl2::init().unwrap();
+         let window = WindowManager::new(sdl_context.clone());
+         let (width, height) = window.get_size();
++        eprintln!("[Vetrace boot] Engine::new: window ready ({}x{}), initializing renderer...", width, height);
+ 
+         let renderer = Renderer::new(&window.window, width as i32, height as i32, is_2d);
++        eprintln!("[Vetrace boot] Engine::new: renderer ready, initializing engine state...");
+         let free_flight = FreeFlightState::new();
+         let scene = Scene::new();
+         let scene_manager = crate::engine::SceneManager::new();
+@@ -143,12 +147,14 @@
+             });
+         }
+ 
++        eprintln!("[Vetrace boot] Engine::new: registering factories/components/scripts/behaviours...");
+         engine.register_default_factories();
+         engine.register_default_components();
+         engine.ensure_generated_folder();
+         engine.reload_scripts();
+         engine.update_generated_components();
+         engine.register_default_behaviours();
++        eprintln!("[Vetrace boot] Engine::new: registration complete.");
+ 
+         {
+             use egui::Color32;
+@@ -158,6 +164,7 @@
+             visuals.window_fill = Color32::from_rgb(25, 15, 40);
+             engine.egui_ctx.set_visuals(visuals);
+         }
++        eprintln!("[Vetrace boot] Engine::new: complete.");
+         engine
+     }
+ }
+\ No newline at end of file
+--- /tmp/renderer_impl.inc.rs.orig	2026-06-26 19:15:00.852111049 +0000
++++ /mnt/data/vetrace_debug/Vetrace-Engine-Env-master/vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs	2026-06-26 19:15:20.248459683 +0000
+@@ -377,8 +377,10 @@
+     }
+ 
+     pub fn new(window: &Window, width: i32, height: i32, is_2d: bool) -> Self {
++        eprintln!("[Vetrace boot] WgpuRenderer::new: init_wgpu... ({}x{}, is_2d={})", width, height, is_2d);
+         let (device, queue, surface, config) =
+             pollster::block_on(init_wgpu(window, width as u32, height as u32));
++        eprintln!("[Vetrace boot] WgpuRenderer::new: device/surface ready, creating textures/buffers...");
+         let device = std::sync::Arc::new(device);
+         let queue = std::sync::Arc::new(queue);
+         set_wgpu_device_queue(device.clone(), queue.clone());
+@@ -629,6 +631,7 @@
+             usage: BufferUsages::STORAGE,
+             mapped_at_creation: false,
+         });
++        eprintln!("[Vetrace boot] WgpuRenderer::new: creating SDFGI shader modules...");
+         let sdfgi_shader = device.create_shader_module(ShaderModuleDescriptor {
+             label: Some("sdfgi_prepass"),
+             source: ShaderSource::Wgsl(
+@@ -649,6 +652,7 @@
+         });
+ 
+         let texture_array_limit = Self::texture_array_limit(&device);
++        eprintln!("[Vetrace boot] WgpuRenderer::new: compiling base hybrid/pathtrace shader...");
+         let mut shader_compiler = RaytraceShaderCompiler {
+             device: device.clone(),
+             base_shader_template: include_str!(
+@@ -998,6 +1002,7 @@
+             bind_group_layouts: &[&compute_bind_group_layout],
+             push_constant_ranges: &[],
+         });
++        eprintln!("[Vetrace boot] WgpuRenderer::new: creating base compute pipelines...");
+         let compute_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+             label: Some("compute_pipeline"),
+             layout: Some(&compute_pipeline_layout),
+@@ -1013,6 +1018,7 @@
+             compilation_options: Default::default(),
+         });
+ 
++        eprintln!("[Vetrace boot] WgpuRenderer::new: creating atmosphere LUT shaders/pipelines...");
+         let transmittance_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
+             label: Some("transmittance_lut"),
+             source: ShaderSource::Wgsl(
+@@ -1257,6 +1263,7 @@
+             ],
+         });
+ 
++        eprintln!("[Vetrace boot] WgpuRenderer::new: creating denoise shaders/pipelines...");
+         let rt_denoise_shader = device.create_shader_module(ShaderModuleDescriptor {
+             label: Some("rt_denoise"),
+             source: ShaderSource::Wgsl(
+@@ -1930,6 +1937,7 @@
+             ],
+         });
+ 
++        eprintln!("[Vetrace boot] WgpuRenderer::new: creating blit/ui/sprite/PBR pipelines...");
+         let render_shader = device.create_shader_module(ShaderModuleDescriptor {
+             label: Some("render_shader"),
+             source: ShaderSource::Wgsl(
+@@ -2553,6 +2561,8 @@
+             mapped_at_creation: false,
+         });
+ 
++        eprintln!("[Vetrace boot] WgpuRenderer::new: ready.");
++
+         Self {
+             surface,
+             device,
+@@ -3857,6 +3867,7 @@
+             .len()
+             .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS) as u32;
+         let mut effective_renderer_mode = params.renderer_mode;
++
+         match params.profile {
+             crate::rendering::renderer::RendererProfile::Indoor60FPS => {
+                 effective_renderer_mode = crate::rendering::renderer::RendererMode::HybridEffects;
+@@ -3896,6 +3907,19 @@
+             }
+             _ => {}
+         }
++
++        // Primitive-only scenes have no raster G-buffer producers yet.
++        // In those scenes, Hybrid/Raster primary visibility reads an empty G-buffer
++        // and can produce a black frame. Keep them visible by falling back to the
++        // path-traced primary path until primitives are rasterized into the G-buffer.
++        if matches!(
++            effective_renderer_mode,
++            crate::rendering::renderer::RendererMode::RasterGame
++                | crate::rendering::renderer::RendererMode::HybridEffects
++        ) && pbr_data.is_empty() && params.num_objects > 0
++        {
++            effective_renderer_mode = crate::rendering::renderer::RendererMode::PathTracePreview;
++        }
+         let adaptive_sample_cap = if self.adaptive_quality < 0.67 { 1 } else if self.adaptive_quality < 0.9 { 2 } else { 8 };
+         effective_light_samples = effective_light_samples.min(adaptive_sample_cap);
+         effective_dir_shadow_samples = effective_dir_shadow_samples.min(adaptive_sample_cap);
+@@ -4287,6 +4311,58 @@
+                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
+             }
+         }
++        if pbr_data.is_empty() {
++            // Keep raster/hybrid inputs deterministic even when no PBR meshes
++            // were drawn this frame. Without this, the hybrid shader may read
++            // stale/undefined G-buffer data and present a black frame.
++            let _clear = encoder.begin_render_pass(&RenderPassDescriptor {
++                label: Some("pbr_gbuffer_clear_empty"),
++                color_attachments: &[
++                    Some(RenderPassColorAttachment {
++                        view: &self.gbuf_albedo_view,
++                        resolve_target: None,
++                        ops: Operations {
++                            load: LoadOp::Clear(Color { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }),
++                            store: StoreOp::Store,
++                        },
++                    }),
++                    Some(RenderPassColorAttachment {
++                        view: &self.gbuf_normal_view,
++                        resolve_target: None,
++                        ops: Operations {
++                            load: LoadOp::Clear(Color::BLACK),
++                            store: StoreOp::Store,
++                        },
++                    }),
++                    Some(RenderPassColorAttachment {
++                        view: &self.gbuf_material_view,
++                        resolve_target: None,
++                        ops: Operations {
++                            load: LoadOp::Clear(Color::BLACK),
++                            store: StoreOp::Store,
++                        },
++                    }),
++                    Some(RenderPassColorAttachment {
++                        view: &self.depth_view,
++                        resolve_target: None,
++                        ops: Operations {
++                            load: LoadOp::Clear(Color::WHITE),
++                            store: StoreOp::Store,
++                        },
++                    }),
++                ],
++                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
++                    view: &self.depth_stencil_view,
++                    depth_ops: Some(Operations {
++                        load: LoadOp::Clear(1.0),
++                        store: StoreOp::Store,
++                    }),
++                    stencil_ops: None,
++                }),
++                occlusion_query_set: None,
++                timestamp_writes: None,
++            });
++        }
+         if !self.is_2d
+             && effective_gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
+             && effective_gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDFGI

@@ -1,0 +1,495 @@
+use crate::math::Mat4;
+use crate::scene::object::{GpuAtmosphere, MAX_ATMOSPHERES};
+use bytemuck::{Pod, Zeroable};
+use wgpu::TextureView;
+
+// Higher resolution improves SDFGI quality on larger objects
+pub const GI_SDF_RES: u32 = 64;
+pub const GI_QUALITY_OFF: u32 = 3;
+pub const GI_MODE_OFF: u32 = 0;
+pub const GI_MODE_BAKED_LIGHTMAP: u32 = 1;
+pub const GI_MODE_LIGHT_PROBES: u32 = 2;
+pub const GI_MODE_SDFGI: u32 = 3;
+pub const GI_MODE_RTGI_ONE_BOUNCE: u32 = 4;
+pub const GI_MODE_PATH_TRACED_PREVIEW: u32 = 5;
+// Back-compat aliases for older call sites.
+pub const GI_MODE_SDF: u32 = GI_MODE_SDFGI;
+pub const GI_MODE_PATH: u32 = GI_MODE_PATH_TRACED_PREVIEW;
+
+/// Matrix that converts OpenGL NDC to WGPU's coordinate system.
+/// Accounts for the different Y orientation and depth range.
+pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_array(&[
+    1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0,
+]);
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct GiParams {
+    pub quality: u32,
+    pub debug_mode: u32,
+    pub mode: u32,
+    pub _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct PostFxUniforms {
+    pub dof_enabled: u32,
+    pub dof_manual: u32,
+    pub dof_show_focus: u32,
+    pub _dof_pad: u32,
+    pub dof_focal_depth: f32,
+    pub dof_focal_length: f32,
+    pub dof_fstop: f32,
+    pub dof_coc: f32,
+    pub dof_ndof_start: f32,
+    pub dof_ndof_dist: f32,
+    pub dof_fdof_start: f32,
+    pub dof_fdof_dist: f32,
+    pub dof_max_blur: f32,
+    pub dof_threshold: f32,
+    pub dof_gain: f32,
+    pub dof_bias: f32,
+    pub dof_fringe: f32,
+    pub dof_namount: f32,
+    pub dof_samples: u32,
+    pub dof_rings: u32,
+    pub dof_noise: u32,
+    pub dof_vignetting: u32,
+    pub dof_autofocus: u32,
+    pub dof_depth_blur: u32,
+    pub dof_vignout: f32,
+    pub dof_vignin: f32,
+    pub dof_vignfade: f32,
+    pub dof_focus_x: f32,
+    pub dof_focus_y: f32,
+    pub dof_db_size: f32,
+    pub dof_feather: f32,
+    pub dof_pentagon: u32,
+    pub _dof_pad1: u32,
+    pub z_near: f32,
+    pub z_far: f32,
+    pub bloom_enabled: u32,
+    pub bloom_threshold: f32,
+    pub bloom_intensity: f32,
+    pub bloom_spread: f32,
+    pub bloom_iterations: u32,
+    pub exposure: f32,
+    pub auto_exposure: u32,
+    pub sky_occlusion: f32,
+    pub fog_density: f32,
+    pub fog_color_r: f32,
+    pub fog_color_g: f32,
+    pub fog_color_b: f32,
+    pub fog_base_height: f32,
+    pub fog_height_falloff: f32,
+    pub fog_max_opacity: f32,
+    pub fog_inscatter_r: f32,
+    pub fog_inscatter_g: f32,
+    pub fog_inscatter_b: f32,
+    pub history_clamp_k: f32,
+    pub temporal_blend: f32,
+    pub gi_temporal_blend: f32,
+    pub shadow_history_weight: f32,
+    pub reflection_history_weight: f32,
+    pub cloud_history_weight: f32,
+    pub denoise_mode: u32,
+    pub denoise_debug_view: u32,
+    pub _pad0: u32,
+    pub _pad1: u32,
+}
+
+impl Default for PostFxUniforms {
+    fn default() -> Self {
+        Self {
+            dof_enabled: 0,
+            dof_manual: 0,
+            dof_show_focus: 0,
+            _dof_pad: 0,
+            dof_focal_depth: 0.0,
+            dof_focal_length: 0.0,
+            dof_fstop: 0.0,
+            dof_coc: 0.0,
+            dof_ndof_start: 0.0,
+            dof_ndof_dist: 0.0,
+            dof_fdof_start: 0.0,
+            dof_fdof_dist: 0.0,
+            dof_max_blur: 1.0,
+            dof_threshold: 0.7,
+            dof_gain: 100.0,
+            dof_bias: 0.5,
+            dof_fringe: 0.7,
+            dof_namount: 0.0001,
+            dof_samples: 3,
+            dof_rings: 3,
+            dof_noise: 1,
+            dof_vignetting: 0,
+            dof_autofocus: 0,
+            dof_depth_blur: 0,
+            dof_vignout: 1.3,
+            dof_vignin: 0.0,
+            dof_vignfade: 22.0,
+            dof_focus_x: 0.5,
+            dof_focus_y: 0.5,
+            dof_db_size: 1.25,
+            dof_feather: 0.4,
+            dof_pentagon: 0,
+            _dof_pad1: 0,
+            z_near: 0.1,
+            z_far: 1000.0,
+            bloom_enabled: 0,
+            bloom_threshold: 1.0,
+            bloom_intensity: 0.0,
+            bloom_spread: 2.0,
+            bloom_iterations: 5,
+            exposure: 1.0,
+            auto_exposure: 0,
+            sky_occlusion: 0.0,
+            fog_density: 0.0,
+            fog_color_r: 1.0,
+            fog_color_g: 1.0,
+            fog_color_b: 1.0,
+            fog_base_height: 0.0,
+            fog_height_falloff: 0.0,
+            fog_max_opacity: 1.0,
+            fog_inscatter_r: 1.0,
+            fog_inscatter_g: 1.0,
+            fog_inscatter_b: 1.0,
+            history_clamp_k: 1.5,
+            // Higher values accumulate more history in the temporal filter
+            temporal_blend: 1.0,
+            gi_temporal_blend: 0.1,
+            shadow_history_weight: 0.92,
+            reflection_history_weight: 0.82,
+            cloud_history_weight: 0.90,
+            denoise_mode: 0,
+            denoise_debug_view: 0,
+            _pad0: 0,
+            _pad1: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct ShaderParams {
+    pub camera_pos: [f32; 4],
+    pub camera_front: [f32; 4],
+    pub camera_up: [f32; 4],
+    pub camera_right: [f32; 4],
+    pub prev_camera_pos: [f32; 4],
+    pub fov: f32,
+    pub num_objects: i32,
+    pub is_fisheye: i32,
+    pub _pad0: i32,
+    pub skycolor: [f32; 4],
+    pub taa_jitter: [f32; 2],
+    pub current_time: f32,
+    pub frame_number: i32,
+    pub selected_index: i32,
+    pub max_bounces: i32,
+    pub light_samples: i32,
+    pub dir_shadow_samples: i32,
+    pub shadow_mode: u32,
+    pub raytraced_shadows_enabled: u32,
+    pub shadow_quality: u32,
+    pub max_shadow_rays: u32,
+    pub emissive_shadow_samples: u32,
+    pub directional_shadow_samples: u32,
+    pub cloud_object_shadows_enabled: u32,
+    pub max_rt_shadow_distance: f32,
+    pub rt_shadow_ray_t_max: f32,
+    pub min_soft_shadow_radius: f32,
+    pub raytraced_reflections_enabled: u32,
+    /// WGSL aligns the following `mat4x4<f32>` field to 16 bytes.
+    pub _pad_reflections: u32,
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub prev_view_proj: [[f32; 4]; 4],
+    pub dir_light_dir: [f32; 4],
+    pub dir_light_color: [f32; 4],
+    pub sky_occlusion: f32,
+    pub total_triangles: u32,
+    pub total_bvh_nodes: u32,
+    pub total_tri_bvh_nodes: u32,
+    pub dof_aperture: f32,
+    pub dof_focus_dist: f32,
+    pub dof_enable: u32,
+    pub _pad_dof: u32,
+    pub atmosphere: u32,
+    pub atmo_count: u32,
+    pub cloud_count: u32,
+    pub atmosphere_mode: u32,
+    pub atmosphere_sun_controls: [f32; 4],
+    pub cloud_history_weight: f32,
+    pub cloud_sample_count: u32,
+    pub cloud_temporal_quality: u32,
+    pub cloud_shadow_mode: u32,
+    pub renderer_mode: u32,
+    pub rt_debug_view: u32,
+    pub rt_debug_counters: u32,
+    pub max_traversal_steps: u32,
+    pub max_transparent_surfaces: u32,
+    pub shadow_max_distance: f32,
+    pub reflection_max_distance: f32,
+    pub gi_max_distance: f32,
+    pub min_ray_offset: f32,
+    /// Host-side padding for the WGSL uniform layout around `_pad_atmos: vec3<u32>`.
+    ///
+    /// WGSL inserts 12 bytes of implicit padding before the vec3 and 4 bytes
+    /// after it so the following `atmos` array starts on a 16-byte boundary.
+    /// Rust `repr(C)` does not insert those implicit uniform-layout gaps, so
+    /// this one host padding field covers all 28 bytes:
+    ///
+    /// - 12 bytes before WGSL `_pad_atmos`
+    /// - 12 bytes for WGSL `_pad_atmos: vec3<u32>`
+    /// - 4 bytes before `atmos`
+    pub _pad_atmos: [u32; 7],
+    pub atmos: [GpuAtmosphere; MAX_ATMOSPHERES],
+}
+
+const _: [(); 1776] = [(); std::mem::size_of::<ShaderParams>()];
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct BlitParams {
+    pub camera_pos: [f32; 4],
+    pub prev_camera_pos: [f32; 4],
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub prev_view_proj: [[f32; 4]; 4],
+    pub taa_jitter: [f32; 2],
+    pub prev_taa_jitter: [f32; 2],
+    pub tex_size: [f32; 2],
+    pub sharpness: f32,
+    pub selected_index: i32,
+    pub _pad0: [i32; 2],
+    pub _pad1: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct LightListHeader {
+    pub count: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct LightUniform {
+    pub dir: [f32; 2],
+    pub _pad: [f32; 2],
+    pub color: [f32; 3],
+    pub intensity: f32,
+}
+
+pub struct SpriteRenderData {
+    pub vertices: [[f32; 5]; 6],
+    pub texture: std::sync::Arc<TextureView>,
+    pub double_sided: bool,
+}
+
+pub struct PbrRenderData {
+    pub mesh: crate::gpu::MeshHandle,
+    pub material: crate::materials::PbrMaterial,
+    pub mvp: [[f32; 4]; 4],
+    pub model: [[f32; 4]; 4],
+    pub joint_mats: Option<Vec<[[f32; 4]; 4]>>,
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::ShaderParams;
+    use crate::scene::{
+        bvh::GpuBvhNode,
+        object::{GpuCustomMaterial, GpuMaterial, GpuObject, GpuTriangle},
+        tri_bvh::GpuTriBvhNode,
+    };
+
+    #[test]
+    fn gpu_struct_sizes_match_wgsl_layouts() {
+        assert_eq!(std::mem::size_of::<ShaderParams>(), 1776);
+        assert_eq!(std::mem::size_of::<GpuObject>(), 136);
+        assert_eq!(std::mem::size_of::<GpuTriangle>(), 128);
+        assert_eq!(std::mem::size_of::<GpuMaterial>(), 96);
+        assert_eq!(std::mem::size_of::<GpuCustomMaterial>(), 144);
+        assert_eq!(std::mem::size_of::<GpuBvhNode>(), 48);
+        assert_eq!(std::mem::size_of::<GpuTriBvhNode>(), 48);
+    }
+
+    const SHADER_PARAMS_PREFIX: &[&str] = &[
+        "camera_pos",
+        "camera_front",
+        "camera_up",
+        "camera_right",
+        "prev_camera_pos",
+        "fov",
+        "num_objects",
+        "is_fisheye",
+        "_pad0",
+        "skycolor",
+        "taa_jitter",
+        "current_time",
+        "frame_number",
+        "selected_index",
+        "max_bounces",
+        "light_samples",
+        "dir_shadow_samples",
+        "shadow_mode",
+        "raytraced_shadows_enabled",
+        "shadow_quality",
+        "max_shadow_rays",
+        "emissive_shadow_samples",
+        "directional_shadow_samples",
+        "cloud_object_shadows_enabled",
+        "max_rt_shadow_distance",
+        "rt_shadow_ray_t_max",
+        "min_soft_shadow_radius",
+        "raytraced_reflections_enabled",
+        "inv_view_proj",
+        "prev_view_proj",
+        "dir_light_dir",
+        "dir_light_color",
+        "sky_occlusion",
+        "total_triangles",
+        "total_bvh_nodes",
+        "total_tri_bvh_nodes",
+        "dof_aperture",
+        "dof_focus_dist",
+        "dof_enable",
+        "_pad_dof",
+        "atmosphere",
+        "atmo_count",
+        "cloud_count",
+        "atmosphere_mode",
+        "atmosphere_sun_controls",
+        "cloud_history_weight",
+        "cloud_sample_count",
+        "cloud_temporal_quality",
+        "cloud_shadow_mode",
+        "renderer_mode",
+        "rt_debug_view",
+        "rt_debug_counters",
+        "max_traversal_steps",
+        "max_transparent_surfaces",
+        "shadow_max_distance",
+        "reflection_max_distance",
+        "gi_max_distance",
+        "min_ray_offset",
+        "atmos",
+    ];
+
+    const MATERIAL_PARAMS_FIELDS: &[&str] = &[
+        "baseColorFactor",
+        "emissiveFactor",
+        "emissiveStrength",
+        "metallicFactor",
+        "roughnessFactor",
+        "ior",
+        "baseColorTex",
+        "f0",
+        "has_custom_material",
+        "custom_material_id",
+        "material_flags0",
+        "material_flags1",
+        "material_flags2",
+        "material_flags3",
+        "material_flags4",
+        "material_flags5",
+        "material_flags6",
+    ];
+
+    #[test]
+    fn wgsl_params_prefixes_match_shader_params() {
+        for (name, source) in WGSL_PARAMS_SHADERS {
+            let fields = wgsl_struct_fields(source, "Params");
+            assert!(
+                SHADER_PARAMS_PREFIX.starts_with(&fields),
+                "{name} Params does not match ShaderParams prefix; fields were {fields:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn wgsl_material_params_match_gpu_material_stride_fields() {
+        for (name, source) in WGSL_MATERIAL_SHADERS {
+            let fields = wgsl_struct_fields(source, "MaterialParams");
+            assert_eq!(
+                fields, MATERIAL_PARAMS_FIELDS,
+                "{name} MaterialParams must keep seven trailing u32 flag fields so WGSL stride matches 96-byte GpuMaterial"
+            );
+            assert!(
+                !source.contains("mat._pad2"),
+                "{name} still reads the old vec3 padding field"
+            );
+        }
+    }
+
+    const WGSL_PARAMS_SHADERS: &[(&str, &str)] = &[
+        (
+            "pathtrace.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+        ),
+        (
+            "denoise.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/denoise.comp.wgsl"),
+        ),
+        (
+            "rt_denoise.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/rt_denoise.comp.wgsl"),
+        ),
+        (
+            "sdfgi_prepass.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/sdfgi_prepass.comp.wgsl"),
+        ),
+        (
+            "sdfgi_inject.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/sdfgi_inject.comp.wgsl"),
+        ),
+        (
+            "transmittance_lut.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/atmosphere/transmittance_lut.comp.wgsl"),
+        ),
+        (
+            "sky_view_lut.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/atmosphere/sky_view_lut.comp.wgsl"),
+        ),
+        (
+            "multi_scattering_lut.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/atmosphere/multi_scattering_lut.comp.wgsl"),
+        ),
+        (
+            "aerial_perspective_lut.comp.wgsl",
+            include_str!(
+                "../../../assets/shaders/wgpu/atmosphere/aerial_perspective_lut.comp.wgsl"
+            ),
+        ),
+    ];
+
+    const WGSL_MATERIAL_SHADERS: &[(&str, &str)] = &[(
+        "pathtrace.comp.wgsl",
+        include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+    )];
+
+    fn wgsl_struct_fields<'a>(source: &'a str, struct_name: &str) -> Vec<&'a str> {
+        let struct_start = source
+            .find(&format!("struct {struct_name} {{"))
+            .unwrap_or_else(|| panic!("{struct_name} struct not found"));
+        let body_start = source[struct_start..]
+            .find('{')
+            .map(|offset| struct_start + offset + 1)
+            .unwrap();
+        let body_end = source[body_start..]
+            .find("};")
+            .map(|offset| body_start + offset)
+            .unwrap();
+
+        source[body_start..body_end]
+            .lines()
+            .flat_map(|line| {
+                line.split_once("//")
+                    .map_or(line, |(code, _)| code)
+                    .split(',')
+            })
+            .filter_map(|field| field.split_once(':').map(|(name, _)| name.trim()))
+            .filter(|name| !name.is_empty())
+            .collect()
+    }
+}

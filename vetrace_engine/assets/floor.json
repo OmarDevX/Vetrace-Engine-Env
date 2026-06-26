@@ -1,0 +1,11 @@
+{
+  "name": "Floor",
+  "tags": [],
+  "position": [0.0, -0.1, 0.0],
+  "color": [200.0, 200.0, 200.0],
+  "size": [20.0, 0.2, 20.0],
+  "is_cube": true,
+  "components": [
+    {"name": "StaticBody", "data": {}}
+  ]
+}
