@@ -3959,6 +3959,7 @@ impl WgpuRenderer {
             rt_shadow_ray_t_max: params.rt_shadow_ray_t_max,
             min_soft_shadow_radius: params.min_soft_shadow_radius,
             raytraced_reflections_enabled: params.raytraced_reflections_enabled,
+            _pad_reflections: 0,
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
             dir_light_dir: [
@@ -3999,6 +4000,7 @@ impl WgpuRenderer {
             reflection_max_distance: params.reflection_max_distance.max(0.01),
             gi_max_distance: params.gi_max_distance.max(0.01),
             min_ray_offset: params.min_ray_offset.max(0.00001),
+            _pad_atmos: [0; 3],
             atmos: {
                 let mut arr = [GpuAtmosphere::default(); MAX_ATMOSPHERES];
                 let count = params.atmos.len().min(MAX_ATMOSPHERES);
