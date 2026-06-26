@@ -28,3 +28,16 @@ This file tracks AI-assisted changes.
   - `timeout 20 cargo run --example app_framework_demo -p vetrace_engine` timed out while compiling dependencies before runtime.
   - `timeout 20 env VETRACE_SAFE_SHADER=1 cargo run --example app_framework_demo -p vetrace_engine` timed out while compiling dependencies before runtime.
 - Notes: `VETRACE_SAFE_SHADER=1` keeps using bootstrap; cinematic/pathtrace modes still compile the heavy pathtrace pipeline lazily.
+
+### 2026-06-26 - Fix hybrid compose depth binding access
+- Summary: Matched the lightweight hybrid compose shader depth storage texture access to the existing compute bind group layout to avoid WGPU pipeline validation failure at startup.
+- Files changed:
+  - `vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl`
+  - `CHANGELOG_AI.md`
+- Existing pattern reused: Kept the existing pathtrace/bootstrap compute bind group layout unchanged and adjusted only the lightweight shader declaration.
+- Duplicate code avoided: No duplicate bind group layout or alternate depth texture binding was introduced.
+- Tests/checks:
+  - `python3 scripts/validate_wgsl_layouts.py`
+  - `python3 scripts/validate_wgsl_syntax.py`
+  - `cargo check --workspace`
+- Notes: This fixes the reported validation error for binding 6 on `hybrid_compose_pipeline`.

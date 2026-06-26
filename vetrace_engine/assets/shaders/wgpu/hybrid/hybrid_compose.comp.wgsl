@@ -40,7 +40,7 @@ struct Params {
 
 @group(0) @binding(4) var<uniform> params: Params;
 @group(0) @binding(5) var color_tex: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(6) var depth_tex: texture_storage_2d<r32float, read>;
+@group(0) @binding(6) var depth_tex: texture_storage_2d<r32float, read_write>;
 @group(0) @binding(8) var gbuf_albedo: texture_2d<f32>;
 @group(0) @binding(9) var gbuf_normal: texture_2d<f32>;
 @group(0) @binding(10) var gbuf_material: texture_2d<u32>;
