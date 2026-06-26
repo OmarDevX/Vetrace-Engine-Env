@@ -67,9 +67,11 @@ fn reconstruct_world(pixel: vec2<i32>, dims: vec2<u32>, depth: f32) -> vec3<f32>
 }
 
 fn project_to_uv(world: vec3<f32>) -> vec2<f32> {
-    let clip = inverse(rt_params.inv_view_proj) * vec4<f32>(world, 1.0);
-    let ndc = clip.xy / max(abs(clip.w), 1e-4);
-    return ndc * vec2<f32>(0.5) + vec2<f32>(0.5);
+    // This experimental shader is not wired to receive a view-projection matrix yet.
+    // Keep the shader valid by using a conservative centered projection placeholder
+    // instead of the unsupported inverse() intrinsic on inv_view_proj.
+    let view_dir = normalize(world - rt_params.camera_pos.xyz);
+    return clamp(view_dir.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(1.0));
 }
 
 fn probe_reflection(albedo: vec3<f32>, n: vec3<f32>, v: vec3<f32>, roughness: f32) -> vec3<f32> {
