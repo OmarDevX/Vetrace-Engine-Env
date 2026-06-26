@@ -50,7 +50,7 @@ version = "0.17"
 optional = true
 
 [features]
-default = ["sdl2_use-pkgconfig", "use_epi", "wgpu"]
+default = ["sdl2_bundled", "use_epi", "wgpu"]
 
 sdl2_unsafe_textures = ["sdl2/unsafe_textures"]
 sdl2_gfx = ["sdl2/gfx"]

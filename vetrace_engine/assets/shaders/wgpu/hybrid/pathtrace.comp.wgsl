@@ -2274,6 +2274,37 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
     let view_dir = normalize(far_world.xyz - params.camera_pos.xyz);
 
     if (device_depth >= 0.9999 || albedo_sample.a <= 0.0) {
+        // Primitive `Object`s are not drawn by the mesh G-buffer pass. In
+        // raster/hybrid modes, recover those pixels with one primary ray so
+        // built-in cubes/spheres remain visible instead of falling through to
+        // a black/background-only frame.
+        if (params.num_objects > 0) {
+            // Keep this fallback deliberately cheap: it is evaluated for empty
+            // G-buffer pixels. Calling the full ray/path shading stack here can
+            // recursively cast shadow/GI rays over most of the screen and stall
+            // raster startup. A single TLAS hit plus direct material lighting is
+            // enough to make primitive objects visible in raster modes.
+            let primary = object_tlas_intersect(params.camera_pos.xyz, view_dir, -1);
+            if (primary.idx >= 0) {
+                let mat = materials[objects[u32(primary.idx)].material_index];
+                let base = mat.baseColorFactor.rgb;
+                var lit = mat.emissiveFactor * mat.emissiveStrength + base * params.skycolor.rgb * 0.18;
+                if (params.dir_light_dir.w > 0.0) {
+                    let ldir = normalize(-params.dir_light_dir.xyz);
+                    let ndotl = max(dot(primary.n, ldir), 0.0);
+                    lit = lit + base * params.dir_light_color.xyz * ndotl * params.dir_light_dir.w;
+                }
+                let shaded = apply_atmosphere(params.camera_pos.xyz, view_dir, primary.t, lit);
+                let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, primary.t, shaded, id);
+                textureStore(cloud_radiance_tex, vec2<i32>(id), vec4<f32>(cloud_result.radiance, 1.0));
+                textureStore(cloud_transmittance_tex, vec2<i32>(id), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
+                textureStore(color_tex, vec2<i32>(id), vec4<f32>(cloud_result.color, 0.0));
+                textureStore(normal_tex, vec2<i32>(id), vec4<f32>(primary.n, primary.t));
+                textureStore(gi_noisy, vec2<i32>(id), vec4<f32>(0.0, 0.0, 0.0, 0.0));
+                return;
+            }
+        }
+
         let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, 1e9, params.skycolor.rgb, id);
         textureStore(cloud_radiance_tex, vec2<i32>(id), vec4<f32>(cloud_result.radiance, 1.0));
         textureStore(cloud_transmittance_tex, vec2<i32>(id), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));

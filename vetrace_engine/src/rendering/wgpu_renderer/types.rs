@@ -201,6 +201,8 @@ pub struct ShaderParams {
     pub rt_shadow_ray_t_max: f32,
     pub min_soft_shadow_radius: f32,
     pub raytraced_reflections_enabled: u32,
+    /// WGSL aligns the following `mat4x4<f32>` field to 16 bytes.
+    pub _pad_reflections: u32,
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
     pub dir_light_dir: [f32; 4],
@@ -231,8 +233,12 @@ pub struct ShaderParams {
     pub reflection_max_distance: f32,
     pub gi_max_distance: f32,
     pub min_ray_offset: f32,
+    /// WGSL aligns the following atmosphere array to 16 bytes.
+    pub _pad_atmos: [u32; 3],
     pub atmos: [GpuAtmosphere; MAX_ATMOSPHERES],
 }
+
+const _: [(); 1760] = [(); std::mem::size_of::<ShaderParams>()];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
