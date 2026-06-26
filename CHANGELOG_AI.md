@@ -41,3 +41,16 @@ This file tracks AI-assisted changes.
   - `python3 scripts/validate_wgsl_syntax.py`
   - `cargo check --workspace`
 - Notes: This fixes the reported validation error for binding 6 on `hybrid_compose_pipeline`.
+
+### 2026-06-26 - Present lightweight hybrid color output
+- Summary: Copied the lightweight hybrid/bootstrap compute color output into the screen texture before postprocess blit so non-pathtraced modes present the composed raster/hybrid image instead of stale black.
+- Files changed:
+  - `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
+  - `CHANGELOG_AI.md`
+- Existing pattern reused: Reused existing color/screen textures and the existing final blit path instead of adding another presentation path.
+- Duplicate code avoided: Kept the existing postprocess pipeline unchanged.
+- Tests/checks:
+  - `python3 scripts/validate_wgsl_layouts.py`
+  - `python3 scripts/validate_wgsl_syntax.py`
+  - `cargo check --workspace`
+- Notes: Path-traced modes are excluded from this copy because `rt_denoise` already writes the screen texture for those modes.

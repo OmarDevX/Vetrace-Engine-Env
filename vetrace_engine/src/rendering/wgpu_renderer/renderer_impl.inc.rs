@@ -4979,6 +4979,32 @@ impl WgpuRenderer {
             };
             cpass.dispatch_workgroups(x, y, 1);
         }
+        if !effective_renderer_mode.uses_path_traced_primary_visibility() {
+            // The lightweight hybrid/bootstrap compute paths write into `color_texture`,
+            // while the existing postprocess blit samples `screen_texture`. Mirror the
+            // composed color before postprocessing so raster/hybrid modes do not present
+            // a stale black screen. Path-traced modes keep using rt_denoise to populate
+            // `screen_texture`.
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.color_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         encoder.copy_texture_to_texture(
             ImageCopyTexture { texture: &self.cloud_radiance_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
             ImageCopyTexture { texture: &self.cloud_radiance_history_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
