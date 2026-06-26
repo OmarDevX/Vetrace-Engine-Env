@@ -2223,6 +2223,24 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
     let view_dir = normalize(far_world.xyz - params.camera_pos.xyz);
 
     if (device_depth >= 0.9999 || albedo_sample.a <= 0.0) {
+        // Primitive `Object`s are not drawn by the mesh G-buffer pass. In
+        // raster/hybrid modes, recover those pixels with one primary ray so
+        // built-in cubes/spheres remain visible instead of falling through to
+        // a black/background-only frame.
+        if (params.num_objects > 0) {
+            let primary = trace_ray_no_gi(params.camera_pos.xyz, view_dir, 0, rng);
+            if (primary.obj_idx >= 0) {
+                let linear_depth = primary.depth;
+                let cloud_result = composite_clouds(params.camera_pos.xyz, view_dir, linear_depth, primary.color, id);
+                textureStore(cloud_radiance_tex, vec2<i32>(id), vec4<f32>(cloud_result.radiance, 1.0));
+                textureStore(cloud_transmittance_tex, vec2<i32>(id), vec4<f32>(cloud_result.transmittance, 0.0, 0.0, 1.0));
+                textureStore(color_tex, vec2<i32>(id), vec4<f32>(cloud_result.color, 0.0));
+                textureStore(normal_tex, vec2<i32>(id), vec4<f32>(primary.normal, linear_depth));
+                textureStore(gi_noisy, vec2<i32>(id), vec4<f32>(0.0, 0.0, 0.0, 0.0));
+                return;
+            }
+        }
+
         // Raster-primary and hybrid modes still use the LUT atmosphere path;
         // clouds remain a separate pass composited against final scene depth.
         let sky = apply_atmosphere(params.camera_pos.xyz, view_dir, 1e9, params.skycolor.rgb);
