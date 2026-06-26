@@ -3724,6 +3724,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&self.cloud_transmittance_history_view) },
                 BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
                 BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_history_view) },
+                BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&self.screen_history_view) },
             ],
         });
 
