@@ -606,6 +606,7 @@ impl WgpuRenderer {
                 TextureFormat::R16Float,
                 "cloud_directional_shadow_history",
             );
+
         // Create placeholder buffers large enough to satisfy the minimum
         // binding size required by the shaders. Even with an empty scene the
         // renderer expects space for at least 64 objects and materials.
@@ -801,6 +802,36 @@ impl WgpuRenderer {
                 TextureFormat::R16Float,
                 "cloud_directional_shadow_history",
             );
+
+        let create_hybrid_effect_texture = |label: &str| {
+            create_cloud_temporal_texture(
+                &device,
+                render_width,
+                render_height,
+                TextureFormat::Rgba16Float,
+                label,
+            )
+        };
+        let (hybrid_rt_shadow_texture, hybrid_rt_shadow_view) =
+            create_hybrid_effect_texture("hybrid_rt_shadow_mask");
+        let (hybrid_rt_reflection_texture, hybrid_rt_reflection_view) =
+            create_hybrid_effect_texture("hybrid_rt_reflection_radiance");
+        let (hybrid_rt_gi_texture, hybrid_rt_gi_view) =
+            create_hybrid_effect_texture("hybrid_rt_gi_radiance");
+        let (hybrid_rt_transparency_texture, hybrid_rt_transparency_view) =
+            create_hybrid_effect_texture("hybrid_rt_transparency_radiance");
+        let hybrid_rt_params_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("hybrid_rt_params"),
+            size: std::mem::size_of::<HybridRtEffectParams>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let hybrid_composite_params_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("hybrid_composite_params"),
+            size: std::mem::size_of::<HybridCompositeParams>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let triangle_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("triangles"),
@@ -1338,6 +1369,277 @@ impl WgpuRenderer {
             Some(pipeline)
         };
         let hybrid_compose_pipeline_error = None;
+
+        let hybrid_rt_effect_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("hybrid_rt_effect_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Uint,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Uint,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Uint,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 6,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let hybrid_composite_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("hybrid_composite_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::ReadWrite,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 6,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 8,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 9,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 10,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 11,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let hybrid_rt_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("hybrid_rt_effect_pl"),
+            bind_group_layouts: &[&hybrid_rt_effect_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let hybrid_composite_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("hybrid_composite_pl"),
+                bind_group_layouts: &[&hybrid_composite_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let make_hybrid_pipeline =
+            |label: &str, source: &str, layout: &PipelineLayout| -> Option<ComputePipeline> {
+                if safe_shader_mode {
+                    return None;
+                }
+                let module = device.create_shader_module(ShaderModuleDescriptor {
+                    label: Some(label),
+                    source: ShaderSource::Wgsl(source.into()),
+                });
+                Some(device.create_compute_pipeline(&ComputePipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(layout),
+                    module: &module,
+                    entry_point: "main",
+                    compilation_options: Default::default(),
+                }))
+            };
+        let hybrid_rt_shadow_pipeline = make_hybrid_pipeline(
+            "hybrid_rt_shadows_pipeline",
+            include_str!(
+                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_shadows.comp.wgsl"
+            ),
+            &hybrid_rt_pipeline_layout,
+        );
+        let hybrid_rt_reflection_pipeline = make_hybrid_pipeline(
+            "hybrid_rt_reflections_pipeline",
+            include_str!(
+                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_reflections.comp.wgsl"
+            ),
+            &hybrid_rt_pipeline_layout,
+        );
+        let hybrid_rt_gi_pipeline = make_hybrid_pipeline(
+            "hybrid_rt_gi_pipeline",
+            include_str!(
+                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl"
+            ),
+            &hybrid_rt_pipeline_layout,
+        );
+        let hybrid_rt_transparency_pipeline = make_hybrid_pipeline("hybrid_rt_transparency_pipeline", include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_transparency.comp.wgsl"), &hybrid_rt_pipeline_layout);
+        let hybrid_composite_pipeline = make_hybrid_pipeline(
+            "hybrid_composite_pipeline",
+            include_str!(
+                "../../../assets/shaders/wgpu/experimental/hybrid_effects/composite.comp.wgsl"
+            ),
+            &hybrid_composite_pipeline_layout,
+        );
+        let hybrid_compose_pipeline = hybrid_composite_pipeline.or(hybrid_compose_pipeline);
 
         boot_log(
             "WgpuRenderer::new: after bootstrap cloud_shadow_pipeline; before atmosphere shader modules",
@@ -3235,6 +3537,108 @@ impl WgpuRenderer {
                 },
             ],
         });
+        let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
+            device.create_bind_group(&BindGroupDescriptor {
+                label: Some(label),
+                layout: &hybrid_rt_effect_bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&depth_view),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::TextureView(&gbuf_normal_view),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(&gbuf_albedo_view),
+                    },
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: BindingResource::TextureView(&gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 5,
+                        resource: BindingResource::TextureView(&gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 6,
+                        resource: BindingResource::TextureView(out_view),
+                    },
+                    BindGroupEntry {
+                        binding: 7,
+                        resource: hybrid_rt_params_buffer.as_entire_binding(),
+                    },
+                ],
+            })
+        };
+        let hybrid_rt_shadow_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &hybrid_rt_shadow_view);
+        let hybrid_rt_reflection_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_reflection_bg", &hybrid_rt_reflection_view);
+        let hybrid_rt_gi_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_gi_bg", &hybrid_rt_gi_view);
+        let hybrid_rt_transparency_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_transparency_bg", &hybrid_rt_transparency_view);
+        let hybrid_composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("hybrid_composite_bg"),
+            layout: &hybrid_composite_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&color_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&color_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&gi_history_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: hybrid_composite_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&hybrid_rt_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&hybrid_rt_reflection_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&hybrid_rt_gi_view),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(&hybrid_rt_transparency_view),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: BindingResource::TextureView(&color_view),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: BindingResource::TextureView(&cloud_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: BindingResource::TextureView(&cloud_transmittance_view),
+                },
+            ],
+        });
 
         boot_log("WgpuRenderer::new: all pipelines created; constructing renderer");
         Self {
@@ -3375,6 +3779,27 @@ impl WgpuRenderer {
             shader_compiler,
             compute_bind_group_layout,
             compute_bind_group,
+            hybrid_rt_shadow_texture,
+            hybrid_rt_shadow_view,
+            hybrid_rt_reflection_texture,
+            hybrid_rt_reflection_view,
+            hybrid_rt_gi_texture,
+            hybrid_rt_gi_view,
+            hybrid_rt_transparency_texture,
+            hybrid_rt_transparency_view,
+            hybrid_rt_params_buffer,
+            hybrid_composite_params_buffer,
+            hybrid_rt_effect_bind_group_layout,
+            hybrid_rt_shadow_bind_group,
+            hybrid_rt_reflection_bind_group,
+            hybrid_rt_gi_bind_group,
+            hybrid_rt_transparency_bind_group,
+            hybrid_composite_bind_group_layout,
+            hybrid_composite_bind_group,
+            hybrid_rt_shadow_pipeline,
+            hybrid_rt_reflection_pipeline,
+            hybrid_rt_gi_pipeline,
+            hybrid_rt_transparency_pipeline,
             hybrid_compose_pipeline,
             hybrid_compose_pipeline_error,
             cinematic_compute_pipeline: None,
@@ -5680,31 +6105,98 @@ impl WgpuRenderer {
                 },
             );
         }
-        {
+        if effective_renderer_mode.uses_decomposed_rt_effects() {
+            let rt_params = HybridRtEffectParams {
+                inv_view_proj: params.inv_view_proj,
+                camera_pos: [
+                    params.camera_pos[0],
+                    params.camera_pos[1],
+                    params.camera_pos[2],
+                    0.0,
+                ],
+                dir_light_dir: params.dir_light_dir,
+                dir_light_color: params.dir_light_color,
+                enabled: 1,
+                mode: 1,
+                _pad: [0; 2],
+            };
+            self.queue.write_buffer(
+                &self.hybrid_rt_params_buffer,
+                0,
+                bytemuck::bytes_of(&rt_params),
+            );
+            let comp_params = HybridCompositeParams {
+                temporal_blend: 0.10,
+                rt_gi_enabled: 1,
+                rt_reflections_enabled: params.raytraced_reflections_enabled,
+                rt_shadows_enabled: params.raytraced_shadows_enabled,
+                rt_transparency_enabled: 1,
+                atmosphere_enabled: 0,
+                clouds_enabled: if effective_cloud_count > 0 { 1 } else { 0 },
+                _pad: 0,
+            };
+            self.queue.write_buffer(
+                &self.hybrid_composite_params_buffer,
+                0,
+                bytemuck::bytes_of(&comp_params),
+            );
+            let (x, y) = ((self.width + 7) / 8, (self.height + 7) / 8);
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("raytrace"),
+                label: Some("hybrid_decomposed_rt_effects"),
                 timestamp_writes: None,
             });
-            let main_compute_pipeline = match self.active_compute_pipeline_kind {
-                MainComputePipelineKind::CinematicPathTrace if cinematic_pipeline_ready => self
-                    .cinematic_compute_pipeline
-                    .as_ref()
-                    .unwrap_or(&self.compute_pipeline),
-                MainComputePipelineKind::HybridCompose => self
-                    .hybrid_compose_pipeline
-                    .as_ref()
-                    .unwrap_or(&self.compute_pipeline),
-                MainComputePipelineKind::Bootstrap
-                | MainComputePipelineKind::CinematicPathTrace => &self.compute_pipeline,
-            };
-            cpass.set_pipeline(main_compute_pipeline);
-            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            let (x, y) = if self.is_2d {
-                ((self.width + 15) / 16, (self.height + 15) / 16)
-            } else {
-                ((self.width + 7) / 8, (self.height + 7) / 8)
-            };
-            cpass.dispatch_workgroups(x, y, 1);
+            if let Some(pipeline) = &self.hybrid_rt_shadow_pipeline {
+                cpass.set_pipeline(pipeline);
+                cpass.set_bind_group(0, &self.hybrid_rt_shadow_bind_group, &[]);
+                cpass.dispatch_workgroups(x, y, 1);
+            }
+            if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
+                cpass.set_pipeline(pipeline);
+                cpass.set_bind_group(0, &self.hybrid_rt_reflection_bind_group, &[]);
+                cpass.dispatch_workgroups(x, y, 1);
+            }
+            if let Some(pipeline) = &self.hybrid_rt_gi_pipeline {
+                cpass.set_pipeline(pipeline);
+                cpass.set_bind_group(0, &self.hybrid_rt_gi_bind_group, &[]);
+                cpass.dispatch_workgroups(x, y, 1);
+            }
+            if let Some(pipeline) = &self.hybrid_rt_transparency_pipeline {
+                cpass.set_pipeline(pipeline);
+                cpass.set_bind_group(0, &self.hybrid_rt_transparency_bind_group, &[]);
+                cpass.dispatch_workgroups(x, y, 1);
+            }
+            if let Some(pipeline) = &self.hybrid_compose_pipeline {
+                cpass.set_pipeline(pipeline);
+                cpass.set_bind_group(0, &self.hybrid_composite_bind_group, &[]);
+                cpass.dispatch_workgroups(x, y, 1);
+            }
+        } else {
+            {
+                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("raytrace"),
+                    timestamp_writes: None,
+                });
+                let main_compute_pipeline = match self.active_compute_pipeline_kind {
+                    MainComputePipelineKind::CinematicPathTrace if cinematic_pipeline_ready => self
+                        .cinematic_compute_pipeline
+                        .as_ref()
+                        .unwrap_or(&self.compute_pipeline),
+                    MainComputePipelineKind::HybridCompose => self
+                        .hybrid_compose_pipeline
+                        .as_ref()
+                        .unwrap_or(&self.compute_pipeline),
+                    MainComputePipelineKind::Bootstrap
+                    | MainComputePipelineKind::CinematicPathTrace => &self.compute_pipeline,
+                };
+                cpass.set_pipeline(main_compute_pipeline);
+                cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+                let (x, y) = if self.is_2d {
+                    ((self.width + 15) / 16, (self.height + 15) / 16)
+                } else {
+                    ((self.width + 7) / 8, (self.height + 7) / 8)
+                };
+                cpass.dispatch_workgroups(x, y, 1);
+            }
         }
         if !effective_renderer_mode.uses_path_traced_primary_visibility() {
             // The lightweight hybrid/bootstrap compute paths write into `color_texture`,
