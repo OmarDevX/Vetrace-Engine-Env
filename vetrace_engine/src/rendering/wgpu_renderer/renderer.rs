@@ -23,6 +23,7 @@ use super::types::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MainComputePipelineKind {
     Bootstrap,
+    HybridCompose,
     CinematicPathTrace,
 }
 
@@ -155,6 +156,8 @@ pub struct WgpuRenderer {
     compute_bind_group: BindGroup,
     compute_pipeline: ComputePipeline,
     cloud_shadow_pipeline: ComputePipeline,
+    hybrid_compose_pipeline: Option<ComputePipeline>,
+    hybrid_compose_pipeline_error: Option<String>,
     cinematic_compute_pipeline: Option<ComputePipeline>,
     cinematic_cloud_shadow_pipeline: Option<ComputePipeline>,
     cinematic_pipeline_status: LazyPipelineStatus,
@@ -187,6 +190,16 @@ pub struct WgpuRenderer {
     sprite_view_proj_buffer: Buffer,
     pbr_bind_group_layout: BindGroupLayout,
     pbr_pipeline: RenderPipeline,
+    primitive_gbuffer_bind_group_layout: BindGroupLayout,
+    primitive_gbuffer_bind_group: BindGroup,
+    primitive_gbuffer_pipeline: RenderPipeline,
+    primitive_cube_vertex_buffer: Buffer,
+    primitive_cube_index_buffer: Buffer,
+    primitive_cube_index_count: u32,
+    primitive_sphere_vertex_buffer: Buffer,
+    primitive_sphere_index_buffer: Buffer,
+    primitive_sphere_index_count: u32,
+    prev_raster_primitive_count: Option<u32>,
     pub prev_view_proj: [[f32; 4]; 4],
     prev_taa_jitter: [f32; 2],
     triangle_buffer: Buffer,

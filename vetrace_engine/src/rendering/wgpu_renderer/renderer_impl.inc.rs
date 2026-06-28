@@ -41,7 +41,54 @@ struct BlurParams {
     _pad1: [f32; 7],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct PrimitiveVertex {
+    position: [f32; 3],
+    normal: [f32; 3],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct PrimitiveInstance {
+    object_index: u32,
+    _pad: [u32; 3],
+}
+
 const MAX_BLUR_REGIONS: usize = 16;
+
+fn primitive_vertices_from_triangles(tris: &[GpuTriangle]) -> (Vec<PrimitiveVertex>, Vec<u32>) {
+    let mut vertices = Vec::with_capacity(tris.len() * 3);
+    let mut indices = Vec::with_capacity(tris.len() * 3);
+    for tri in tris {
+        let v0 = tri.v0;
+        let v1 = [
+            tri.v0[0] + tri.e1[0],
+            tri.v0[1] + tri.e1[1],
+            tri.v0[2] + tri.e1[2],
+        ];
+        let v2 = [
+            tri.v0[0] + tri.e2[0],
+            tri.v0[1] + tri.e2[1],
+            tri.v0[2] + tri.e2[2],
+        ];
+        let base = vertices.len() as u32;
+        vertices.push(PrimitiveVertex {
+            position: v0,
+            normal: tri.n0,
+        });
+        vertices.push(PrimitiveVertex {
+            position: v1,
+            normal: tri.n1,
+        });
+        vertices.push(PrimitiveVertex {
+            position: v2,
+            normal: tri.n2,
+        });
+        indices.extend_from_slice(&[base, base + 1, base + 2]);
+    }
+    (vertices, indices)
+}
 
 fn blue_noise_rgba8_tile() -> Vec<u8> {
     const BLUE_NOISE_TILE_SIZE: u32 = 16;
@@ -1044,6 +1091,32 @@ impl WgpuRenderer {
             entry_point: "cloud_shadow_main",
             compilation_options: Default::default(),
         });
+        let hybrid_compose_pipeline = if safe_shader_mode {
+            None
+        } else {
+            render_log("compiling lightweight hybrid compose pipeline...");
+            let hybrid_started = Instant::now();
+            let hybrid_compose_shader = device.create_shader_module(ShaderModuleDescriptor {
+                label: Some("hybrid_compose_shader"),
+                source: ShaderSource::Wgsl(
+                    include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl")
+                        .into(),
+                ),
+            });
+            let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("hybrid_compose_pipeline"),
+                layout: Some(&compute_pipeline_layout),
+                module: &hybrid_compose_shader,
+                entry_point: "main",
+                compilation_options: Default::default(),
+            });
+            render_log(&format!(
+                "lightweight hybrid compose pipeline compiled in {:.3}s",
+                hybrid_started.elapsed().as_secs_f64()
+            ));
+            Some(pipeline)
+        };
+        let hybrid_compose_pipeline_error = None;
 
         boot_log("WgpuRenderer::new: after bootstrap cloud_shadow_pipeline; before atmosphere shader modules");
         let transmittance_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -2578,7 +2651,155 @@ impl WgpuRenderer {
             multisample: MultisampleState::default(),
             multiview: None,
         });
-
+        let primitive_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("primitive_gbuffer_shader"),
+            source: ShaderSource::Wgsl(
+                include_str!("../../../assets/shaders/wgpu/hybrid/primitive_gbuffer.wgsl").into(),
+            ),
+        });
+        let primitive_gbuffer_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("primitive_gbuffer_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::VERTEX,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let primitive_gbuffer_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("primitive_gbuffer_pl"),
+                bind_group_layouts: &[&primitive_gbuffer_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let primitive_vertex_layout = VertexBufferLayout {
+            array_stride: std::mem::size_of::<PrimitiveVertex>() as u64,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &[
+                VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: VertexFormat::Float32x3,
+                },
+                VertexAttribute {
+                    offset: 12,
+                    shader_location: 1,
+                    format: VertexFormat::Float32x3,
+                },
+            ],
+        };
+        let primitive_instance_layout = VertexBufferLayout {
+            array_stride: std::mem::size_of::<PrimitiveInstance>() as u64,
+            step_mode: VertexStepMode::Instance,
+            attributes: &[VertexAttribute {
+                offset: 0,
+                shader_location: 2,
+                format: VertexFormat::Uint32,
+            }],
+        };
+        let primitive_gbuffer_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("primitive_gbuffer_pipeline"),
+            layout: Some(&primitive_gbuffer_pipeline_layout),
+            vertex: VertexState {
+                module: &primitive_shader,
+                entry_point: "vs_main",
+                buffers: &[primitive_vertex_layout, primitive_instance_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &primitive_shader,
+                entry_point: "fs_main",
+                targets: &[
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgba8Unorm,
+                        blend: Some(BlendState::REPLACE),
+                        write_mask: ColorWrites::ALL,
+                    }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgba16Float,
+                        blend: Some(BlendState::REPLACE),
+                        write_mask: ColorWrites::ALL,
+                    }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgba8Uint,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::R32Float,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
+                ],
+                compilation_options: Default::default(),
+            }),
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            multiview: None,
+        });
+        let (cube_vertices, cube_indices) = primitive_vertices_from_triangles(
+            &crate::rendering::resource::generate_cube_triangles([1.0, 1.0, 1.0]),
+        );
+        let (sphere_vertices, sphere_indices) = primitive_vertices_from_triangles(
+            &crate::rendering::resource::generate_sphere_triangles(1.0, 1),
+        );
+        let primitive_cube_vertex_buffer =
+            device.create_buffer_init(&util::BufferInitDescriptor {
+                label: Some("primitive_cube_vertices"),
+                contents: bytemuck::cast_slice(&cube_vertices),
+                usage: BufferUsages::VERTEX,
+            });
+        let primitive_cube_index_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("primitive_cube_indices"),
+            contents: bytemuck::cast_slice(&cube_indices),
+            usage: BufferUsages::INDEX,
+        });
+        let primitive_sphere_vertex_buffer =
+            device.create_buffer_init(&util::BufferInitDescriptor {
+                label: Some("primitive_sphere_vertices"),
+                contents: bytemuck::cast_slice(&sphere_vertices),
+                usage: BufferUsages::VERTEX,
+            });
+        let primitive_sphere_index_buffer =
+            device.create_buffer_init(&util::BufferInitDescriptor {
+                label: Some("primitive_sphere_indices"),
+                contents: bytemuck::cast_slice(&sphere_indices),
+                usage: BufferUsages::INDEX,
+            });
         let sprite_view_proj_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("sprite_vp"),
             size: 64,
@@ -2590,6 +2811,24 @@ impl WgpuRenderer {
             size: (6 * std::mem::size_of::<[f32; 5]>()) as u64,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
+        });
+        let primitive_gbuffer_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("primitive_gbuffer_bg"),
+            layout: &primitive_gbuffer_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: object_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: sprite_view_proj_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: material_buffer.as_entire_binding(),
+                },
+            ],
         });
 
         boot_log("WgpuRenderer::new: all pipelines created; constructing renderer");
@@ -2727,6 +2966,8 @@ impl WgpuRenderer {
             shader_compiler,
             compute_bind_group_layout,
             compute_bind_group,
+            hybrid_compose_pipeline,
+            hybrid_compose_pipeline_error,
             cinematic_compute_pipeline: None,
             cinematic_cloud_shadow_pipeline: None,
             cinematic_pipeline_status: LazyPipelineStatus::NotCompiled,
@@ -2759,6 +3000,16 @@ impl WgpuRenderer {
             sprite_view_proj_buffer,
             pbr_bind_group_layout,
             pbr_pipeline,
+            primitive_gbuffer_bind_group_layout,
+            primitive_gbuffer_bind_group,
+            primitive_gbuffer_pipeline,
+            primitive_cube_vertex_buffer,
+            primitive_cube_index_buffer,
+            primitive_cube_index_count: cube_indices.len() as u32,
+            primitive_sphere_vertex_buffer,
+            primitive_sphere_index_buffer,
+            primitive_sphere_index_count: sphere_indices.len() as u32,
+            prev_raster_primitive_count: None,
             postfx_buffer,
             light_buffer,
             post_fx_uniforms: PostFxUniforms::default(),
@@ -3204,6 +3455,24 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
                 BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_history_view) },
                 BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&self.screen_history_view) },
+            ],
+        });
+        self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("primitive_gbuffer_bg"),
+            layout: &self.primitive_gbuffer_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: self.object_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: self.sprite_view_proj_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: self.material_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -3775,6 +4044,24 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&self.screen_history_view) },
             ],
         });
+        self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("primitive_gbuffer_bg"),
+            layout: &self.primitive_gbuffer_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: self.object_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: self.sprite_view_proj_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: self.material_buffer.as_entire_binding(),
+                },
+            ],
+        });
 
         let shader_changed =
             self.prev_material_names != material_names || self.prev_shader_defs != shaders;
@@ -3994,17 +4281,41 @@ impl WgpuRenderer {
             }
             self.ensure_cinematic_pipeline()
         } else {
-            if self.active_compute_pipeline_kind != MainComputePipelineKind::Bootstrap {
-                render_log("Renderer mode changed to bootstrap/lightweight fallback");
+            if self.active_compute_pipeline_kind != MainComputePipelineKind::HybridCompose
+                && self.hybrid_compose_pipeline.is_some()
+                && !self.safe_shader_mode
+            {
+                render_log(&format!(
+                    "using raster/hybrid pipeline for mode {:?}",
+                    effective_renderer_mode
+                ));
             }
             false
         };
         self.active_compute_pipeline_kind = if cinematic_pipeline_ready {
             MainComputePipelineKind::CinematicPathTrace
+        } else if !wants_cinematic_pipeline
+            && !self.safe_shader_mode
+            && self.hybrid_compose_pipeline.is_some()
+        {
+            MainComputePipelineKind::HybridCompose
         } else {
-            if wants_cinematic_pipeline {
+            if wants_cinematic_pipeline
+                && self.active_compute_pipeline_kind != MainComputePipelineKind::Bootstrap
+            {
                 // TODO: Replace bootstrap fallback with lightweight raster/hybrid compute pipeline.
                 render_log("cinematic pathtrace pipeline unavailable; using bootstrap fallback");
+            } else if self.safe_shader_mode
+                && self.active_compute_pipeline_kind != MainComputePipelineKind::Bootstrap
+            {
+                render_log("using bootstrap fallback because VETRACE_SAFE_SHADER=1 is set");
+            } else if let Some(err) = &self.hybrid_compose_pipeline_error
+                && self.active_compute_pipeline_kind != MainComputePipelineKind::Bootstrap
+            {
+                render_log(&format!(
+                    "using bootstrap fallback because lightweight hybrid pipeline failed: {}",
+                    err
+                ));
             }
             MainComputePipelineKind::Bootstrap
         };
@@ -4254,6 +4565,130 @@ impl WgpuRenderer {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("render"),
             });
+        let mut cube_instances = Vec::new();
+        let mut sphere_instances = Vec::new();
+        if !self.is_2d && !effective_renderer_mode.uses_path_traced_primary_visibility() {
+            for (idx, obj) in self.prev_objects.iter().enumerate() {
+                if obj.is_mesh != 0 || obj.is_shaded == 0 {
+                    continue;
+                }
+                let instance = PrimitiveInstance {
+                    object_index: idx as u32,
+                    _pad: [0; 3],
+                };
+                if obj.is_cube != 0 {
+                    cube_instances.push(instance);
+                } else {
+                    sphere_instances.push(instance);
+                }
+            }
+            let primitive_count = (cube_instances.len() + sphere_instances.len()) as u32;
+            if self.prev_raster_primitive_count != Some(primitive_count) {
+                render_log(&format!(
+                    "raster primitive visibility: objects={}",
+                    primitive_count
+                ));
+                self.prev_raster_primitive_count = Some(primitive_count);
+            }
+        }
+        let has_primitive_gbuffer = !cube_instances.is_empty() || !sphere_instances.is_empty();
+        {
+            let cube_instance_buffer = if cube_instances.is_empty() {
+                None
+            } else {
+                Some(self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("primitive_cube_instances"),
+                    contents: bytemuck::cast_slice(&cube_instances),
+                    usage: BufferUsages::VERTEX,
+                }))
+            };
+            let sphere_instance_buffer = if sphere_instances.is_empty() {
+                None
+            } else {
+                Some(self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("primitive_sphere_instances"),
+                    contents: bytemuck::cast_slice(&sphere_instances),
+                    usage: BufferUsages::VERTEX,
+                }))
+            };
+            let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("primitive_gbuffer"),
+                color_attachments: &[
+                    Some(RenderPassColorAttachment {
+                        view: &self.gbuf_albedo_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::TRANSPARENT),
+                            store: StoreOp::Store,
+                        },
+                    }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.gbuf_normal_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
+                    }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.gbuf_material_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
+                    }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.depth_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::WHITE),
+                            store: StoreOp::Store,
+                        },
+                    }),
+                ],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &self.depth_stencil_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            if has_primitive_gbuffer {
+                rpass.set_pipeline(&self.primitive_gbuffer_pipeline);
+                rpass.set_bind_group(0, &self.primitive_gbuffer_bind_group, &[]);
+                if let Some(buffer) = &cube_instance_buffer {
+                    rpass.set_vertex_buffer(0, self.primitive_cube_vertex_buffer.slice(..));
+                    rpass.set_vertex_buffer(1, buffer.slice(..));
+                    rpass.set_index_buffer(
+                        self.primitive_cube_index_buffer.slice(..),
+                        IndexFormat::Uint32,
+                    );
+                    rpass.draw_indexed(
+                        0..self.primitive_cube_index_count,
+                        0,
+                        0..cube_instances.len() as u32,
+                    );
+                }
+                if let Some(buffer) = &sphere_instance_buffer {
+                    rpass.set_vertex_buffer(0, self.primitive_sphere_vertex_buffer.slice(..));
+                    rpass.set_vertex_buffer(1, buffer.slice(..));
+                    rpass.set_index_buffer(
+                        self.primitive_sphere_index_buffer.slice(..),
+                        IndexFormat::Uint32,
+                    );
+                    rpass.draw_indexed(
+                        0..self.primitive_sphere_index_count,
+                        0,
+                        0..sphere_instances.len() as u32,
+                    );
+                }
+            }
+        }
         if !pbr_data.is_empty() {
             let mut bind_groups = Vec::new();
             for inst in pbr_data {
@@ -4352,7 +4787,7 @@ impl WgpuRenderer {
                         view: &self.gbuf_albedo_view,
                         resolve_target: None,
                         ops: Operations {
-                            load: LoadOp::Clear(Color::BLACK),
+                            load: LoadOp::Load,
                             store: StoreOp::Store,
                         },
                     }),
@@ -4360,7 +4795,7 @@ impl WgpuRenderer {
                         view: &self.gbuf_normal_view,
                         resolve_target: None,
                         ops: Operations {
-                            load: LoadOp::Clear(Color::BLACK),
+                            load: LoadOp::Load,
                             store: StoreOp::Store,
                         },
                     }),
@@ -4368,7 +4803,7 @@ impl WgpuRenderer {
                         view: &self.gbuf_material_view,
                         resolve_target: None,
                         ops: Operations {
-                            load: LoadOp::Clear(Color::BLACK),
+                            load: LoadOp::Load,
                             store: StoreOp::Store,
                         },
                     }),
@@ -4376,7 +4811,7 @@ impl WgpuRenderer {
                         view: &self.depth_view,
                         resolve_target: None,
                         ops: Operations {
-                            load: LoadOp::Clear(Color::WHITE),
+                            load: LoadOp::Load,
                             store: StoreOp::Store,
                         },
                     }),
@@ -4384,7 +4819,7 @@ impl WgpuRenderer {
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &self.depth_stencil_view,
                     depth_ops: Some(Operations {
-                        load: LoadOp::Clear(1.0),
+                        load: LoadOp::Load,
                         store: StoreOp::Store,
                     }),
                     stencil_ops: None,
@@ -4522,12 +4957,18 @@ impl WgpuRenderer {
                 label: Some("raytrace"),
                 timestamp_writes: None,
             });
-            let main_compute_pipeline = if cinematic_pipeline_ready {
-                self.cinematic_compute_pipeline
+            let main_compute_pipeline = match self.active_compute_pipeline_kind {
+                MainComputePipelineKind::CinematicPathTrace if cinematic_pipeline_ready => self
+                    .cinematic_compute_pipeline
                     .as_ref()
-                    .unwrap_or(&self.compute_pipeline)
-            } else {
-                &self.compute_pipeline
+                    .unwrap_or(&self.compute_pipeline),
+                MainComputePipelineKind::HybridCompose => self
+                    .hybrid_compose_pipeline
+                    .as_ref()
+                    .unwrap_or(&self.compute_pipeline),
+                MainComputePipelineKind::Bootstrap | MainComputePipelineKind::CinematicPathTrace => {
+                    &self.compute_pipeline
+                }
             };
             cpass.set_pipeline(main_compute_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
@@ -4537,6 +4978,32 @@ impl WgpuRenderer {
                 ((self.width + 7) / 8, (self.height + 7) / 8)
             };
             cpass.dispatch_workgroups(x, y, 1);
+        }
+        if !effective_renderer_mode.uses_path_traced_primary_visibility() {
+            // The lightweight hybrid/bootstrap compute paths write into `color_texture`,
+            // while the existing postprocess blit samples `screen_texture`. Mirror the
+            // composed color before postprocessing so raster/hybrid modes do not present
+            // a stale black screen. Path-traced modes keep using rt_denoise to populate
+            // `screen_texture`.
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {
+                    texture: &self.color_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                ImageCopyTexture {
+                    texture: &self.screen_texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                Extent3d {
+                    width: self.width,
+                    height: self.height,
+                    depth_or_array_layers: 1,
+                },
+            );
         }
         encoder.copy_texture_to_texture(
             ImageCopyTexture { texture: &self.cloud_radiance_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
