@@ -1,5 +1,5 @@
 use crate::materials::PbrMaterial;
-use crate::math::{Vec3, vec3};
+use crate::math::{vec3, Vec3};
 use crate::scene::object::{GpuAtmosphere, GpuObject, GpuTriangle, GpuVolumetricCloud, Object};
 
 pub struct Scene {
@@ -181,31 +181,37 @@ impl Scene {
             } else {
                 (0, 0)
             };
-            let gpu_object = GpuObject {
-                position: pos,
-                orientation: ori,
-                size: obj_size,
-                scale: obj_scale,
-                material_index: 0,
-                radius,
-                is_glass: material.is_glass as u32,
-                is_cube,
-                is_mesh,
-                triangle_start_idx: if renderable.is_mesh {
-                    renderable.triangle_start_idx
-                } else {
-                    tri_start
-                },
-                triangle_count: if renderable.is_mesh {
-                    renderable.triangle_count
-                } else {
-                    tri_count
-                },
-                tri_bvh_start: 0,
-                tri_bvh_count: 0,
-                ..GpuObject::default()
-            };
-            self.gpu_objects.push(gpu_object);
+            // Keep scene-backed GPU objects in scene object ID order.  The raster
+            // primitive pass uses instance object_index values to index this buffer,
+            // so appending ObjectRef entities in arbitrary ECS entity iteration order
+            // makes only certain scene IDs render correctly.  Renderable ECS entities
+            // without an ObjectRef are still appended after the ordered scene objects.
+            if obj_ref.is_none() {
+                self.gpu_objects.push(GpuObject {
+                    position: pos,
+                    orientation: ori,
+                    size: obj_size,
+                    scale: obj_scale,
+                    material_index: 0,
+                    radius,
+                    is_glass: material.is_glass as u32,
+                    is_cube,
+                    is_mesh,
+                    triangle_start_idx: if renderable.is_mesh {
+                        renderable.triangle_start_idx
+                    } else {
+                        tri_start
+                    },
+                    triangle_count: if renderable.is_mesh {
+                        renderable.triangle_count
+                    } else {
+                        tri_count
+                    },
+                    tri_bvh_start: 0,
+                    tri_bvh_count: 0,
+                    ..GpuObject::default()
+                });
+            }
             if let Some(atmo) = world.get::<crate::components::components::Atmosphere>(entity) {
                 let center = pos;
                 // Atmosphere distances are already authored in world units with
@@ -328,6 +334,14 @@ impl Scene {
                 pbr.specular_f0 = spec_f0;
             }
         }
+
+        let mut ordered_gpu_objects: Vec<GpuObject> =
+            self.objects.iter().map(|o| o.to_gpu()).collect();
+        if !self.gpu_objects.is_empty() {
+            ordered_gpu_objects.extend(self.gpu_objects.drain(..));
+        }
+        self.gpu_objects = ordered_gpu_objects;
+
         materials_changed
     }
 
