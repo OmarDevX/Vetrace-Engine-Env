@@ -306,7 +306,7 @@ mod layout_tests {
     #[test]
     fn gpu_struct_sizes_match_wgsl_layouts() {
         assert_eq!(std::mem::size_of::<ShaderParams>(), 1776);
-        assert_eq!(std::mem::size_of::<GpuObject>(), 136);
+        assert_eq!(std::mem::size_of::<GpuObject>(), 144);
         assert_eq!(std::mem::size_of::<GpuTriangle>(), 128);
         assert_eq!(std::mem::size_of::<GpuMaterial>(), 96);
         assert_eq!(std::mem::size_of::<GpuCustomMaterial>(), 144);

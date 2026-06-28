@@ -22,6 +22,8 @@ struct Object {
     gi_flags: u32,
     _gi_pad0: u32,
     _gi_pad1: u32,
+    _struct_pad0: u32,
+    _struct_pad1: u32,
 };
 
 // Must match Rust: vetrace_engine/src/rendering/wgpu_renderer/types.rs::ShaderParams

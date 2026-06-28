@@ -34,6 +34,10 @@ pub struct GpuObject {
     pub gi_flags: u32,
     pub _gi_pad0: u32,
     pub _gi_pad1: u32,
+    /// Explicit tail padding so the Rust array stride matches WGSL storage-buffer
+    /// struct layout, which rounds this 16-byte-aligned struct up to 144 bytes.
+    pub _struct_pad0: u32,
+    pub _struct_pad1: u32,
 }
 impl Default for GpuObject {
     fn default() -> Self {
@@ -62,6 +66,8 @@ impl Default for GpuObject {
             gi_flags: 0,
             _gi_pad0: 0,
             _gi_pad1: 0,
+            _struct_pad0: 0,
+            _struct_pad1: 0,
             orientation: [0.0, 0.0, 0.0, 1.0],
         }
     }
@@ -320,11 +326,7 @@ impl Object {
         }
     }
     pub fn base_color_factor(&self) -> [f32; 4] {
-        let max_channel = self
-            .color
-            .iter()
-            .copied()
-            .fold(0.0_f32, f32::max);
+        let max_channel = self.color.iter().copied().fold(0.0_f32, f32::max);
         let scale = if max_channel > 1.0 { 1.0 / 255.0 } else { 1.0 };
         [
             (self.color[0] * scale).clamp(0.0, 1.0),
@@ -370,6 +372,8 @@ impl Object {
                 },
             _gi_pad0: 0,
             _gi_pad1: 0,
+            _struct_pad0: 0,
+            _struct_pad1: 0,
             orientation: self.orientation,
         }
     }
