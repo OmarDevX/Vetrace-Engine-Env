@@ -1318,6 +1318,16 @@ impl WgpuRenderer {
                         ty: BindingType::Sampler(SamplerBindingType::Comparison),
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 43,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -2415,6 +2425,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 42,
                     resource: BindingResource::Sampler(&raster_shadow_sampler),
+                },
+                BindGroupEntry {
+                    binding: 43,
+                    resource: BindingResource::TextureView(&gi_buffer_view),
                 },
             ],
         });
@@ -4496,6 +4510,10 @@ impl WgpuRenderer {
                     binding: 42,
                     resource: BindingResource::Sampler(&self.raster_shadow_sampler),
                 },
+                BindGroupEntry {
+                    binding: 43,
+                    resource: BindingResource::TextureView(&self.gi_buffer_view),
+                },
             ],
         });
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
@@ -5216,6 +5234,10 @@ impl WgpuRenderer {
                     binding: 42,
                     resource: BindingResource::Sampler(&self.raster_shadow_sampler),
                 },
+                BindGroupEntry {
+                    binding: 43,
+                    resource: BindingResource::TextureView(&self.gi_buffer_view),
+                },
             ],
         });
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
@@ -5513,6 +5535,13 @@ impl WgpuRenderer {
                 effective_cloud_count = 0;
             }
             crate::rendering::renderer::RendererProfile::Low => {
+                effective_gi_quality = effective_gi_quality.min(2);
+                if matches!(
+                    effective_gi_mode,
+                    GI_MODE_RTGI_ONE_BOUNCE | GI_MODE_PATH_TRACED_PREVIEW
+                ) {
+                    effective_gi_mode = GI_MODE_LIGHT_PROBES;
+                }
                 effective_max_bounces = effective_max_bounces.min(1);
                 effective_light_samples = effective_light_samples.min(1);
                 effective_dir_shadow_samples = effective_dir_shadow_samples.min(1);
@@ -5532,8 +5561,43 @@ impl WgpuRenderer {
             _ => {}
         }
 
-        let wants_cinematic_pipeline =
-            effective_renderer_mode.uses_path_traced_primary_visibility() && !self.safe_shader_mode;
+        // Make GI routing explicit and Unreal-like:
+        // - RasterGame uses baked lightmaps/probes for baseline indirect lighting, or SDFGI
+        //   when scalable dynamic GI is requested.
+        // - HybridEffects may add exactly one RTGI bounce, otherwise it follows the same
+        //   baked/probe/SDFGI contract as raster.
+        // - Path-traced GI is reserved for path-traced primary visibility modes.
+        let uses_path_traced_primary = effective_renderer_mode.uses_path_traced_primary_visibility();
+        let uses_hybrid_effects = effective_renderer_mode.uses_decomposed_rt_effects();
+        let mut dispatch_sdfgi = false;
+        let mut dispatch_hybrid_rtgi = false;
+        if effective_gi_quality == crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF {
+            effective_gi_mode = GI_MODE_OFF;
+        } else if uses_path_traced_primary {
+            effective_gi_mode = GI_MODE_PATH_TRACED_PREVIEW;
+        } else {
+            match effective_gi_mode {
+                GI_MODE_OFF | GI_MODE_BAKED_LIGHTMAP | GI_MODE_LIGHT_PROBES => {}
+                GI_MODE_SDFGI => {
+                    dispatch_sdfgi = true;
+                }
+                GI_MODE_RTGI_ONE_BOUNCE if uses_hybrid_effects => {
+                    dispatch_hybrid_rtgi = true;
+                }
+                GI_MODE_RTGI_ONE_BOUNCE => {
+                    effective_gi_mode = GI_MODE_LIGHT_PROBES;
+                }
+                GI_MODE_PATH_TRACED_PREVIEW => {
+                    effective_gi_mode = GI_MODE_SDFGI;
+                    dispatch_sdfgi = true;
+                }
+                _ => {
+                    effective_gi_mode = GI_MODE_LIGHT_PROBES;
+                }
+            }
+        }
+
+        let wants_cinematic_pipeline = uses_path_traced_primary && !self.safe_shader_mode;
         let cinematic_pipeline_ready = if wants_cinematic_pipeline {
             if self.active_compute_pipeline_kind != MainComputePipelineKind::CinematicPathTrace {
                 render_log("Renderer mode changed to CinematicPathTrace/PathTracePreview");
@@ -6240,10 +6304,7 @@ impl WgpuRenderer {
                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
             }
         }
-        if !self.is_2d
-            && effective_gi_quality != crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF
-            && effective_gi_mode == crate::rendering::wgpu_renderer::types::GI_MODE_SDFGI
-            && self.gi_cache.dirty
+        if !self.is_2d && dispatch_sdfgi && self.gi_cache.dirty
         {
             {
                 let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -6370,7 +6431,7 @@ impl WgpuRenderer {
                 dir_light_color: params.dir_light_color,
                 enabled: 1,
                 mode: 1,
-                _pad: [0; 2],
+                _pad: [effective_gi_mode, 0],
             };
             self.queue.write_buffer(
                 &self.hybrid_rt_params_buffer,
@@ -6379,7 +6440,7 @@ impl WgpuRenderer {
             );
             let comp_params = HybridCompositeParams {
                 temporal_blend: 0.10,
-                rt_gi_enabled: 1,
+                rt_gi_enabled: if dispatch_hybrid_rtgi { 1 } else { 0 },
                 rt_reflections_enabled: params.raytraced_reflections_enabled,
                 rt_shadows_enabled: params.raytraced_shadows_enabled,
                 rt_transparency_enabled: 1,
@@ -6411,10 +6472,12 @@ impl WgpuRenderer {
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
-            if let Some(pipeline) = &self.hybrid_rt_gi_pipeline {
-                cpass.set_pipeline(pipeline);
-                cpass.set_bind_group(0, &self.hybrid_rt_gi_bind_group, &[]);
-                cpass.dispatch_workgroups(x, y, 1);
+            if dispatch_hybrid_rtgi {
+                if let Some(pipeline) = &self.hybrid_rt_gi_pipeline {
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.hybrid_rt_gi_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                }
             }
             if let Some(pipeline) = &self.hybrid_rt_transparency_pipeline {
                 cpass.set_pipeline(pipeline);
