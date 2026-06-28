@@ -54,3 +54,16 @@ This file tracks AI-assisted changes.
   - `python3 scripts/validate_wgsl_syntax.py`
   - `cargo check --workspace`
 - Notes: Path-traced modes are excluded from this copy because `rt_denoise` already writes the screen texture for those modes.
+
+### 2026-06-28 - Allow hybrid color texture presentation copy
+- Summary: Added `COPY_SRC` usage to the WGPU `color_tex` so the non-pathtraced hybrid/bootstrap color output can be copied into `screen_tex` before final blit without WGPU validation failure.
+- Files changed:
+  - `vetrace_engine/src/rendering/wgpu_renderer/setup.rs`
+  - `CHANGELOG_AI.md`
+- Existing pattern reused: Matched the existing screen texture copy-usage pattern while keeping the final blit path unchanged.
+- Duplicate code avoided: Did not add a second presentation shader or duplicate postprocess bind groups.
+- Tests/checks:
+  - `python3 scripts/validate_wgsl_layouts.py`
+  - `python3 scripts/validate_wgsl_syntax.py`
+  - `cargo check --workspace`
+- Notes: This fixes the reported `copy_texture_to_texture` validation error for `color_tex` missing `COPY_SRC`.
