@@ -13,8 +13,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::time::Instant;
-use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
+use wgpu::SurfaceTargetUnsafe;
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
@@ -126,6 +126,10 @@ pub struct WgpuRenderer {
     cloud_shadow_view: TextureView,
     cloud_shadow_history_texture: Texture,
     cloud_shadow_history_view: TextureView,
+    raster_shadow_texture: Texture,
+    raster_shadow_view: TextureView,
+    raster_shadow_sampler: Sampler,
+    raster_shadow_view_proj_buffer: Buffer,
     material_textures: Vec<crate::gpu::TextureHandle>,
     gi_params_buffer: Buffer,
     postfx_buffer: Buffer,
@@ -189,10 +193,13 @@ pub struct WgpuRenderer {
     sprite_vertex_buffer: Buffer,
     sprite_view_proj_buffer: Buffer,
     pbr_bind_group_layout: BindGroupLayout,
+    pbr_shadow_bind_group_layout: BindGroupLayout,
     pbr_pipeline: RenderPipeline,
     primitive_gbuffer_bind_group_layout: BindGroupLayout,
     primitive_gbuffer_bind_group: BindGroup,
     primitive_gbuffer_pipeline: RenderPipeline,
+    primitive_shadow_pipeline: RenderPipeline,
+    pbr_shadow_pipeline: RenderPipeline,
     primitive_cube_vertex_buffer: Buffer,
     primitive_cube_index_buffer: Buffer,
     primitive_cube_index_count: u32,

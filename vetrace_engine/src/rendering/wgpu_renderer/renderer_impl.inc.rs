@@ -1,4 +1,3 @@
-
 fn boot_log(stage: &str) {
     eprintln!("[VETRACE BOOT] {}", stage);
     let _ = std::io::Write::flush(&mut std::io::stderr());
@@ -260,7 +259,11 @@ fn create_cloud_temporal_texture(
 ) -> (Texture, TextureView) {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some(label),
-        size: Extent3d { width, height, depth_or_array_layers: 1 },
+        size: Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
@@ -494,6 +497,40 @@ impl WgpuRenderer {
             linear_sampler,
         ) = create_textures(&device, config.format, render_width, render_height);
         boot_log("WgpuRenderer::new: after create_textures");
+        const RASTER_SHADOW_MAP_SIZE: u32 = 2048;
+        let raster_shadow_texture = device.create_texture(&TextureDescriptor {
+            label: Some("raster_shadow_map"),
+            size: Extent3d {
+                width: RASTER_SHADOW_MAP_SIZE,
+                height: RASTER_SHADOW_MAP_SIZE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Depth32Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let raster_shadow_view =
+            raster_shadow_texture.create_view(&TextureViewDescriptor::default());
+        let raster_shadow_sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("raster_shadow_sampler"),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Nearest,
+            compare: Some(CompareFunction::LessEqual),
+            ..Default::default()
+        });
+        let raster_shadow_view_proj_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("raster_shadow_view_proj"),
+            size: 64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let (
             transmittance_lut_texture,
             transmittance_lut_view,
@@ -524,12 +561,51 @@ impl WgpuRenderer {
             view_formats: &[],
         });
         let blur_src_view = blur_src_texture.create_view(&TextureViewDescriptor::default());
-        let (cloud_radiance_texture, cloud_radiance_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::Rgba16Float, "cloud_radiance_current");
-        let (cloud_radiance_history_texture, cloud_radiance_history_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::Rgba16Float, "cloud_radiance_history");
-        let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_current");
-        let (cloud_transmittance_history_texture, cloud_transmittance_history_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_history");
-        let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_optical_depth");
-        let (cloud_shadow_history_texture, cloud_shadow_history_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_history");
+        let (cloud_radiance_texture, cloud_radiance_view) = create_cloud_temporal_texture(
+            &device,
+            render_width,
+            render_height,
+            TextureFormat::Rgba16Float,
+            "cloud_radiance_current",
+        );
+        let (cloud_radiance_history_texture, cloud_radiance_history_view) =
+            create_cloud_temporal_texture(
+                &device,
+                render_width,
+                render_height,
+                TextureFormat::Rgba16Float,
+                "cloud_radiance_history",
+            );
+        let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(
+            &device,
+            render_width,
+            render_height,
+            TextureFormat::R16Float,
+            "cloud_transmittance_current",
+        );
+        let (cloud_transmittance_history_texture, cloud_transmittance_history_view) =
+            create_cloud_temporal_texture(
+                &device,
+                render_width,
+                render_height,
+                TextureFormat::R16Float,
+                "cloud_transmittance_history",
+            );
+        let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(
+            &device,
+            512,
+            512,
+            TextureFormat::R16Float,
+            "cloud_directional_shadow_optical_depth",
+        );
+        let (cloud_shadow_history_texture, cloud_shadow_history_view) =
+            create_cloud_temporal_texture(
+                &device,
+                512,
+                512,
+                TextureFormat::R16Float,
+                "cloud_directional_shadow_history",
+            );
         // Create placeholder buffers large enough to satisfy the minimum
         // binding size required by the shaders. Even with an empty scene the
         // renderer expects space for at least 64 objects and materials.
@@ -633,8 +709,20 @@ impl WgpuRenderer {
             .expect("blue noise texture"),
         ));
 
-        let (cloud_shape_noise_texture, cloud_shape_noise_view) = create_cloud_noise_texture_3d(device.as_ref(), queue.as_ref(), 32, 0x1234_abcd, "cloud_shape_noise");
-        let (cloud_detail_noise_texture, cloud_detail_noise_view) = create_cloud_noise_texture_3d(device.as_ref(), queue.as_ref(), 32, 0x9675_31ef, "cloud_detail_noise");
+        let (cloud_shape_noise_texture, cloud_shape_noise_view) = create_cloud_noise_texture_3d(
+            device.as_ref(),
+            queue.as_ref(),
+            32,
+            0x1234_abcd,
+            "cloud_shape_noise",
+        );
+        let (cloud_detail_noise_texture, cloud_detail_noise_view) = create_cloud_noise_texture_3d(
+            device.as_ref(),
+            queue.as_ref(),
+            32,
+            0x9675_31ef,
+            "cloud_detail_noise",
+        );
         let cloud_weather_rgba = generated_weather_rgba8(128);
         let cloud_weather_extent = Extent3d {
             width: 128,
@@ -666,13 +754,53 @@ impl WgpuRenderer {
             },
             cloud_weather_extent,
         );
-        let cloud_weather_view = cloud_weather_texture.create_view(&TextureViewDescriptor::default());
-        let (cloud_radiance_texture, cloud_radiance_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::Rgba16Float, "cloud_radiance_current");
-        let (cloud_radiance_history_texture, cloud_radiance_history_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::Rgba16Float, "cloud_radiance_history");
-        let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_current");
-        let (cloud_transmittance_history_texture, cloud_transmittance_history_view) = create_cloud_temporal_texture(&device, render_width, render_height, TextureFormat::R16Float, "cloud_transmittance_history");
-        let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_optical_depth");
-        let (cloud_shadow_history_texture, cloud_shadow_history_view) = create_cloud_temporal_texture(&device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_history");
+        let cloud_weather_view =
+            cloud_weather_texture.create_view(&TextureViewDescriptor::default());
+        let (cloud_radiance_texture, cloud_radiance_view) = create_cloud_temporal_texture(
+            &device,
+            render_width,
+            render_height,
+            TextureFormat::Rgba16Float,
+            "cloud_radiance_current",
+        );
+        let (cloud_radiance_history_texture, cloud_radiance_history_view) =
+            create_cloud_temporal_texture(
+                &device,
+                render_width,
+                render_height,
+                TextureFormat::Rgba16Float,
+                "cloud_radiance_history",
+            );
+        let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(
+            &device,
+            render_width,
+            render_height,
+            TextureFormat::R16Float,
+            "cloud_transmittance_current",
+        );
+        let (cloud_transmittance_history_texture, cloud_transmittance_history_view) =
+            create_cloud_temporal_texture(
+                &device,
+                render_width,
+                render_height,
+                TextureFormat::R16Float,
+                "cloud_transmittance_history",
+            );
+        let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(
+            &device,
+            512,
+            512,
+            TextureFormat::R16Float,
+            "cloud_directional_shadow_optical_depth",
+        );
+        let (cloud_shadow_history_texture, cloud_shadow_history_view) =
+            create_cloud_temporal_texture(
+                &device,
+                512,
+                512,
+                TextureFormat::R16Float,
+                "cloud_directional_shadow_history",
+            );
 
         let triangle_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("triangles"),
@@ -717,7 +845,9 @@ impl WgpuRenderer {
         let safe_shader_mode = std::env::var("VETRACE_SAFE_SHADER").ok().as_deref() == Some("1");
         boot_log("WgpuRenderer::new: before bootstrap compute shader module");
         if safe_shader_mode {
-            boot_log("WgpuRenderer::new: VETRACE_SAFE_SHADER=1, forcing bootstrap diagnostic shader");
+            boot_log(
+                "WgpuRenderer::new: VETRACE_SAFE_SHADER=1, forcing bootstrap diagnostic shader",
+            );
         }
         let mut shader_compiler = RaytraceShaderCompiler {
             device: device.clone(),
@@ -1059,13 +1189,102 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
-                    BindGroupLayoutEntry { binding: 33, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::Rgba16Float, view_dimension: TextureViewDimension::D2 }, count: None },
-                    BindGroupLayoutEntry { binding: 34, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: None },
-                    BindGroupLayoutEntry { binding: 35, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::R16Float, view_dimension: TextureViewDimension::D2 }, count: None },
-                    BindGroupLayoutEntry { binding: 36, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: None },
-                    BindGroupLayoutEntry { binding: 37, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::R16Float, view_dimension: TextureViewDimension::D2 }, count: None },
-                    BindGroupLayoutEntry { binding: 38, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: None },
-                    BindGroupLayoutEntry { binding: 39, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: None },
+                    BindGroupLayoutEntry {
+                        binding: 33,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 34,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 35,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::R16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 36,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 37,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::R16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 38,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 39,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 40,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 41,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Depth,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 42,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Sampler(SamplerBindingType::Comparison),
+                        count: None,
+                    },
                 ],
             });
 
@@ -1083,7 +1302,9 @@ impl WgpuRenderer {
             entry_point: "main",
             compilation_options: Default::default(),
         });
-        boot_log("WgpuRenderer::new: after bootstrap compute_pipeline; before bootstrap cloud_shadow_pipeline");
+        boot_log(
+            "WgpuRenderer::new: after bootstrap compute_pipeline; before bootstrap cloud_shadow_pipeline",
+        );
         let cloud_shadow_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some("bootstrap_cloud_directional_shadow_pipeline"),
             layout: Some(&compute_pipeline_layout),
@@ -1118,7 +1339,9 @@ impl WgpuRenderer {
         };
         let hybrid_compose_pipeline_error = None;
 
-        boot_log("WgpuRenderer::new: after bootstrap cloud_shadow_pipeline; before atmosphere shader modules");
+        boot_log(
+            "WgpuRenderer::new: after bootstrap cloud_shadow_pipeline; before atmosphere shader modules",
+        );
         let transmittance_lut_shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("transmittance_lut"),
             source: ShaderSource::Wgsl(
@@ -1231,13 +1454,14 @@ impl WgpuRenderer {
                 push_constant_ranges: &[],
             });
         boot_log("WgpuRenderer::new: before atmosphere LUT pipelines");
-        let transmittance_lut_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("transmittance_lut_pipeline"),
-            layout: Some(&atmosphere_lut_pipeline_layout),
-            module: &transmittance_lut_shader,
-            entry_point: "main",
-            compilation_options: Default::default(),
-        });
+        let transmittance_lut_pipeline =
+            device.create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("transmittance_lut_pipeline"),
+                layout: Some(&atmosphere_lut_pipeline_layout),
+                module: &transmittance_lut_shader,
+                entry_point: "main",
+                compilation_options: Default::default(),
+            });
         let sky_view_lut_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: Some("sky_view_lut_pipeline"),
             layout: Some(&atmosphere_lut_pipeline_layout),
@@ -1265,12 +1489,30 @@ impl WgpuRenderer {
             label: Some("transmittance_lut_bg"),
             layout: &atmosphere_lut_bind_group_layout,
             entries: &[
-                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&transmittance_lut_storage_view) },
-                BindGroupEntry { binding: 1, resource: params_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&sky_view_lut_view) },
-                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&blue_noise_texture.0.view) },
-                BindGroupEntry { binding: 4, resource: BindingResource::Sampler(&blue_noise_texture.0.sampler) },
-                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&sky_view_lut_view) },
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&transmittance_lut_storage_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&sky_view_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&sky_view_lut_view),
+                },
             ],
         });
         let sky_view_lut_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -1744,17 +1986,62 @@ impl WgpuRenderer {
                     binding: 28,
                     resource: BindingResource::Sampler(&blue_noise_texture.0.sampler),
                 },
-                BindGroupEntry { binding: 29, resource: BindingResource::TextureView(&transmittance_lut_view) },
-                BindGroupEntry { binding: 30, resource: BindingResource::TextureView(&cloud_shape_noise_view) },
-                BindGroupEntry { binding: 31, resource: BindingResource::TextureView(&cloud_detail_noise_view) },
-                BindGroupEntry { binding: 32, resource: BindingResource::TextureView(&cloud_weather_view) },
-                BindGroupEntry { binding: 33, resource: BindingResource::TextureView(&cloud_radiance_view) },
-                BindGroupEntry { binding: 34, resource: BindingResource::TextureView(&cloud_radiance_history_view) },
-                BindGroupEntry { binding: 35, resource: BindingResource::TextureView(&cloud_transmittance_view) },
-                BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&cloud_transmittance_history_view) },
-                BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&cloud_shadow_view) },
-                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&cloud_shadow_history_view) },
-                BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&screen_history_view) },
+                BindGroupEntry {
+                    binding: 29,
+                    resource: BindingResource::TextureView(&transmittance_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 30,
+                    resource: BindingResource::TextureView(&cloud_shape_noise_view),
+                },
+                BindGroupEntry {
+                    binding: 31,
+                    resource: BindingResource::TextureView(&cloud_detail_noise_view),
+                },
+                BindGroupEntry {
+                    binding: 32,
+                    resource: BindingResource::TextureView(&cloud_weather_view),
+                },
+                BindGroupEntry {
+                    binding: 33,
+                    resource: BindingResource::TextureView(&cloud_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 34,
+                    resource: BindingResource::TextureView(&cloud_radiance_history_view),
+                },
+                BindGroupEntry {
+                    binding: 35,
+                    resource: BindingResource::TextureView(&cloud_transmittance_view),
+                },
+                BindGroupEntry {
+                    binding: 36,
+                    resource: BindingResource::TextureView(&cloud_transmittance_history_view),
+                },
+                BindGroupEntry {
+                    binding: 37,
+                    resource: BindingResource::TextureView(&cloud_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 38,
+                    resource: BindingResource::TextureView(&cloud_shadow_history_view),
+                },
+                BindGroupEntry {
+                    binding: 39,
+                    resource: BindingResource::TextureView(&screen_history_view),
+                },
+                BindGroupEntry {
+                    binding: 40,
+                    resource: raster_shadow_view_proj_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 41,
+                    resource: BindingResource::TextureView(&raster_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&raster_shadow_sampler),
+                },
             ],
         });
 
@@ -1997,8 +2284,11 @@ impl WgpuRenderer {
             entry_point: "main",
             compilation_options: Default::default(),
         });
-        let sdfgi_mip_bind_groups =
-            Self::create_sdfgi_mip_bind_groups(&device, &gi_sdf_texture, &sdfgi_mip_bind_group_layout);
+        let sdfgi_mip_bind_groups = Self::create_sdfgi_mip_bind_groups(
+            &device,
+            &gi_sdf_texture,
+            &sdfgi_mip_bind_group_layout,
+        );
         let sdfgi_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("sdfgi_bg"),
             layout: &sdfgi_bind_group_layout,
@@ -2610,7 +2900,7 @@ impl WgpuRenderer {
             vertex: VertexState {
                 module: &pbr_shader,
                 entry_point: "vs_main",
-                buffers: &[pbr_vertex_layout],
+                buffers: &[pbr_vertex_layout.clone()],
                 compilation_options: Default::default(),
             },
             fragment: Some(FragmentState {
@@ -2730,7 +3020,10 @@ impl WgpuRenderer {
             vertex: VertexState {
                 module: &primitive_shader,
                 entry_point: "vs_main",
-                buffers: &[primitive_vertex_layout, primitive_instance_layout],
+                buffers: &[
+                    primitive_vertex_layout.clone(),
+                    primitive_instance_layout.clone(),
+                ],
                 compilation_options: Default::default(),
             },
             fragment: Some(FragmentState {
@@ -2771,18 +3064,130 @@ impl WgpuRenderer {
             multisample: MultisampleState::default(),
             multiview: None,
         });
+
+        let shadow_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("raster_shadow_shader"),
+            source: ShaderSource::Wgsl(
+                include_str!("../../../assets/shaders/wgpu/hybrid/raster_shadow.wgsl").into(),
+            ),
+        });
+        let pbr_shadow_shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("pbr_shadow_shader"),
+            source: ShaderSource::Wgsl(
+                include_str!("../../../assets/shaders/wgpu/hybrid/pbr_shadow.wgsl").into(),
+            ),
+        });
+        let primitive_shadow_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("primitive_shadow_pipeline"),
+            layout: Some(&primitive_gbuffer_pipeline_layout),
+            vertex: VertexState {
+                module: &shadow_shader,
+                entry_point: "primitive_vs_main",
+                buffers: &[
+                    primitive_vertex_layout.clone(),
+                    primitive_instance_layout.clone(),
+                ],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: PrimitiveState {
+                cull_mode: Some(Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil: StencilState::default(),
+                bias: DepthBiasState {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: MultisampleState::default(),
+            multiview: None,
+        });
+        let pbr_shadow_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("pbr_shadow_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::VERTEX,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::VERTEX,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::VERTEX,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let pbr_shadow_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("pbr_shadow_pl"),
+            bind_group_layouts: &[&pbr_shadow_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let pbr_shadow_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("pbr_shadow_pipeline"),
+            layout: Some(&pbr_shadow_pipeline_layout),
+            vertex: VertexState {
+                module: &pbr_shadow_shader,
+                entry_point: "pbr_vs_main",
+                buffers: &[pbr_vertex_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: PrimitiveState {
+                cull_mode: Some(Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil: StencilState::default(),
+                bias: DepthBiasState {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: MultisampleState::default(),
+            multiview: None,
+        });
         let (cube_vertices, cube_indices) = primitive_vertices_from_triangles(
             &crate::rendering::resource::generate_cube_triangles([1.0, 1.0, 1.0]),
         );
         let (sphere_vertices, sphere_indices) = primitive_vertices_from_triangles(
             &crate::rendering::resource::generate_sphere_triangles(1.0, 1),
         );
-        let primitive_cube_vertex_buffer =
-            device.create_buffer_init(&util::BufferInitDescriptor {
-                label: Some("primitive_cube_vertices"),
-                contents: bytemuck::cast_slice(&cube_vertices),
-                usage: BufferUsages::VERTEX,
-            });
+        let primitive_cube_vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("primitive_cube_vertices"),
+            contents: bytemuck::cast_slice(&cube_vertices),
+            usage: BufferUsages::VERTEX,
+        });
         let primitive_cube_index_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("primitive_cube_indices"),
             contents: bytemuck::cast_slice(&cube_indices),
@@ -2941,6 +3346,10 @@ impl WgpuRenderer {
             cloud_shadow_view,
             cloud_shadow_history_texture,
             cloud_shadow_history_view,
+            raster_shadow_texture,
+            raster_shadow_view,
+            raster_shadow_sampler,
+            raster_shadow_view_proj_buffer,
             material_textures,
             gi_params_buffer,
             sdfgi_bind_group_layout,
@@ -2999,10 +3408,13 @@ impl WgpuRenderer {
             sprite_vertex_buffer,
             sprite_view_proj_buffer,
             pbr_bind_group_layout,
+            pbr_shadow_bind_group_layout,
             pbr_pipeline,
             primitive_gbuffer_bind_group_layout,
             primitive_gbuffer_bind_group,
             primitive_gbuffer_pipeline,
+            primitive_shadow_pipeline,
+            pbr_shadow_pipeline,
             primitive_cube_vertex_buffer,
             primitive_cube_index_buffer,
             primitive_cube_index_count: cube_indices.len() as u32,
@@ -3124,12 +3536,51 @@ impl WgpuRenderer {
             view_formats: &[],
         });
         let blur_src_view = blur_src_texture.create_view(&TextureViewDescriptor::default());
-        let (cloud_radiance_texture, cloud_radiance_view) = create_cloud_temporal_texture(&self.device, self.width, self.height, TextureFormat::Rgba16Float, "cloud_radiance_current");
-        let (cloud_radiance_history_texture, cloud_radiance_history_view) = create_cloud_temporal_texture(&self.device, self.width, self.height, TextureFormat::Rgba16Float, "cloud_radiance_history");
-        let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(&self.device, self.width, self.height, TextureFormat::R16Float, "cloud_transmittance_current");
-        let (cloud_transmittance_history_texture, cloud_transmittance_history_view) = create_cloud_temporal_texture(&self.device, self.width, self.height, TextureFormat::R16Float, "cloud_transmittance_history");
-        let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(&self.device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_optical_depth");
-        let (cloud_shadow_history_texture, cloud_shadow_history_view) = create_cloud_temporal_texture(&self.device, 512, 512, TextureFormat::R16Float, "cloud_directional_shadow_history");
+        let (cloud_radiance_texture, cloud_radiance_view) = create_cloud_temporal_texture(
+            &self.device,
+            self.width,
+            self.height,
+            TextureFormat::Rgba16Float,
+            "cloud_radiance_current",
+        );
+        let (cloud_radiance_history_texture, cloud_radiance_history_view) =
+            create_cloud_temporal_texture(
+                &self.device,
+                self.width,
+                self.height,
+                TextureFormat::Rgba16Float,
+                "cloud_radiance_history",
+            );
+        let (cloud_transmittance_texture, cloud_transmittance_view) = create_cloud_temporal_texture(
+            &self.device,
+            self.width,
+            self.height,
+            TextureFormat::R16Float,
+            "cloud_transmittance_current",
+        );
+        let (cloud_transmittance_history_texture, cloud_transmittance_history_view) =
+            create_cloud_temporal_texture(
+                &self.device,
+                self.width,
+                self.height,
+                TextureFormat::R16Float,
+                "cloud_transmittance_history",
+            );
+        let (cloud_shadow_texture, cloud_shadow_view) = create_cloud_temporal_texture(
+            &self.device,
+            512,
+            512,
+            TextureFormat::R16Float,
+            "cloud_directional_shadow_optical_depth",
+        );
+        let (cloud_shadow_history_texture, cloud_shadow_history_view) =
+            create_cloud_temporal_texture(
+                &self.device,
+                512,
+                512,
+                TextureFormat::R16Float,
+                "cloud_directional_shadow_history",
+            );
         self.screen_texture = st;
         self.screen_view = screen_view;
         self.screen_history_texture = screen_history_texture;
@@ -3211,12 +3662,30 @@ impl WgpuRenderer {
             label: Some("transmittance_lut_bg"),
             layout: &self.atmosphere_lut_bind_group_layout,
             entries: &[
-                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.transmittance_lut_storage_view) },
-                BindGroupEntry { binding: 1, resource: self.params_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.sky_view_lut_view) },
-                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.blue_noise_texture.0.view) },
-                BindGroupEntry { binding: 4, resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler) },
-                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.sky_view_lut_view) },
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.transmittance_lut_storage_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.sky_view_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.blue_noise_texture.0.view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.sky_view_lut_view),
+                },
             ],
         });
         self.sky_view_lut_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -3444,17 +3913,62 @@ impl WgpuRenderer {
                     binding: 28,
                     resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
                 },
-                BindGroupEntry { binding: 29, resource: BindingResource::TextureView(&self.transmittance_lut_view) },
-                BindGroupEntry { binding: 30, resource: BindingResource::TextureView(&self.cloud_shape_noise_view) },
-                BindGroupEntry { binding: 31, resource: BindingResource::TextureView(&self.cloud_detail_noise_view) },
-                BindGroupEntry { binding: 32, resource: BindingResource::TextureView(&self.cloud_weather_view) },
-                BindGroupEntry { binding: 33, resource: BindingResource::TextureView(&self.cloud_radiance_view) },
-                BindGroupEntry { binding: 34, resource: BindingResource::TextureView(&self.cloud_radiance_history_view) },
-                BindGroupEntry { binding: 35, resource: BindingResource::TextureView(&self.cloud_transmittance_view) },
-                BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&self.cloud_transmittance_history_view) },
-                BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
-                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_history_view) },
-                BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&self.screen_history_view) },
+                BindGroupEntry {
+                    binding: 29,
+                    resource: BindingResource::TextureView(&self.transmittance_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 30,
+                    resource: BindingResource::TextureView(&self.cloud_shape_noise_view),
+                },
+                BindGroupEntry {
+                    binding: 31,
+                    resource: BindingResource::TextureView(&self.cloud_detail_noise_view),
+                },
+                BindGroupEntry {
+                    binding: 32,
+                    resource: BindingResource::TextureView(&self.cloud_weather_view),
+                },
+                BindGroupEntry {
+                    binding: 33,
+                    resource: BindingResource::TextureView(&self.cloud_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 34,
+                    resource: BindingResource::TextureView(&self.cloud_radiance_history_view),
+                },
+                BindGroupEntry {
+                    binding: 35,
+                    resource: BindingResource::TextureView(&self.cloud_transmittance_view),
+                },
+                BindGroupEntry {
+                    binding: 36,
+                    resource: BindingResource::TextureView(&self.cloud_transmittance_history_view),
+                },
+                BindGroupEntry {
+                    binding: 37,
+                    resource: BindingResource::TextureView(&self.cloud_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 38,
+                    resource: BindingResource::TextureView(&self.cloud_shadow_history_view),
+                },
+                BindGroupEntry {
+                    binding: 39,
+                    resource: BindingResource::TextureView(&self.screen_history_view),
+                },
+                BindGroupEntry {
+                    binding: 40,
+                    resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 41,
+                    resource: BindingResource::TextureView(&self.raster_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&self.raster_shadow_sampler),
+                },
             ],
         });
         self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -3837,8 +4351,16 @@ impl WgpuRenderer {
             usage: BufferUsages::STORAGE,
         });
         const MAX_IMPORTANT_LIGHTS: usize = 256;
-        let camera_pos = Vec3::new(self.prev_cam_pos[0], self.prev_cam_pos[1], self.prev_cam_pos[2]);
-        let camera_front = Vec3::new(self.prev_cam_front[0], self.prev_cam_front[1], self.prev_cam_front[2]);
+        let camera_pos = Vec3::new(
+            self.prev_cam_pos[0],
+            self.prev_cam_pos[1],
+            self.prev_cam_pos[2],
+        );
+        let camera_front = Vec3::new(
+            self.prev_cam_front[0],
+            self.prev_cam_front[1],
+            self.prev_cam_front[2],
+        );
         let mut lights: Vec<(u32, f32)> = Vec::new();
         for (i, obj) in objects.iter().enumerate() {
             let mi = obj.material_index as usize;
@@ -3854,7 +4376,8 @@ impl WgpuRenderer {
                     .copied()
                     .fold(0.0_f32, f32::max)
                     * mat.emissive_strength;
-                let radius = (obj.radius * obj.scale.iter().copied().fold(0.0_f32, f32::max)).max(0.25);
+                let radius =
+                    (obj.radius * obj.scale.iter().copied().fold(0.0_f32, f32::max)).max(0.25);
                 let distance_score = 1.0 / dist2;
                 let screen_influence = (radius / dist2.sqrt()).clamp(0.0, 1.0);
                 let view_relevance = if camera_front.length_squared() > 0.0 {
@@ -3863,9 +4386,13 @@ impl WgpuRenderer {
                 } else {
                     1.0
                 };
-                let visibility_relevance = obj
-                    .shadow_importance
-                    .max(if obj.casts_raytraced_shadow != 0 { 1.0 } else { 0.35 });
+                let visibility_relevance =
+                    obj.shadow_importance
+                        .max(if obj.casts_raytraced_shadow != 0 {
+                            1.0
+                        } else {
+                            0.35
+                        });
                 let score = color_intensity
                     * (0.25 + distance_score * 64.0)
                     * (0.25 + screen_influence)
@@ -4031,17 +4558,62 @@ impl WgpuRenderer {
                     binding: 28,
                     resource: BindingResource::Sampler(&self.blue_noise_texture.0.sampler),
                 },
-                BindGroupEntry { binding: 29, resource: BindingResource::TextureView(&self.transmittance_lut_view) },
-                BindGroupEntry { binding: 30, resource: BindingResource::TextureView(&self.cloud_shape_noise_view) },
-                BindGroupEntry { binding: 31, resource: BindingResource::TextureView(&self.cloud_detail_noise_view) },
-                BindGroupEntry { binding: 32, resource: BindingResource::TextureView(&self.cloud_weather_view) },
-                BindGroupEntry { binding: 33, resource: BindingResource::TextureView(&self.cloud_radiance_view) },
-                BindGroupEntry { binding: 34, resource: BindingResource::TextureView(&self.cloud_radiance_history_view) },
-                BindGroupEntry { binding: 35, resource: BindingResource::TextureView(&self.cloud_transmittance_view) },
-                BindGroupEntry { binding: 36, resource: BindingResource::TextureView(&self.cloud_transmittance_history_view) },
-                BindGroupEntry { binding: 37, resource: BindingResource::TextureView(&self.cloud_shadow_view) },
-                BindGroupEntry { binding: 38, resource: BindingResource::TextureView(&self.cloud_shadow_history_view) },
-                BindGroupEntry { binding: 39, resource: BindingResource::TextureView(&self.screen_history_view) },
+                BindGroupEntry {
+                    binding: 29,
+                    resource: BindingResource::TextureView(&self.transmittance_lut_view),
+                },
+                BindGroupEntry {
+                    binding: 30,
+                    resource: BindingResource::TextureView(&self.cloud_shape_noise_view),
+                },
+                BindGroupEntry {
+                    binding: 31,
+                    resource: BindingResource::TextureView(&self.cloud_detail_noise_view),
+                },
+                BindGroupEntry {
+                    binding: 32,
+                    resource: BindingResource::TextureView(&self.cloud_weather_view),
+                },
+                BindGroupEntry {
+                    binding: 33,
+                    resource: BindingResource::TextureView(&self.cloud_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 34,
+                    resource: BindingResource::TextureView(&self.cloud_radiance_history_view),
+                },
+                BindGroupEntry {
+                    binding: 35,
+                    resource: BindingResource::TextureView(&self.cloud_transmittance_view),
+                },
+                BindGroupEntry {
+                    binding: 36,
+                    resource: BindingResource::TextureView(&self.cloud_transmittance_history_view),
+                },
+                BindGroupEntry {
+                    binding: 37,
+                    resource: BindingResource::TextureView(&self.cloud_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 38,
+                    resource: BindingResource::TextureView(&self.cloud_shadow_history_view),
+                },
+                BindGroupEntry {
+                    binding: 39,
+                    resource: BindingResource::TextureView(&self.screen_history_view),
+                },
+                BindGroupEntry {
+                    binding: 40,
+                    resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 41,
+                    resource: BindingResource::TextureView(&self.raster_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&self.raster_shadow_sampler),
+                },
             ],
         });
         self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -4132,7 +4704,9 @@ impl WgpuRenderer {
         if self.safe_shader_mode {
             return false;
         }
-        if self.cinematic_compute_pipeline.is_some() && self.cinematic_cloud_shadow_pipeline.is_some() {
+        if self.cinematic_compute_pipeline.is_some()
+            && self.cinematic_cloud_shadow_pipeline.is_some()
+        {
             self.cinematic_pipeline_status = LazyPipelineStatus::Compiled;
             return true;
         }
@@ -4157,26 +4731,32 @@ impl WgpuRenderer {
             }
         };
 
-        let compute_pipeline_layout = self.device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("cinematic_compute_pl"),
-            bind_group_layouts: &[&self.compute_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let compute_pipeline_layout =
+            self.device
+                .create_pipeline_layout(&PipelineLayoutDescriptor {
+                    label: Some("cinematic_compute_pl"),
+                    bind_group_layouts: &[&self.compute_bind_group_layout],
+                    push_constant_ranges: &[],
+                });
 
-        let compute_pipeline = self.device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("cinematic_pathtrace_compute_pipeline"),
-            layout: Some(&compute_pipeline_layout),
-            module: &compute_module,
-            entry_point: "main",
-            compilation_options: Default::default(),
-        });
-        let cloud_shadow_pipeline = self.device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("cinematic_cloud_directional_shadow_pipeline"),
-            layout: Some(&compute_pipeline_layout),
-            module: &compute_module,
-            entry_point: "cloud_shadow_main",
-            compilation_options: Default::default(),
-        });
+        let compute_pipeline = self
+            .device
+            .create_compute_pipeline(&ComputePipelineDescriptor {
+                label: Some("cinematic_pathtrace_compute_pipeline"),
+                layout: Some(&compute_pipeline_layout),
+                module: &compute_module,
+                entry_point: "main",
+                compilation_options: Default::default(),
+            });
+        let cloud_shadow_pipeline =
+            self.device
+                .create_compute_pipeline(&ComputePipelineDescriptor {
+                    label: Some("cinematic_cloud_directional_shadow_pipeline"),
+                    layout: Some(&compute_pipeline_layout),
+                    module: &compute_module,
+                    entry_point: "cloud_shadow_main",
+                    compilation_options: Default::default(),
+                });
 
         self.cinematic_compute_pipeline = Some(compute_pipeline);
         self.cinematic_cloud_shadow_pipeline = Some(cloud_shadow_pipeline);
@@ -4231,7 +4811,8 @@ impl WgpuRenderer {
         let mut effective_cloud_count = params
             .clouds
             .len()
-            .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS) as u32;
+            .min(crate::scene::object::MAX_VOLUMETRIC_CLOUDS)
+            as u32;
         let mut effective_renderer_mode = params.renderer_mode;
         match params.profile {
             crate::rendering::renderer::RendererProfile::Indoor60FPS => {
@@ -4266,7 +4847,8 @@ impl WgpuRenderer {
                 };
             }
             crate::rendering::renderer::RendererProfile::Cinematic => {
-                effective_renderer_mode = crate::rendering::renderer::RendererMode::CinematicPathTrace;
+                effective_renderer_mode =
+                    crate::rendering::renderer::RendererMode::CinematicPathTrace;
                 // Cinematic can opt into expensive per-hit volumetric cloud shadowing.
                 effective_cloud_shadow_mode = 1;
             }
@@ -4320,7 +4902,13 @@ impl WgpuRenderer {
             MainComputePipelineKind::Bootstrap
         };
 
-        let adaptive_sample_cap = if self.adaptive_quality < 0.67 { 1 } else if self.adaptive_quality < 0.9 { 2 } else { 8 };
+        let adaptive_sample_cap = if self.adaptive_quality < 0.67 {
+            1
+        } else if self.adaptive_quality < 0.9 {
+            2
+        } else {
+            8
+        };
         effective_light_samples = effective_light_samples.min(adaptive_sample_cap);
         effective_dir_shadow_samples = effective_dir_shadow_samples.min(adaptive_sample_cap);
         effective_max_shadow_rays = effective_max_shadow_rays.min(adaptive_sample_cap as u32);
@@ -4535,6 +5123,33 @@ impl WgpuRenderer {
                 * perspective(params.fov, aspect, 0.1, 1000.0)
                 * look_at(&cam_pos, &(cam_pos + cam_front), &cam_up)
         };
+        let light_dir_for_shadow = Vec3::new(
+            params.dir_light_dir[0],
+            params.dir_light_dir[1],
+            params.dir_light_dir[2],
+        )
+        .normalize_or_zero();
+        let shadow_light_dir = if light_dir_for_shadow.length_squared() > 0.0 {
+            -light_dir_for_shadow
+        } else {
+            Vec3::new(-0.35, -0.8, -0.45).normalize()
+        };
+        let shadow_center = cam_pos + cam_front * 35.0;
+        let shadow_view = look_at(
+            &(shadow_center - shadow_light_dir * 80.0),
+            &shadow_center,
+            &Vec3::Y,
+        );
+        let shadow_proj =
+            OPENGL_TO_WGPU_MATRIX * Mat4::orthographic_rh(-70.0, 70.0, -70.0, 70.0, 0.1, 180.0);
+        let shadow_view_proj = shadow_proj * shadow_view;
+        let shadow_view_proj_arr = shadow_view_proj.to_cols_array();
+        self.queue.write_buffer(
+            &self.raster_shadow_view_proj_buffer,
+            0,
+            bytemuck::cast_slice(&shadow_view_proj_arr),
+        );
+
         let view_proj_arr = view_proj.to_cols_array();
         if self
             .prev_sprite_view_proj
@@ -4567,6 +5182,8 @@ impl WgpuRenderer {
             });
         let mut cube_instances = Vec::new();
         let mut sphere_instances = Vec::new();
+        let mut shadow_cube_instances = Vec::new();
+        let mut shadow_sphere_instances = Vec::new();
         if !self.is_2d && !effective_renderer_mode.uses_path_traced_primary_visibility() {
             for (idx, obj) in self.prev_objects.iter().enumerate() {
                 if obj.is_mesh != 0 || obj.is_shaded == 0 {
@@ -4578,8 +5195,14 @@ impl WgpuRenderer {
                 };
                 if obj.is_cube != 0 {
                     cube_instances.push(instance);
+                    if obj.casts_raster_shadow != 0 {
+                        shadow_cube_instances.push(instance);
+                    }
                 } else {
                     sphere_instances.push(instance);
+                    if obj.casts_raster_shadow != 0 {
+                        shadow_sphere_instances.push(instance);
+                    }
                 }
             }
             let primitive_count = (cube_instances.len() + sphere_instances.len()) as u32;
@@ -4611,6 +5234,68 @@ impl WgpuRenderer {
                     usage: BufferUsages::VERTEX,
                 }))
             };
+            if !shadow_cube_instances.is_empty()
+                || !shadow_sphere_instances.is_empty()
+                || !pbr_data.is_empty()
+            {
+                let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("raster_shadow_primitives"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                        view: &self.raster_shadow_view,
+                        depth_ops: Some(Operations {
+                            load: LoadOp::Clear(1.0),
+                            store: StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                rpass.set_pipeline(&self.primitive_shadow_pipeline);
+                rpass.set_bind_group(0, &self.primitive_gbuffer_bind_group, &[]);
+                if let Some(buffer) = &cube_instance_buffer {
+                    if !shadow_cube_instances.is_empty() {
+                        let shadow_buffer =
+                            self.device.create_buffer_init(&util::BufferInitDescriptor {
+                                label: Some("primitive_shadow_cube_instances"),
+                                contents: bytemuck::cast_slice(&shadow_cube_instances),
+                                usage: BufferUsages::VERTEX,
+                            });
+                        rpass.set_vertex_buffer(0, self.primitive_cube_vertex_buffer.slice(..));
+                        rpass.set_vertex_buffer(1, shadow_buffer.slice(..));
+                        rpass.set_index_buffer(
+                            self.primitive_cube_index_buffer.slice(..),
+                            IndexFormat::Uint32,
+                        );
+                        rpass.draw_indexed(
+                            0..self.primitive_cube_index_count,
+                            0,
+                            0..shadow_cube_instances.len() as u32,
+                        );
+                    }
+                    _ = buffer;
+                }
+                if !shadow_sphere_instances.is_empty() {
+                    let shadow_buffer =
+                        self.device.create_buffer_init(&util::BufferInitDescriptor {
+                            label: Some("primitive_shadow_sphere_instances"),
+                            contents: bytemuck::cast_slice(&shadow_sphere_instances),
+                            usage: BufferUsages::VERTEX,
+                        });
+                    rpass.set_vertex_buffer(0, self.primitive_sphere_vertex_buffer.slice(..));
+                    rpass.set_vertex_buffer(1, shadow_buffer.slice(..));
+                    rpass.set_index_buffer(
+                        self.primitive_sphere_index_buffer.slice(..),
+                        IndexFormat::Uint32,
+                    );
+                    rpass.draw_indexed(
+                        0..self.primitive_sphere_index_count,
+                        0,
+                        0..shadow_sphere_instances.len() as u32,
+                    );
+                }
+            }
             let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("primitive_gbuffer"),
                 color_attachments: &[
@@ -4691,6 +5376,7 @@ impl WgpuRenderer {
         }
         if !pbr_data.is_empty() {
             let mut bind_groups = Vec::new();
+            let mut shadow_bind_groups = Vec::new();
             for inst in pbr_data {
                 let uni = Uniforms {
                     mvp: inst.mvp,
@@ -4778,7 +5464,49 @@ impl WgpuRenderer {
                         },
                     ],
                 });
+                let shadow_bg = self.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("pbr_shadow_bg"),
+                    layout: &self.pbr_shadow_bind_group_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: uni_buf.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 4,
+                            resource: joint_buf.as_entire_binding(),
+                        },
+                    ],
+                });
                 bind_groups.push((bg, inst.mesh.clone()));
+                shadow_bind_groups.push((shadow_bg, inst.mesh.clone()));
+            }
+            {
+                let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("pbr_shadow"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                        view: &self.raster_shadow_view,
+                        depth_ops: Some(Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                rpass.set_pipeline(&self.pbr_shadow_pipeline);
+                for (bg, mesh) in shadow_bind_groups.iter() {
+                    rpass.set_bind_group(0, bg, &[]);
+                    rpass.set_vertex_buffer(0, mesh.0.vbuf.slice(..));
+                    rpass.set_index_buffer(mesh.0.ibuf.slice(..), IndexFormat::Uint32);
+                    rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
+                }
             }
             let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("pbr_gbuffer"),
@@ -4966,9 +5694,8 @@ impl WgpuRenderer {
                     .hybrid_compose_pipeline
                     .as_ref()
                     .unwrap_or(&self.compute_pipeline),
-                MainComputePipelineKind::Bootstrap | MainComputePipelineKind::CinematicPathTrace => {
-                    &self.compute_pipeline
-                }
+                MainComputePipelineKind::Bootstrap
+                | MainComputePipelineKind::CinematicPathTrace => &self.compute_pipeline,
             };
             cpass.set_pipeline(main_compute_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
@@ -5006,14 +5733,42 @@ impl WgpuRenderer {
             );
         }
         encoder.copy_texture_to_texture(
-            ImageCopyTexture { texture: &self.cloud_radiance_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-            ImageCopyTexture { texture: &self.cloud_radiance_history_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-            Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            ImageCopyTexture {
+                texture: &self.cloud_radiance_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            ImageCopyTexture {
+                texture: &self.cloud_radiance_history_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
         );
         encoder.copy_texture_to_texture(
-            ImageCopyTexture { texture: &self.cloud_transmittance_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-            ImageCopyTexture { texture: &self.cloud_transmittance_history_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-            Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            ImageCopyTexture {
+                texture: &self.cloud_transmittance_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            ImageCopyTexture {
+                texture: &self.cloud_transmittance_history_texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
         );
         if !self.is_2d && effective_renderer_mode.uses_path_traced_primary_visibility() {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -5402,14 +6157,43 @@ impl WgpuRenderer {
         self.device.poll(wgpu::Maintain::Poll);
         stats.total_frame_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
         stats.raster_pass_ms = stats.total_frame_ms * 0.30;
-        stats.rt_shadow_pass_ms = if effective_raytraced_shadows != 0 { stats.total_frame_ms * 0.12 } else { 0.0 };
-        stats.rt_reflection_pass_ms = if params.raytraced_reflections_enabled != 0 { stats.total_frame_ms * 0.12 } else { 0.0 };
-        stats.rt_gi_pass_ms = if params.raytraced_gi_enabled != 0 || effective_renderer_mode.uses_path_traced_primary_visibility() { stats.total_frame_ms * 0.16 } else { 0.0 };
+        stats.rt_shadow_pass_ms = if effective_raytraced_shadows != 0 {
+            stats.total_frame_ms * 0.12
+        } else {
+            0.0
+        };
+        stats.rt_reflection_pass_ms = if params.raytraced_reflections_enabled != 0 {
+            stats.total_frame_ms * 0.12
+        } else {
+            0.0
+        };
+        stats.rt_gi_pass_ms = if params.raytraced_gi_enabled != 0
+            || effective_renderer_mode.uses_path_traced_primary_visibility()
+        {
+            stats.total_frame_ms * 0.16
+        } else {
+            0.0
+        };
         stats.denoise_ms = stats.total_frame_ms * 0.08;
         stats.clouds_fog_atmosphere_ms = stats.total_frame_ms * 0.10;
-        if stats.total_frame_ms > 16.6 { self.slow_frame_streak += 1; self.fast_frame_streak = 0; } else if stats.total_frame_ms < 13.0 { self.fast_frame_streak += 1; self.slow_frame_streak = 0; } else { self.slow_frame_streak = 0; self.fast_frame_streak = 0; }
-        if self.slow_frame_streak >= 6 { self.adaptive_quality = (self.adaptive_quality - 0.15).max(0.5); self.slow_frame_streak = 0; }
-        if self.fast_frame_streak >= 60 { self.adaptive_quality = (self.adaptive_quality + 0.05).min(1.0); self.fast_frame_streak = 0; }
+        if stats.total_frame_ms > 16.6 {
+            self.slow_frame_streak += 1;
+            self.fast_frame_streak = 0;
+        } else if stats.total_frame_ms < 13.0 {
+            self.fast_frame_streak += 1;
+            self.slow_frame_streak = 0;
+        } else {
+            self.slow_frame_streak = 0;
+            self.fast_frame_streak = 0;
+        }
+        if self.slow_frame_streak >= 6 {
+            self.adaptive_quality = (self.adaptive_quality - 0.15).max(0.5);
+            self.slow_frame_streak = 0;
+        }
+        if self.fast_frame_streak >= 60 {
+            self.adaptive_quality = (self.adaptive_quality + 0.05).min(1.0);
+            self.fast_frame_streak = 0;
+        }
         stats.adaptive_quality = self.adaptive_quality;
         self.profiler_stats = stats;
         frame.present();
@@ -5425,21 +6209,32 @@ impl WgpuRenderer {
         // keep impl open for helper methods below
     }
 
-    pub fn profiler_stats(&self) -> crate::rendering::renderer::RendererProfilerStats { self.profiler_stats }
+    pub fn profiler_stats(&self) -> crate::rendering::renderer::RendererProfilerStats {
+        self.profiler_stats
+    }
 
     pub fn draw_profiler_hud(&self, ctx: &egui::Context) {
         let s = self.profiler_stats();
-        egui::Window::new("Renderer Profiler").default_pos(egui::pos2(12.0, 12.0)).resizable(false).show(ctx, |ui| {
-            ui.label(format!("Raster: {:.2} ms", s.raster_pass_ms));
-            ui.label(format!("RT shadows: {:.2} ms", s.rt_shadow_pass_ms));
-            ui.label(format!("RT reflections: {:.2} ms", s.rt_reflection_pass_ms));
-            ui.label(format!("RT GI: {:.2} ms", s.rt_gi_pass_ms));
-            ui.label(format!("Denoise: {:.2} ms", s.denoise_ms));
-            ui.label(format!("Clouds/fog/atmosphere: {:.2} ms", s.clouds_fog_atmosphere_ms));
-            ui.separator();
-            ui.label(format!("Total frame: {:.2} ms", s.total_frame_ms));
-            ui.label(format!("Adaptive RT quality: {:.0}%", s.adaptive_quality * 100.0));
-        });
+        egui::Window::new("Renderer Profiler")
+            .default_pos(egui::pos2(12.0, 12.0))
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(format!("Raster: {:.2} ms", s.raster_pass_ms));
+                ui.label(format!("RT shadows: {:.2} ms", s.rt_shadow_pass_ms));
+                ui.label(format!("RT reflections: {:.2} ms", s.rt_reflection_pass_ms));
+                ui.label(format!("RT GI: {:.2} ms", s.rt_gi_pass_ms));
+                ui.label(format!("Denoise: {:.2} ms", s.denoise_ms));
+                ui.label(format!(
+                    "Clouds/fog/atmosphere: {:.2} ms",
+                    s.clouds_fog_atmosphere_ms
+                ));
+                ui.separator();
+                ui.label(format!("Total frame: {:.2} ms", s.total_frame_ms));
+                ui.label(format!(
+                    "Adaptive RT quality: {:.0}%",
+                    s.adaptive_quality * 100.0
+                ));
+            });
     }
 
     pub fn capture_screen(&self) {}
