@@ -684,9 +684,27 @@ impl Engine {
                 let proj_mat = perspective(cam.fov, aspect, z_near, 1000.0);
 
                 let mut pbr_meshes = Vec::new();
-                for (e, transform, mesh, mat) in
-                    self.world.query3::<Transform, MeshHandle, PbrMaterial>()
-                {
+                for (e, transform, mesh) in self.world.query2::<Transform, MeshHandle>() {
+                    let mat = self
+                        .world
+                        .get::<PbrMaterial>(e)
+                        .cloned()
+                        .unwrap_or_else(|| PbrMaterial {
+                            name: "default_mesh".to_string(),
+                            base_color: [0.47, 0.47, 0.47, 1.0],
+                            metallic: 0.0,
+                            roughness: 1.0,
+                            emissive: [0.0; 3],
+                            specular_f0: [0.0; 3],
+                            ior: 1.5,
+                            opacity: 1.0,
+                            base_color_tex: None,
+                            metallic_roughness_tex: None,
+                            normal_tex: None,
+                            occlusion_tex: None,
+                            emissive_tex: None,
+                            fallback_tags: 0,
+                        });
                     let model = Mat4::from_scale_rotation_translation(
                         Vec3::from(transform.size),
                         Quat::from_xyzw(
