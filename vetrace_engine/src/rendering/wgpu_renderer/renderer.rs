@@ -164,6 +164,8 @@ pub struct WgpuRenderer {
     hybrid_rt_shadow_view: TextureView,
     hybrid_rt_reflection_texture: Texture,
     hybrid_rt_reflection_view: TextureView,
+    hybrid_rt_reflection_history_texture: Texture,
+    hybrid_rt_reflection_history_view: TextureView,
     hybrid_rt_gi_texture: Texture,
     hybrid_rt_gi_view: TextureView,
     hybrid_rt_transparency_texture: Texture,

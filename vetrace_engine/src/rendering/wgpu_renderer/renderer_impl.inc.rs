@@ -816,6 +816,8 @@ impl WgpuRenderer {
             create_hybrid_effect_texture("hybrid_rt_shadow_mask");
         let (hybrid_rt_reflection_texture, hybrid_rt_reflection_view) =
             create_hybrid_effect_texture("hybrid_rt_reflection_radiance");
+        let (hybrid_rt_reflection_history_texture, hybrid_rt_reflection_history_view) =
+            create_hybrid_effect_texture("hybrid_rt_reflection_history");
         let (hybrid_rt_gi_texture, hybrid_rt_gi_view) =
             create_hybrid_effect_texture("hybrid_rt_gi_radiance");
         let (hybrid_rt_transparency_texture, hybrid_rt_transparency_view) =
@@ -1637,6 +1639,16 @@ impl WgpuRenderer {
                             multisampled: false,
                             view_dimension: TextureViewDimension::D2,
                             sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 12,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Uint,
                         },
                         count: None,
                     },
@@ -3721,6 +3733,10 @@ impl WgpuRenderer {
                     binding: 11,
                     resource: BindingResource::TextureView(&cloud_transmittance_view),
                 },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: BindingResource::TextureView(&gbuf_material_view),
+                },
             ],
         });
 
@@ -3867,6 +3883,8 @@ impl WgpuRenderer {
             hybrid_rt_shadow_view,
             hybrid_rt_reflection_texture,
             hybrid_rt_reflection_view,
+            hybrid_rt_reflection_history_texture,
+            hybrid_rt_reflection_history_view,
             hybrid_rt_gi_texture,
             hybrid_rt_gi_view,
             hybrid_rt_transparency_texture,
@@ -6386,10 +6404,12 @@ impl WgpuRenderer {
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
-            if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
-                cpass.set_pipeline(pipeline);
-                cpass.set_bind_group(0, &self.hybrid_rt_reflection_bind_group, &[]);
-                cpass.dispatch_workgroups(x, y, 1);
+            if params.raytraced_reflections_enabled != 0 {
+                if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.hybrid_rt_reflection_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                }
             }
             if let Some(pipeline) = &self.hybrid_rt_gi_pipeline {
                 cpass.set_pipeline(pipeline);
@@ -6405,6 +6425,28 @@ impl WgpuRenderer {
                 cpass.set_pipeline(pipeline);
                 cpass.set_bind_group(0, &self.hybrid_composite_bind_group, &[]);
                 cpass.dispatch_workgroups(x, y, 1);
+            }
+            drop(cpass);
+            if params.raytraced_reflections_enabled != 0 {
+                encoder.copy_texture_to_texture(
+                    ImageCopyTexture {
+                        texture: &self.hybrid_rt_reflection_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    ImageCopyTexture {
+                        texture: &self.hybrid_rt_reflection_history_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    Extent3d {
+                        width: self.width,
+                        height: self.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
             }
         } else {
             {
