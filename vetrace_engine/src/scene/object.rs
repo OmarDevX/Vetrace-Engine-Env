@@ -319,6 +319,21 @@ impl Object {
             gi_flags: 0,
         }
     }
+    pub fn base_color_factor(&self) -> [f32; 4] {
+        let max_channel = self
+            .color
+            .iter()
+            .copied()
+            .fold(0.0_f32, f32::max);
+        let scale = if max_channel > 1.0 { 1.0 / 255.0 } else { 1.0 };
+        [
+            (self.color[0] * scale).clamp(0.0, 1.0),
+            (self.color[1] * scale).clamp(0.0, 1.0),
+            (self.color[2] * scale).clamp(0.0, 1.0),
+            1.0,
+        ]
+    }
+
     pub fn to_gpu(&self) -> GpuObject {
         GpuObject {
             position: self.position,

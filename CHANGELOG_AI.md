@@ -67,3 +67,18 @@ This file tracks AI-assisted changes.
   - `python3 scripts/validate_wgsl_syntax.py`
   - `cargo check --workspace`
 - Notes: This fixes the reported `copy_texture_to_texture` validation error for `color_tex` missing `COPY_SRC`.
+
+### 2026-06-28 - Normalize primitive material colors for raster visibility
+- Summary: Fixed primitive material generation so app-framework rendering treats `Object.color` consistently in either 0-1 or 0-255 range instead of always dividing by 255, which could make some rasterized objects effectively black/invisible.
+- Files changed:
+  - `vetrace_engine/src/scene/object.rs`
+  - `vetrace_engine/src/engine/engine.rs`
+  - `vetrace_engine/src/engine/run.rs`
+  - `CHANGELOG_AI.md`
+- Existing pattern reused: Reused existing `Object` material fields and the primitive material upload path used before WGPU scene upload.
+- Duplicate code avoided: Added one `Object::base_color_factor()` helper and reused it from both app-framework and legacy run-loop material paths.
+- Tests/checks:
+  - `python3 scripts/validate_wgsl_layouts.py`
+  - `python3 scripts/validate_wgsl_syntax.py`
+  - `cargo check --workspace`
+- Notes: No object ID filtering or hardcoded object ID was found in the primitive raster pass; all non-mesh shaded objects in `prev_objects` are instanced.

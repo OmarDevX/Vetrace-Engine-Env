@@ -1119,19 +1119,29 @@ impl Engine {
                 *mat_map.entry(mat_name.clone()).or_insert_with(|| {
                     let idx = gpu_materials.len() as u32;
                     gpu_materials.push(GpuMaterial {
-                        base_color_factor: [
-                            obj.color[0] / 255.0,
-                            obj.color[1] / 255.0,
-                            obj.color[2] / 255.0,
-                            1.0,
-                        ],
-                        emissive_factor: [0.0; 3],
-                        emissive_strength: 0.0,
+                        base_color_factor: obj.base_color_factor(),
+                        emissive_factor: if obj.emission > 0.0 {
+                            [
+                                obj.base_color_factor()[0],
+                                obj.base_color_factor()[1],
+                                obj.base_color_factor()[2],
+                            ]
+                        } else {
+                            [0.0; 3]
+                        },
+                        emissive_strength: obj.emission,
                         metallic_factor: 0.0,
-                        roughness_factor: 0.5,
-                        ior: 1.5,
+                        roughness_factor: obj.roughness,
+                        ior: obj.ior,
                         base_color_tex: 0,
-                        f0: [0.04; 3],
+                        f0: {
+                            let mut f0 = obj.specular_f0;
+                            if f0 == [0.0; 3] {
+                                let f = (obj.ior - 1.0) / (obj.ior + 1.0);
+                                f0 = [f * f; 3];
+                            }
+                            f0
+                        },
                         ..Default::default()
                     });
                     idx
