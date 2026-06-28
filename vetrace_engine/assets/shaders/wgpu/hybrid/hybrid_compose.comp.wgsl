@@ -44,6 +44,9 @@ struct Params {
 @group(0) @binding(8) var gbuf_albedo: texture_2d<f32>;
 @group(0) @binding(9) var gbuf_normal: texture_2d<f32>;
 @group(0) @binding(10) var gbuf_material: texture_2d<u32>;
+@group(0) @binding(40) var<uniform> shadow_view_proj: mat4x4<f32>;
+@group(0) @binding(41) var raster_shadow_map: texture_depth_2d;
+@group(0) @binding(42) var raster_shadow_sampler: sampler_comparison;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -69,8 +72,19 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let roughness = f32(material.y) / 255.0;
     let light_dir = normalize(-params.dir_light_dir.xyz);
     let ndotl = max(dot(n, light_dir), 0.0);
+    let uv = (vec2<f32>(id.xy) + vec2<f32>(0.5)) / vec2<f32>(dims);
+    let clip = vec4<f32>(uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), depth01, 1.0);
+    let world_h = params.inv_view_proj * clip;
+    let world = world_h.xyz / max(world_h.w, 1e-6);
+    let shadow_clip = shadow_view_proj * vec4<f32>(world + n * 0.03, 1.0);
+    let shadow_ndc = shadow_clip.xyz / max(shadow_clip.w, 1e-6);
+    let shadow_uv = shadow_ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
+    var raster_shadow = 1.0;
+    if (all(shadow_uv >= vec2<f32>(0.0)) && all(shadow_uv <= vec2<f32>(1.0)) && shadow_ndc.z >= 0.0 && shadow_ndc.z <= 1.0) {
+        raster_shadow = textureSampleCompare(raster_shadow_map, raster_shadow_sampler, shadow_uv, shadow_ndc.z - 0.0015);
+    }
     let ambient = 0.18 + 0.12 * roughness;
-    let lit = albedo * (ambient + params.dir_light_color.xyz * params.dir_light_dir.w * ndotl);
+    let lit = albedo * (ambient + params.dir_light_color.xyz * params.dir_light_dir.w * ndotl * mix(0.25, 1.0, raster_shadow));
     textureStore(color_tex, px, vec4<f32>(lit, 1.0));
 }
 
