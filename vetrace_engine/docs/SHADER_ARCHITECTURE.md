@@ -29,3 +29,16 @@ The split RT effect shaders are production-wired from this directory and should 
 ## Duplication policy
 
 `pathtrace.comp.wgsl` remains the single production monolithic RT shader. Split hybrid-effect passes must not fork full BVH/material/shadow traversal code; shared WGSL generation/fragments should be used for scene structs, `Params`, materials, BVH traversal, shadows, GI, clouds, and atmosphere as the split passes grow beyond screen-space/probe approximations.
+
+## Production GI mode matrix
+
+The GI selector is intentionally routed like an Unreal-style production renderer: raster modes keep a cheap baseline indirect solution, hybrid mode can add bounded ray-traced effects, and full path-traced GI is reserved for path-traced primary visibility.
+
+| GI mode constant | RasterGame behavior | HybridEffects behavior | Path-traced primary behavior | Profile clamps |
+| --- | --- | --- | --- | --- |
+| `GI_MODE_OFF` | No indirect diffuse contribution beyond direct/raster lighting. | Same; RTGI pass is skipped. | Path-traced GI is disabled by quality/off state. | All profiles may force this when GI quality is off. |
+| `GI_MODE_BAKED_LIGHTMAP` | Uses authored baked lightmap data as the static baseline raster GI. | Uses the same baked baseline and skips RTGI. | Promoted to path-traced GI when the renderer mode uses path-traced primary visibility. | Remains low-cost for `Indoor60FPS` and `Low`. |
+| `GI_MODE_LIGHT_PROBES` | Uses authored/interpolated light probes as the static baseline raster GI. | Uses the same probe baseline and skips RTGI. | Promoted to path-traced GI when the renderer mode uses path-traced primary visibility. | `Indoor60FPS` forces this mode; `Low` falls back to this from RT/path GI requests. |
+| `GI_MODE_SDFGI` | Dispatches the SDFGI cache/prepass/inject path for scalable dynamic GI when quality permits. | Dispatches the same SDFGI path unless the mode is explicitly RTGI one-bounce. | Promoted to path-traced GI when the renderer mode uses path-traced primary visibility. | `Low` caps quality before dispatch; `Cinematic` switches to path-traced GI. |
+| `GI_MODE_RTGI_ONE_BOUNCE` | Clamped to light probes; RasterGame never dispatches RTGI. | Dispatches only the decomposed `rt_gi.comp.wgsl` one-bounce additive pass and feeds it to the hybrid compositor/history. | Promoted to path-traced GI; RTGI one-bounce is not used. | `Indoor60FPS` and `Low` clamp this away; `Cinematic` uses path-traced GI instead. |
+| `GI_MODE_PATH_TRACED_PREVIEW` | Clamped to SDFGI because raster primary visibility does not path trace GI. | Clamped to SDFGI unless the user explicitly selects RTGI one-bounce. | Uses path-traced GI in path-traced primary modes. | `Low` clamps this to light probes; `Cinematic` forces path-traced primary visibility. |

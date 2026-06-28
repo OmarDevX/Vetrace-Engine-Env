@@ -6,11 +6,22 @@ use wgpu::TextureView;
 // Higher resolution improves SDFGI quality on larger objects
 pub const GI_SDF_RES: u32 = 64;
 pub const GI_QUALITY_OFF: u32 = 3;
+/// Disable indirect diffuse lighting; only direct/raster lighting contributes.
 pub const GI_MODE_OFF: u32 = 0;
+/// Use authored baked lightmap data for baseline raster indirect lighting.
+/// This is a static, low-cost production mode for RasterGame/HybridEffects.
 pub const GI_MODE_BAKED_LIGHTMAP: u32 = 1;
+/// Use authored/interpolated light probes for baseline raster indirect lighting.
+/// This is the scalable default for performance profiles such as Indoor60FPS.
 pub const GI_MODE_LIGHT_PROBES: u32 = 2;
+/// Use signed-distance-field GI cache/cone sampling for scalable dynamic GI.
+/// This is allowed in RasterGame and HybridEffects when the profile budget permits.
 pub const GI_MODE_SDFGI: u32 = 3;
+/// Use one diffuse ray-traced GI bounce as a HybridEffects-only additive pass.
+/// RasterGame must not dispatch this; path-traced primary modes use path tracing instead.
 pub const GI_MODE_RTGI_ONE_BOUNCE: u32 = 4;
+/// Use path-traced indirect lighting for path-traced primary visibility modes only.
+/// RasterGame/HybridEffects requests are clamped to cheaper baked/probe/SDFGI modes.
 pub const GI_MODE_PATH_TRACED_PREVIEW: u32 = 5;
 // Back-compat aliases for older call sites.
 pub const GI_MODE_SDF: u32 = GI_MODE_SDFGI;

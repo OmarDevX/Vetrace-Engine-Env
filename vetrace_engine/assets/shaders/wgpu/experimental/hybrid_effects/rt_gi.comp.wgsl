@@ -1,4 +1,5 @@
-// Production-active decomposed hybrid RT effect pass.
+// Production-active decomposed hybrid one-bounce RTGI effect pass.
+const GI_MODE_RTGI_ONE_BOUNCE: u32 = 4u;
 struct RtEffectParams {
     inv_view_proj: mat4x4<f32>,
     camera_pos: vec4<f32>,
@@ -39,11 +40,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(depth_tex);
     if (id.x >= dims.x || id.y >= dims.y) { return; }
     let pixel = vec2<i32>(id.xy);
-    if (rt_params.enabled == 0u || rt_params.mode != 1u) { miss(pixel); return; }
+    if (rt_params.enabled == 0u || rt_params._pad.x != GI_MODE_RTGI_ONE_BOUNCE) { miss(pixel); return; }
     let depth = textureLoad(depth_tex, pixel, 0).x;
     if (depth >= 0.9999) { miss(pixel); return; }
     let n = unpack_normal(pixel);
     let albedo = textureLoad(albedo_tex, pixel, 0).rgb;
+    // This pass is intentionally capped to one diffuse bounce for HybridEffects.
     let sky_bounce = vec3<f32>(0.45, 0.55, 0.75) * max(n.y * 0.5 + 0.5, 0.0);
     textureStore(effect_out, pixel, vec4<f32>(albedo * sky_bounce * 0.25, 1.0));
 }

@@ -47,6 +47,7 @@ struct Params {
 @group(0) @binding(40) var<uniform> shadow_view_proj: mat4x4<f32>;
 @group(0) @binding(41) var raster_shadow_map: texture_depth_2d;
 @group(0) @binding(42) var raster_shadow_sampler: sampler_comparison;
+@group(0) @binding(43) var gi_buffer: texture_2d<f32>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -84,7 +85,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         raster_shadow = textureSampleCompare(raster_shadow_map, raster_shadow_sampler, shadow_uv, shadow_ndc.z - 0.0015);
     }
     let ambient = 0.18 + 0.12 * roughness;
-    let lit = albedo * (ambient + params.dir_light_color.xyz * params.dir_light_dir.w * ndotl * mix(0.25, 1.0, raster_shadow));
+    let gi = textureLoad(gi_buffer, px, 0).rgb;
+    let lit = albedo * (ambient + params.dir_light_color.xyz * params.dir_light_dir.w * ndotl * mix(0.25, 1.0, raster_shadow)) + gi;
     textureStore(color_tex, px, vec4<f32>(lit, 1.0));
 }
 
