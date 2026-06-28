@@ -278,6 +278,31 @@ pub struct BlitParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct HybridRtEffectParams {
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub camera_pos: [f32; 4],
+    pub dir_light_dir: [f32; 4],
+    pub dir_light_color: [f32; 4],
+    pub enabled: u32,
+    pub mode: u32,
+    pub _pad: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct HybridCompositeParams {
+    pub temporal_blend: f32,
+    pub rt_gi_enabled: u32,
+    pub rt_reflections_enabled: u32,
+    pub rt_shadows_enabled: u32,
+    pub rt_transparency_enabled: u32,
+    pub atmosphere_enabled: u32,
+    pub clouds_enabled: u32,
+    pub _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct LightListHeader {
     pub count: u32,
 }
