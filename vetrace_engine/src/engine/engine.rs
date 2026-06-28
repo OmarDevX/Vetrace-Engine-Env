@@ -1516,8 +1516,7 @@ impl Engine {
                     let f = (obj.ior - 1.0) / (obj.ior + 1.0);
                     f0 = [f * f; 3];
                 }
-                // Object colors are already stored in linear 0-1 range, so use them directly
-                let base_color_factor = [obj.color[0], obj.color[1], obj.color[2], 1.0];
+                let base_color_factor = obj.base_color_factor();
                 let emissive_strength = obj.emission;
                 let emissive_factor = if emissive_strength > 0.0 {
                     [

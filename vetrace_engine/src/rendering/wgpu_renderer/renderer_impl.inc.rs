@@ -4618,7 +4618,7 @@ impl WgpuRenderer {
                         view: &self.gbuf_albedo_view,
                         resolve_target: None,
                         ops: Operations {
-                            load: LoadOp::Clear(Color::BLACK),
+                            load: LoadOp::Clear(Color::TRANSPARENT),
                             store: StoreOp::Store,
                         },
                     }),

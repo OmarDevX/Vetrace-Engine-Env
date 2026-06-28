@@ -54,14 +54,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     let px = vec2<i32>(id.xy);
     let depth01 = textureLoad(depth_tex, px).r;
-    if (depth01 >= 0.9999) {
+    let albedo_sample = textureLoad(gbuf_albedo, px, 0);
+    if (depth01 >= 0.9999 || albedo_sample.a <= 0.0) {
         let uv = vec2<f32>(f32(id.x) / max(f32(dims.x), 1.0), f32(id.y) / max(f32(dims.y), 1.0));
         let sky = params.skycolor.xyz * (0.55 + 0.45 * (1.0 - uv.y));
         textureStore(color_tex, px, vec4<f32>(sky, 1.0));
         return;
     }
 
-    let albedo = textureLoad(gbuf_albedo, px, 0).rgb;
+    let albedo = albedo_sample.rgb;
     let enc_n = textureLoad(gbuf_normal, px, 0).xyz;
     let n = normalize(enc_n * 2.0 - vec3<f32>(1.0));
     let material = textureLoad(gbuf_material, px, 0);

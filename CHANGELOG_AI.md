@@ -82,3 +82,30 @@ This file tracks AI-assisted changes.
   - `python3 scripts/validate_wgsl_syntax.py`
   - `cargo check --workspace`
 - Notes: No object ID filtering or hardcoded object ID was found in the primitive raster pass; all non-mesh shaded objects in `prev_objects` are instanced.
+
+### 2026-06-28 - Apply primitive color normalization to cached material builder
+- Summary: Applied `Object::base_color_factor()` to the cached app-framework GPU material builder as well, so the materials actually uploaded to WGPU for raster/hybrid frames use the same normalized primitive colors as the non-cached helper path.
+- Files changed:
+  - `vetrace_engine/src/engine/engine.rs`
+  - `CHANGELOG_AI.md`
+- Existing pattern reused: Reused the shared `Object::base_color_factor()` helper instead of adding another color conversion path.
+- Duplicate code avoided: Removed the remaining direct `[obj.color[0], obj.color[1], obj.color[2], 1.0]` primitive material conversion in the app-framework material cache builder.
+- Tests/checks:
+  - `python3 scripts/validate_wgsl_layouts.py`
+  - `python3 scripts/validate_wgsl_syntax.py`
+  - `cargo check --workspace`
+- Notes: The primitive raster submit loop still enumerates all non-mesh shaded objects; this fixes the separate material upload path that the previous color patch missed.
+
+### 2026-06-28 - Use G-buffer coverage in lightweight hybrid compose
+- Summary: Made the lightweight hybrid compose shader treat `gbuf_albedo.a` as coverage, matching the existing pathtrace raster fallback logic, and clear primitive G-buffer albedo to transparent so no-geometry pixels are unambiguous.
+- Files changed:
+  - `vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl`
+  - `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
+  - `CHANGELOG_AI.md`
+- Existing pattern reused: Reused the existing pathtrace raster fallback's `depth || albedo alpha` visibility test.
+- Duplicate code avoided: Kept the lightweight compose shader simple and did not add another presentation pass.
+- Tests/checks:
+  - `python3 scripts/validate_wgsl_layouts.py`
+  - `python3 scripts/validate_wgsl_syntax.py`
+  - `cargo check --workspace`
+- Notes: This makes the compose step rely on explicit G-buffer coverage instead of depth alone, which is safer when raster and storage depth representations diverge.
