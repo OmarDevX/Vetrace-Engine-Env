@@ -1454,6 +1454,66 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 8,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 9,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 10,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 11,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 12,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 13,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
         let hybrid_composite_bind_group_layout =
@@ -3574,6 +3634,30 @@ impl WgpuRenderer {
                         binding: 7,
                         resource: hybrid_rt_params_buffer.as_entire_binding(),
                     },
+                    BindGroupEntry {
+                        binding: 8,
+                        resource: params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 9,
+                        resource: object_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 10,
+                        resource: triangle_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 11,
+                        resource: bvh_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 12,
+                        resource: tri_bvh_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 13,
+                        resource: material_buffer.as_entire_binding(),
+                    },
                 ],
             })
         };
@@ -4396,6 +4480,81 @@ impl WgpuRenderer {
                 },
             ],
         });
+        let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
+            self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some(label),
+                layout: &self.hybrid_rt_effect_bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&self.depth_view),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&self.gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                    },
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: BindingResource::TextureView(&self.gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 5,
+                        resource: BindingResource::TextureView(&self.gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 6,
+                        resource: BindingResource::TextureView(out_view),
+                    },
+                    BindGroupEntry {
+                        binding: 7,
+                        resource: self.hybrid_rt_params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 8,
+                        resource: self.params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 9,
+                        resource: self.object_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 10,
+                        resource: self.triangle_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 11,
+                        resource: self.bvh_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 12,
+                        resource: self.tri_bvh_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 13,
+                        resource: self.material_buffer.as_entire_binding(),
+                    },
+                ],
+            })
+        };
+        self.hybrid_rt_shadow_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &self.hybrid_rt_shadow_view);
+        self.hybrid_rt_reflection_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_reflection_bg", &self.hybrid_rt_reflection_view);
+        self.hybrid_rt_gi_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_gi_bg", &self.hybrid_rt_gi_view);
+        self.hybrid_rt_transparency_bind_group = make_hybrid_rt_bind_group(
+            "hybrid_rt_transparency_bg",
+            &self.hybrid_rt_transparency_view,
+        );
+
         self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("primitive_gbuffer_bg"),
             layout: &self.primitive_gbuffer_bind_group_layout,
@@ -5041,6 +5200,81 @@ impl WgpuRenderer {
                 },
             ],
         });
+        let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
+            self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some(label),
+                layout: &self.hybrid_rt_effect_bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&self.depth_view),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&self.gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                    },
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: BindingResource::TextureView(&self.gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 5,
+                        resource: BindingResource::TextureView(&self.gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 6,
+                        resource: BindingResource::TextureView(out_view),
+                    },
+                    BindGroupEntry {
+                        binding: 7,
+                        resource: self.hybrid_rt_params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 8,
+                        resource: self.params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 9,
+                        resource: self.object_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 10,
+                        resource: self.triangle_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 11,
+                        resource: self.bvh_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 12,
+                        resource: self.tri_bvh_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 13,
+                        resource: self.material_buffer.as_entire_binding(),
+                    },
+                ],
+            })
+        };
+        self.hybrid_rt_shadow_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &self.hybrid_rt_shadow_view);
+        self.hybrid_rt_reflection_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_reflection_bg", &self.hybrid_rt_reflection_view);
+        self.hybrid_rt_gi_bind_group =
+            make_hybrid_rt_bind_group("hybrid_rt_gi_bg", &self.hybrid_rt_gi_view);
+        self.hybrid_rt_transparency_bind_group = make_hybrid_rt_bind_group(
+            "hybrid_rt_transparency_bg",
+            &self.hybrid_rt_transparency_view,
+        );
+
         self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("primitive_gbuffer_bg"),
             layout: &self.primitive_gbuffer_bind_group_layout,
@@ -6145,10 +6379,12 @@ impl WgpuRenderer {
                 label: Some("hybrid_decomposed_rt_effects"),
                 timestamp_writes: None,
             });
-            if let Some(pipeline) = &self.hybrid_rt_shadow_pipeline {
-                cpass.set_pipeline(pipeline);
-                cpass.set_bind_group(0, &self.hybrid_rt_shadow_bind_group, &[]);
-                cpass.dispatch_workgroups(x, y, 1);
+            if params.raytraced_shadows_enabled != 0 {
+                if let Some(pipeline) = &self.hybrid_rt_shadow_pipeline {
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.hybrid_rt_shadow_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                }
             }
             if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
                 cpass.set_pipeline(pipeline);
