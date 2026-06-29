@@ -3705,7 +3705,7 @@ impl WgpuRenderer {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&color_view),
+                    resource: BindingResource::TextureView(&screen_view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -6555,12 +6555,13 @@ impl WgpuRenderer {
                 cpass.dispatch_workgroups(x, y, 1);
             }
         }
-        if !effective_renderer_mode.uses_path_traced_primary_visibility() {
-            // The lightweight hybrid/bootstrap compute paths write into `color_texture`,
-            // while the existing postprocess blit samples `screen_texture`. Mirror the
-            // composed color before postprocessing so raster/hybrid modes do not present
-            // a stale black screen. Path-traced modes keep using rt_denoise to populate
-            // `screen_texture`.
+        if !uses_path_traced_primary && !uses_hybrid_effects {
+            // The lightweight bootstrap compute path writes into `color_texture`, while
+            // the existing postprocess blit samples `screen_texture`. Mirror bootstrap
+            // output before postprocessing so raster fallback modes do not present a
+            // stale black screen. Decomposed hybrid effects write their composite output
+            // directly into `screen_texture`, and path-traced modes keep using
+            // rt_denoise to populate `screen_texture`.
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {
                     texture: &self.color_texture,
