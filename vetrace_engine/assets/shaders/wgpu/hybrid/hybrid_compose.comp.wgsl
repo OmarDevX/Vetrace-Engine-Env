@@ -82,7 +82,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let shadow_uv = shadow_ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
     var raster_shadow = 1.0;
     if (all(shadow_uv >= vec2<f32>(0.0)) && all(shadow_uv <= vec2<f32>(1.0)) && shadow_ndc.z >= 0.0 && shadow_ndc.z <= 1.0) {
-        raster_shadow = textureSampleCompare(raster_shadow_map, raster_shadow_sampler, shadow_uv, shadow_ndc.z - 0.0015);
+        raster_shadow = textureSampleCompareLevel(raster_shadow_map, raster_shadow_sampler, shadow_uv, shadow_ndc.z - 0.0015);
     }
     let ambient = 0.18 + 0.12 * roughness;
     let gi = textureLoad(gi_buffer, px, 0).rgb;
