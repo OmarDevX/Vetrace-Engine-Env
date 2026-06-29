@@ -9,7 +9,6 @@ fn boot_log(stage: &str) {
     let _ = std::io::Write::flush(&mut std::io::stderr());
 }
 
-
 pub async fn init_wgpu(
     window: &Window,
     width: u32,
@@ -54,9 +53,13 @@ pub async fn init_wgpu(
     let (device, queue) = adapter
         .request_device(
             &DeviceDescriptor {
-                required_features: Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                    | Features::TEXTURE_BINDING_ARRAY
-                    | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+                required_features: {
+                    let optional_features = adapter.features() & Features::TIMESTAMP_QUERY;
+                    Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                        | Features::TEXTURE_BINDING_ARRAY
+                        | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
+                        | optional_features
+                },
                 // Request the adapter's reported limits so the renderer can
                 // bind large texture arrays for materials.
                 required_limits: limits,
