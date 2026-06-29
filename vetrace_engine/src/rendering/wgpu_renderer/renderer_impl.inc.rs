@@ -884,8 +884,10 @@ impl WgpuRenderer {
         }
         let mut shader_compiler = RaytraceShaderCompiler {
             device: device.clone(),
-            base_shader_template: include_str!(
-                "../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"
+            base_shader_template: concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
             )
             .to_string(),
             material_registry: std::collections::HashMap::new(),
@@ -1363,8 +1365,12 @@ impl WgpuRenderer {
             let hybrid_compose_shader = device.create_shader_module(ShaderModuleDescriptor {
                 label: Some("hybrid_compose_shader"),
                 source: ShaderSource::Wgsl(
-                    include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl")
-                        .into(),
+                    concat!(
+                        include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
+                        "\n",
+                        include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl"),
+                    )
+                    .into(),
                 ),
             });
             let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {

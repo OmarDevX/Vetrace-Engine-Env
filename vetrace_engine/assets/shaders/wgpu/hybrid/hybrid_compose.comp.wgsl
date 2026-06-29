@@ -1,3 +1,4 @@
+// Shared with pathtrace.comp.wgsl by Rust concat! during shader module creation.
 struct Params {
     camera_pos: vec4<f32>,
     camera_front: vec4<f32>,
@@ -70,13 +71,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let enc_n = textureLoad(gbuf_normal, px, 0).xyz;
     let n = normalize(enc_n * 2.0 - vec3<f32>(1.0));
     let material = textureLoad(gbuf_material, px, 0);
-    let roughness = f32(material.y) / 255.0;
+    let metallic = f32(material.x) / 255.0;
+    let roughness = max(f32(material.y) / 255.0, 0.04);
+    // material.z is optional emissive intensity encoded by G-buffer writers; simple_pbr currently leaves it at zero.
+    let emissive = albedo * (f32(material.z) / 255.0);
     let light_dir = normalize(-params.dir_light_dir.xyz);
-    let ndotl = max(dot(n, light_dir), 0.0);
     let uv = (vec2<f32>(id.xy) + vec2<f32>(0.5)) / vec2<f32>(dims);
     let clip = vec4<f32>(uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), depth01, 1.0);
     let world_h = params.inv_view_proj * clip;
     let world = world_h.xyz / max(world_h.w, 1e-6);
+    let view_dir = normalize(world - params.camera_pos.xyz);
     let shadow_clip = shadow_view_proj * vec4<f32>(world + n * 0.03, 1.0);
     let shadow_ndc = shadow_clip.xyz / max(shadow_clip.w, 1e-6);
     let shadow_uv = shadow_ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
@@ -84,9 +88,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (all(shadow_uv >= vec2<f32>(0.0)) && all(shadow_uv <= vec2<f32>(1.0)) && shadow_ndc.z >= 0.0 && shadow_ndc.z <= 1.0) {
         raster_shadow = textureSampleCompareLevel(raster_shadow_map, raster_shadow_sampler, shadow_uv, shadow_ndc.z - 0.0015);
     }
-    let ambient = 0.18 + 0.12 * roughness;
+    let shadow_factor = mix(0.25, 1.0, raster_shadow);
+    let direct = pbr_direct_light(PbrDirectLightInput(albedo, n, view_dir, light_dir, params.dir_light_color.xyz * params.dir_light_dir.w, metallic, roughness, shadow_factor));
     let gi = textureLoad(gi_buffer, px, 0).rgb;
-    let lit = albedo * (ambient + params.dir_light_color.xyz * params.dir_light_dir.w * ndotl * mix(0.25, 1.0, raster_shadow)) + gi;
+    let sky_irradiance = params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * (0.12 + 0.08 * roughness);
+    let ambient = pbr_ambient_diffuse(albedo, sky_irradiance + gi, metallic);
+    let fresnel = pbr_reflection_fresnel(albedo, n, view_dir, metallic);
+    let reflection_probe = mix(params.skycolor.rgb * fresnel, albedo * params.skycolor.rgb * 0.18, roughness) * select(0.35, 1.0, params.raytraced_reflections_enabled != 0u);
+    let lit = emissive + direct + ambient + reflection_probe;
     textureStore(color_tex, px, vec4<f32>(lit, 1.0));
 }
 
