@@ -3630,7 +3630,7 @@ impl WgpuRenderer {
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: BindingResource::TextureView(&depth_view),
+                        resource: BindingResource::TextureView(&dv),
                     },
                     BindGroupEntry {
                         binding: 1,
@@ -3701,11 +3701,11 @@ impl WgpuRenderer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&color_view),
+                    resource: BindingResource::TextureView(&gbuf_albedo_view),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(&color_view),
+                    resource: BindingResource::TextureView(&screen_view),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -4122,6 +4122,25 @@ impl WgpuRenderer {
                 TextureFormat::R16Float,
                 "cloud_directional_shadow_history",
             );
+        let create_hybrid_effect_texture = |label: &str| {
+            create_cloud_temporal_texture(
+                &self.device,
+                self.width,
+                self.height,
+                TextureFormat::Rgba16Float,
+                label,
+            )
+        };
+        let (hybrid_rt_shadow_texture, hybrid_rt_shadow_view) =
+            create_hybrid_effect_texture("hybrid_rt_shadow_mask");
+        let (hybrid_rt_reflection_texture, hybrid_rt_reflection_view) =
+            create_hybrid_effect_texture("hybrid_rt_reflection_radiance");
+        let (hybrid_rt_reflection_history_texture, hybrid_rt_reflection_history_view) =
+            create_hybrid_effect_texture("hybrid_rt_reflection_history");
+        let (hybrid_rt_gi_texture, hybrid_rt_gi_view) =
+            create_hybrid_effect_texture("hybrid_rt_gi_radiance");
+        let (hybrid_rt_transparency_texture, hybrid_rt_transparency_view) =
+            create_hybrid_effect_texture("hybrid_rt_transparency_radiance");
         self.screen_texture = st;
         self.screen_view = screen_view;
         self.screen_history_texture = screen_history_texture;
@@ -4194,6 +4213,16 @@ impl WgpuRenderer {
         self.cloud_shadow_view = cloud_shadow_view;
         self.cloud_shadow_history_texture = cloud_shadow_history_texture;
         self.cloud_shadow_history_view = cloud_shadow_history_view;
+        self.hybrid_rt_shadow_texture = hybrid_rt_shadow_texture;
+        self.hybrid_rt_shadow_view = hybrid_rt_shadow_view;
+        self.hybrid_rt_reflection_texture = hybrid_rt_reflection_texture;
+        self.hybrid_rt_reflection_view = hybrid_rt_reflection_view;
+        self.hybrid_rt_reflection_history_texture = hybrid_rt_reflection_history_texture;
+        self.hybrid_rt_reflection_history_view = hybrid_rt_reflection_history_view;
+        self.hybrid_rt_gi_texture = hybrid_rt_gi_texture;
+        self.hybrid_rt_gi_view = hybrid_rt_gi_view;
+        self.hybrid_rt_transparency_texture = hybrid_rt_transparency_texture;
+        self.hybrid_rt_transparency_view = hybrid_rt_transparency_view;
         self.blur_src_texture = blur_src_texture;
         self.blur_src_view = blur_src_view;
         self.sampler = sampler;
@@ -4590,6 +4619,64 @@ impl WgpuRenderer {
             "hybrid_rt_transparency_bg",
             &self.hybrid_rt_transparency_view,
         );
+        self.hybrid_composite_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("hybrid_composite_bg"),
+            layout: &self.hybrid_composite_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.screen_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.gi_history_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: self.hybrid_composite_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_shadow_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_gi_view),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_transparency_view),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: BindingResource::TextureView(&self.color_view),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: BindingResource::TextureView(&self.cloud_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: BindingResource::TextureView(&self.cloud_transmittance_view),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+            ],
+        });
 
         self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("primitive_gbuffer_bg"),
@@ -5975,6 +6062,24 @@ impl WgpuRenderer {
                     usage: BufferUsages::VERTEX,
                 }))
             };
+            let shadow_cube_instance_buffer = if shadow_cube_instances.is_empty() {
+                None
+            } else {
+                Some(self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("primitive_shadow_cube_instances"),
+                    contents: bytemuck::cast_slice(&shadow_cube_instances),
+                    usage: BufferUsages::VERTEX,
+                }))
+            };
+            let shadow_sphere_instance_buffer = if shadow_sphere_instances.is_empty() {
+                None
+            } else {
+                Some(self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("primitive_shadow_sphere_instances"),
+                    contents: bytemuck::cast_slice(&shadow_sphere_instances),
+                    usage: BufferUsages::VERTEX,
+                }))
+            };
             if !shadow_cube_instances.is_empty()
                 || !shadow_sphere_instances.is_empty()
                 || !pbr_data.is_empty()
@@ -5996,13 +6101,7 @@ impl WgpuRenderer {
                 rpass.set_pipeline(&self.primitive_shadow_pipeline);
                 rpass.set_bind_group(0, &self.primitive_gbuffer_bind_group, &[]);
                 if let Some(buffer) = &cube_instance_buffer {
-                    if !shadow_cube_instances.is_empty() {
-                        let shadow_buffer =
-                            self.device.create_buffer_init(&util::BufferInitDescriptor {
-                                label: Some("primitive_shadow_cube_instances"),
-                                contents: bytemuck::cast_slice(&shadow_cube_instances),
-                                usage: BufferUsages::VERTEX,
-                            });
+                    if let Some(shadow_buffer) = &shadow_cube_instance_buffer {
                         rpass.set_vertex_buffer(0, self.primitive_cube_vertex_buffer.slice(..));
                         rpass.set_vertex_buffer(1, shadow_buffer.slice(..));
                         rpass.set_index_buffer(
@@ -6017,13 +6116,7 @@ impl WgpuRenderer {
                     }
                     _ = buffer;
                 }
-                if !shadow_sphere_instances.is_empty() {
-                    let shadow_buffer =
-                        self.device.create_buffer_init(&util::BufferInitDescriptor {
-                            label: Some("primitive_shadow_sphere_instances"),
-                            contents: bytemuck::cast_slice(&shadow_sphere_instances),
-                            usage: BufferUsages::VERTEX,
-                        });
+                if let Some(shadow_buffer) = &shadow_sphere_instance_buffer {
                     rpass.set_vertex_buffer(0, self.primitive_sphere_vertex_buffer.slice(..));
                     rpass.set_vertex_buffer(1, shadow_buffer.slice(..));
                     rpass.set_index_buffer(
@@ -6427,8 +6520,18 @@ impl WgpuRenderer {
                     params.camera_pos[2],
                     0.0,
                 ],
-                dir_light_dir: params.dir_light_dir,
-                dir_light_color: params.dir_light_color,
+                dir_light_dir: [
+                    params.dir_light_dir[0],
+                    params.dir_light_dir[1],
+                    params.dir_light_dir[2],
+                    params.dir_light_intensity,
+                ],
+                dir_light_color: [
+                    params.dir_light_color[0],
+                    params.dir_light_color[1],
+                    params.dir_light_color[2],
+                    0.0,
+                ],
                 enabled: 1,
                 mode: 1,
                 _pad: [effective_gi_mode, 0],
@@ -6539,12 +6642,13 @@ impl WgpuRenderer {
                 cpass.dispatch_workgroups(x, y, 1);
             }
         }
-        if !effective_renderer_mode.uses_path_traced_primary_visibility() {
-            // The lightweight hybrid/bootstrap compute paths write into `color_texture`,
-            // while the existing postprocess blit samples `screen_texture`. Mirror the
-            // composed color before postprocessing so raster/hybrid modes do not present
-            // a stale black screen. Path-traced modes keep using rt_denoise to populate
-            // `screen_texture`.
+        if !uses_path_traced_primary && !uses_hybrid_effects {
+            // The lightweight bootstrap compute path writes into `color_texture`, while
+            // the existing postprocess blit samples `screen_texture`. Mirror bootstrap
+            // output before postprocessing so raster fallback modes do not present a
+            // stale black screen. Decomposed hybrid effects write their composite output
+            // directly into `screen_texture`, and path-traced modes keep using
+            // rt_denoise to populate `screen_texture`.
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {
                     texture: &self.color_texture,

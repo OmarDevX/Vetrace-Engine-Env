@@ -29,7 +29,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(out_tex);
     if (id.x >= dims.x || id.y >= dims.y) { return; }
     let pixel = vec2<i32>(id.xy);
-    let base = textureLoad(raster_direct_tex, pixel, 0).rgb;
+    let raster_sample = textureLoad(raster_direct_tex, pixel, 0);
+    let sky_t = clamp(f32(id.y) / max(f32(dims.y), 1.0), 0.0, 1.0);
+    let sky = mix(vec3<f32>(0.52, 0.68, 0.92), vec3<f32>(0.02, 0.025, 0.04), sky_t);
+    let base = select(sky, raster_sample.rgb, raster_sample.a > 0.0);
     let gi_uv = vec2<i32>(i32(floor(f32(id.x) * 0.5) * 2.0), i32(floor(f32(id.y) * 0.5) * 2.0));
     let baked_gi = textureLoad(baked_gi_buffer, gi_uv, 0).rgb;
     let rt_gi = select(vec3<f32>(0.0), textureLoad(rt_gi_radiance, pixel, 0).rgb, comp_params.rt_gi_enabled != 0u);
