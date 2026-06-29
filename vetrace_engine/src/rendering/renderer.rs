@@ -97,6 +97,8 @@ pub struct RendererHybridFeatureStatus {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RendererProfilerStats {
     pub feature_status: RendererHybridFeatureStatus,
+    pub profiler_timestamps_supported: bool,
+    pub profiler_status: &'static str,
     pub raster_pass_ms: f32,
     pub rt_shadow_pass_ms: f32,
     pub rt_reflection_pass_ms: f32,

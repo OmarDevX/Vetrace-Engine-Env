@@ -3997,6 +3997,36 @@ impl WgpuRenderer {
             fast_frame_streak: 0,
             prev_bvh_nodes: Vec::new(),
             prev_tri_bvh_nodes: Vec::new(),
+            profiler_query_set: if device.features().contains(Features::TIMESTAMP_QUERY) {
+                Some(device.create_query_set(&QuerySetDescriptor {
+                    label: Some("renderer_profiler_timestamps"),
+                    ty: QueryType::Timestamp,
+                    count: 12,
+                }))
+            } else {
+                None
+            },
+            profiler_query_buffer: if device.features().contains(Features::TIMESTAMP_QUERY) {
+                Some(device.create_buffer(&BufferDescriptor {
+                    label: Some("renderer_profiler_timestamp_resolve"),
+                    size: 12 * std::mem::size_of::<u64>() as u64,
+                    usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                }))
+            } else {
+                None
+            },
+            profiler_readback_buffer: if device.features().contains(Features::TIMESTAMP_QUERY) {
+                Some(device.create_buffer(&BufferDescriptor {
+                    label: Some("renderer_profiler_timestamp_readback"),
+                    size: 12 * std::mem::size_of::<u64>() as u64,
+                    usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                }))
+            } else {
+                None
+            },
+            profiler_timestamp_period: queue.get_timestamp_period(),
         }
     }
 
@@ -5574,6 +5604,25 @@ impl WgpuRenderer {
     ) {
         let frame_start = Instant::now();
         let mut stats = crate::rendering::renderer::RendererProfilerStats::default();
+        const PROF_RASTER_BEGIN: u32 = 0;
+        const PROF_RASTER_END: u32 = 1;
+        const PROF_RT_SHADOW_BEGIN: u32 = 2;
+        const PROF_RT_SHADOW_END: u32 = 3;
+        const PROF_RT_REFLECTION_BEGIN: u32 = 4;
+        const PROF_RT_REFLECTION_END: u32 = 5;
+        const PROF_RT_GI_BEGIN: u32 = 6;
+        const PROF_RT_GI_END: u32 = 7;
+        const PROF_DENOISE_BEGIN: u32 = 8;
+        const PROF_DENOISE_END: u32 = 9;
+        const PROF_CLOUDS_BEGIN: u32 = 10;
+        const PROF_CLOUDS_END: u32 = 11;
+        let profiler_query_set = self.profiler_query_set.as_ref();
+        let mut profiled_raster = false;
+        let mut profiled_rt_shadow = false;
+        let mut profiled_rt_reflection = false;
+        let mut profiled_rt_gi = false;
+        let mut profiled_denoise = false;
+        let mut profiled_clouds = false;
         let halton = |mut idx: i32, base: i32| -> f32 {
             let mut f = 1.0f32;
             let mut r = 0.0f32;
@@ -6209,8 +6258,13 @@ impl WgpuRenderer {
                     stencil_ops: None,
                 }),
                 occlusion_query_set: None,
-                timestamp_writes: None,
+                timestamp_writes: profiler_query_set.map(|query_set| RenderPassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(PROF_RASTER_BEGIN),
+                    end_of_pass_write_index: Some(PROF_RASTER_END),
+                }),
             });
+            profiled_raster = profiler_query_set.is_some();
             if has_primitive_gbuffer {
                 rpass.set_pipeline(&self.primitive_gbuffer_pipeline);
                 rpass.set_bind_group(0, &self.primitive_gbuffer_bind_group, &[]);
@@ -6478,8 +6532,13 @@ impl WgpuRenderer {
         if !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("atmosphere_luts"),
-                timestamp_writes: None,
+                timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(PROF_CLOUDS_BEGIN),
+                    end_of_pass_write_index: Some(PROF_CLOUDS_END),
+                }),
             });
+            profiled_clouds = profiler_query_set.is_some();
             cpass.set_pipeline(&self.transmittance_lut_pipeline);
             cpass.set_bind_group(0, &self.transmittance_lut_bind_group, &[]);
             cpass.dispatch_workgroups(
@@ -6592,12 +6651,17 @@ impl WgpuRenderer {
                 bytemuck::bytes_of(&comp_params),
             );
             let (x, y) = ((self.width + 7) / 8, (self.height + 7) / 8);
-            let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("hybrid_decomposed_rt_effects"),
-                timestamp_writes: None,
-            });
             if feature_status.hybrid_rt_shadows_active {
                 if let Some(pipeline) = &self.hybrid_rt_shadow_pipeline {
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("hybrid_rt_shadows"),
+                        timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
+                            query_set,
+                            beginning_of_pass_write_index: Some(PROF_RT_SHADOW_BEGIN),
+                            end_of_pass_write_index: Some(PROF_RT_SHADOW_END),
+                        }),
+                    });
+                    profiled_rt_shadow = profiler_query_set.is_some();
                     cpass.set_pipeline(pipeline);
                     cpass.set_bind_group(0, &self.hybrid_rt_shadow_bind_group, &[]);
                     cpass.dispatch_workgroups(x, y, 1);
@@ -6605,6 +6669,15 @@ impl WgpuRenderer {
             }
             if feature_status.hybrid_rt_reflections_active {
                 if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("hybrid_rt_reflections"),
+                        timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
+                            query_set,
+                            beginning_of_pass_write_index: Some(PROF_RT_REFLECTION_BEGIN),
+                            end_of_pass_write_index: Some(PROF_RT_REFLECTION_END),
+                        }),
+                    });
+                    profiled_rt_reflection = profiler_query_set.is_some();
                     cpass.set_pipeline(pipeline);
                     cpass.set_bind_group(0, &self.hybrid_rt_reflection_bind_group, &[]);
                     cpass.dispatch_workgroups(x, y, 1);
@@ -6612,22 +6685,36 @@ impl WgpuRenderer {
             }
             if feature_status.hybrid_rtgi_active {
                 if let Some(pipeline) = &self.hybrid_rt_gi_pipeline {
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("hybrid_rt_gi"),
+                        timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
+                            query_set,
+                            beginning_of_pass_write_index: Some(PROF_RT_GI_BEGIN),
+                            end_of_pass_write_index: Some(PROF_RT_GI_END),
+                        }),
+                    });
+                    profiled_rt_gi = profiler_query_set.is_some();
                     cpass.set_pipeline(pipeline);
                     cpass.set_bind_group(0, &self.hybrid_rt_gi_bind_group, &[]);
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
-            if let Some(pipeline) = &self.hybrid_rt_transparency_pipeline {
-                cpass.set_pipeline(pipeline);
-                cpass.set_bind_group(0, &self.hybrid_rt_transparency_bind_group, &[]);
-                cpass.dispatch_workgroups(x, y, 1);
+            {
+                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("hybrid_transparency_composite"),
+                    timestamp_writes: None,
+                });
+                if let Some(pipeline) = &self.hybrid_rt_transparency_pipeline {
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.hybrid_rt_transparency_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                }
+                if let Some(pipeline) = &self.hybrid_compose_pipeline {
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.hybrid_composite_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                }
             }
-            if let Some(pipeline) = &self.hybrid_compose_pipeline {
-                cpass.set_pipeline(pipeline);
-                cpass.set_bind_group(0, &self.hybrid_composite_bind_group, &[]);
-                cpass.dispatch_workgroups(x, y, 1);
-            }
-            drop(cpass);
             if feature_status.hybrid_rt_reflections_active {
                 encoder.copy_texture_to_texture(
                     ImageCopyTexture {
@@ -6778,8 +6865,13 @@ impl WgpuRenderer {
         if !self.is_2d {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("denoise"),
-                timestamp_writes: None,
+                timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(PROF_DENOISE_BEGIN),
+                    end_of_pass_write_index: Some(PROF_DENOISE_END),
+                }),
             });
+            profiled_denoise = profiler_query_set.is_some();
             cpass.set_pipeline(&self.denoise_pipeline);
             cpass.set_bind_group(0, &self.denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
@@ -7125,30 +7217,85 @@ impl WgpuRenderer {
             erender.paint_jobs(&self.device, &self.queue, &mut encoder, &view, delta, prims);
         }
 
+        if let (Some(query_set), Some(query_buffer), Some(readback_buffer)) = (
+            &self.profiler_query_set,
+            &self.profiler_query_buffer,
+            &self.profiler_readback_buffer,
+        ) {
+            for (begin, end, active) in [
+                (PROF_RASTER_BEGIN, PROF_RASTER_END, profiled_raster),
+                (PROF_RT_SHADOW_BEGIN, PROF_RT_SHADOW_END, profiled_rt_shadow),
+                (PROF_RT_REFLECTION_BEGIN, PROF_RT_REFLECTION_END, profiled_rt_reflection),
+                (PROF_RT_GI_BEGIN, PROF_RT_GI_END, profiled_rt_gi),
+                (PROF_DENOISE_BEGIN, PROF_DENOISE_END, profiled_denoise),
+                (PROF_CLOUDS_BEGIN, PROF_CLOUDS_END, profiled_clouds),
+            ] {
+                if !active {
+                    let _unused_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("profiler_inactive_pass_timestamp"),
+                        timestamp_writes: Some(ComputePassTimestampWrites {
+                            query_set,
+                            beginning_of_pass_write_index: Some(begin),
+                            end_of_pass_write_index: Some(end),
+                        }),
+                    });
+                }
+            }
+            encoder.resolve_query_set(query_set, 0..12, query_buffer, 0);
+            encoder.copy_buffer_to_buffer(
+                query_buffer,
+                0,
+                readback_buffer,
+                0,
+                12 * std::mem::size_of::<u64>() as u64,
+            );
+        }
+
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::Maintain::Poll);
         stats.total_frame_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
         stats.feature_status = feature_status;
-        stats.raster_pass_ms = stats.total_frame_ms * 0.30;
-        stats.rt_shadow_pass_ms = if feature_status.hybrid_rt_shadows_active {
-            stats.total_frame_ms * 0.12
+        stats.profiler_timestamps_supported = self.profiler_query_set.is_some();
+        stats.profiler_status = if stats.profiler_timestamps_supported {
+            "gpu_timestamp_queries"
         } else {
-            0.0
+            "timestamp_queries_unavailable"
         };
-        stats.rt_reflection_pass_ms = if feature_status.hybrid_rt_reflections_active {
-            stats.total_frame_ms * 0.12
-        } else {
-            0.0
-        };
-        stats.rt_gi_pass_ms = if feature_status.hybrid_rtgi_active
-            || feature_status.pathtrace_primary_active
-        {
-            stats.total_frame_ms * 0.16
-        } else {
-            0.0
-        };
-        stats.denoise_ms = stats.total_frame_ms * 0.08;
-        stats.clouds_fog_atmosphere_ms = stats.total_frame_ms * 0.10;
+        if let Some(readback_buffer) = &self.profiler_readback_buffer {
+            let slice = readback_buffer.slice(..);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            slice.map_async(MapMode::Read, move |result| {
+                let _ = sender.send(result);
+            });
+            self.device.poll(wgpu::Maintain::Wait);
+            if receiver.recv().ok().and_then(Result::ok).is_some() {
+                let data = slice.get_mapped_range();
+                let timestamps: &[u64] = bytemuck::cast_slice(&data);
+                let elapsed_ms = |begin: u32, end: u32, active: bool| -> f32 {
+                    if active {
+                        timestamps
+                            .get(begin as usize)
+                            .zip(timestamps.get(end as usize))
+                            .map(|(&start, &finish)| {
+                                finish.saturating_sub(start) as f32 * self.profiler_timestamp_period / 1_000_000.0
+                            })
+                            .unwrap_or(0.0)
+                    } else {
+                        0.0
+                    }
+                };
+                stats.raster_pass_ms = elapsed_ms(PROF_RASTER_BEGIN, PROF_RASTER_END, profiled_raster);
+                stats.rt_shadow_pass_ms = elapsed_ms(PROF_RT_SHADOW_BEGIN, PROF_RT_SHADOW_END, profiled_rt_shadow);
+                stats.rt_reflection_pass_ms = elapsed_ms(PROF_RT_REFLECTION_BEGIN, PROF_RT_REFLECTION_END, profiled_rt_reflection);
+                stats.rt_gi_pass_ms = elapsed_ms(PROF_RT_GI_BEGIN, PROF_RT_GI_END, profiled_rt_gi);
+                stats.denoise_ms = elapsed_ms(PROF_DENOISE_BEGIN, PROF_DENOISE_END, profiled_denoise);
+                stats.clouds_fog_atmosphere_ms = elapsed_ms(PROF_CLOUDS_BEGIN, PROF_CLOUDS_END, profiled_clouds);
+                drop(data);
+                readback_buffer.unmap();
+            } else {
+                stats.profiler_status = "timestamp_readback_failed";
+            }
+        }
         if stats.total_frame_ms > 16.6 {
             self.slow_frame_streak += 1;
             self.fast_frame_streak = 0;
@@ -7215,6 +7362,7 @@ impl WgpuRenderer {
                 ));
                 ui.separator();
                 ui.label(format!("Total frame: {:.2} ms", s.total_frame_ms));
+                ui.label(format!("Profiler status: {}", s.profiler_status));
                 ui.label(format!(
                     "Adaptive RT quality: {:.0}%",
                     s.adaptive_quality * 100.0

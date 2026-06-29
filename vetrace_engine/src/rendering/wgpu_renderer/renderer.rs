@@ -13,8 +13,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::time::Instant;
-use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::SurfaceTargetUnsafe;
+use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
@@ -267,6 +267,10 @@ pub struct WgpuRenderer {
     fast_frame_streak: u32,
     prev_bvh_nodes: Vec<GpuBvhNode>,
     prev_tri_bvh_nodes: Vec<GpuTriBvhNode>,
+    profiler_query_set: Option<QuerySet>,
+    profiler_query_buffer: Option<Buffer>,
+    profiler_readback_buffer: Option<Buffer>,
+    profiler_timestamp_period: f32,
 }
 
 #[derive(Default)]
