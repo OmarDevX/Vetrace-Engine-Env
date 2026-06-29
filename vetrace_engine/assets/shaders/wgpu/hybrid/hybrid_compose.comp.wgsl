@@ -39,6 +39,39 @@ struct Params {
     total_tri_bvh_nodes: u32,
 };
 
+
+// Shared raster G-buffer contract (primitive + mesh passes; produced by primitive_gbuffer.wgsl and simple_pbr.wgsl):
+// - gbuf_albedo rgba8unorm: rgb = linear base color, a = coverage/valid surface mask.
+// - gbuf_normal rgba16float: xyz = world-space normal encoded as normal * 0.5 + 0.5, w = reserved (1.0).
+// - gbuf_material rgba8uint: x = metallic UNORM8, y = roughness UNORM8, z = emissive luma UNORM8,
+//   w = packed metadata; low nibble = feature flags, high nibble = object/material ID bucket.
+// - depth texture r32float: device depth used for world-position reconstruction and sky rejection.
+const GBUFFER_FEATURE_FLAGS_MASK: u32 = 0x0fu;
+const GBUFFER_ID_SHIFT: u32 = 4u;
+const GBUFFER_ID_MASK: u32 = 0xf0u;
+
+struct GBufferMaterial {
+    metallic: f32,
+    roughness: f32,
+    emissive_luma: f32,
+    feature_flags: u32,
+    id_bucket: u32,
+};
+
+fn decode_gbuffer_unorm8(v: u32) -> f32 {
+    return f32(v) / 255.0;
+}
+
+fn decode_gbuffer_material(material: vec4<u32>) -> GBufferMaterial {
+    return GBufferMaterial(
+        decode_gbuffer_unorm8(material.x),
+        max(decode_gbuffer_unorm8(material.y), 0.04),
+        decode_gbuffer_unorm8(material.z),
+        material.w & GBUFFER_FEATURE_FLAGS_MASK,
+        (material.w & GBUFFER_ID_MASK) >> GBUFFER_ID_SHIFT,
+    );
+}
+
 @group(0) @binding(4) var<uniform> params: Params;
 @group(0) @binding(5) var color_tex: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(6) var depth_tex: texture_storage_2d<r32float, read_write>;
@@ -70,11 +103,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let albedo = albedo_sample.rgb;
     let enc_n = textureLoad(gbuf_normal, px, 0).xyz;
     let n = normalize(enc_n * 2.0 - vec3<f32>(1.0));
-    let material = textureLoad(gbuf_material, px, 0);
-    let metallic = f32(material.x) / 255.0;
-    let roughness = max(f32(material.y) / 255.0, 0.04);
-    // material.z is optional emissive intensity encoded by G-buffer writers; simple_pbr currently leaves it at zero.
-    let emissive = albedo * (f32(material.z) / 255.0);
+    let gbuffer_material = decode_gbuffer_material(textureLoad(gbuf_material, px, 0));
+    let metallic = gbuffer_material.metallic;
+    let roughness = gbuffer_material.roughness;
+    let emissive = albedo * gbuffer_material.emissive_luma;
     let light_dir = normalize(-params.dir_light_dir.xyz);
     let uv = (vec2<f32>(id.xy) + vec2<f32>(0.5)) / vec2<f32>(dims);
     let clip = vec4<f32>(uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), depth01, 1.0);

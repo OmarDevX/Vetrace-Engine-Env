@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SHADER_ROOT = ROOT / "vetrace_engine" / "assets" / "shaders" / "wgpu"
+EXTRA_SHADERS = [ROOT / "vetrace_engine" / "shaders" / "simple_pbr.wgsl"]
 
 
 def main() -> int:
@@ -26,7 +27,7 @@ def main() -> int:
         return 2
 
     failures: list[tuple[Path, str]] = []
-    for shader in sorted(SHADER_ROOT.rglob("*.wgsl")):
+    for shader in sorted([*SHADER_ROOT.rglob("*.wgsl"), *EXTRA_SHADERS]):
         result = subprocess.run(
             [naga, str(shader)],
             cwd=ROOT,

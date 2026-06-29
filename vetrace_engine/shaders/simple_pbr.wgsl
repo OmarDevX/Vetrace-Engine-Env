@@ -1,3 +1,20 @@
+// Shared raster G-buffer contract (primitive + mesh passes; consumed by hybrid_compose.comp.wgsl):
+// - gbuf_albedo rgba8unorm: rgb = linear base color, a = coverage/valid surface mask.
+// - gbuf_normal rgba16float: xyz = world-space normal encoded as normal * 0.5 + 0.5, w = reserved (1.0).
+// - gbuf_material rgba8uint: x = metallic UNORM8, y = roughness UNORM8, z = emissive luma UNORM8,
+//   w = packed metadata; low nibble = feature flags, high nibble = object/material ID bucket.
+// - depth texture r32float: device depth used for world-position reconstruction and sky rejection.
+const GBUFFER_FEATURE_FLAGS_MASK: u32 = 0x0fu;
+const GBUFFER_ID_SHIFT: u32 = 4u;
+
+fn encode_gbuffer_unorm8(v: f32) -> u32 {
+    return u32(clamp(v, 0.0, 1.0) * 255.0);
+}
+
+fn encode_gbuffer_metadata(id_bucket: u32, feature_flags: u32) -> u32 {
+    return ((id_bucket & GBUFFER_FEATURE_FLAGS_MASK) << GBUFFER_ID_SHIFT) | (feature_flags & GBUFFER_FEATURE_FLAGS_MASK);
+}
+
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) normal: vec3<f32>,
@@ -74,7 +91,14 @@ fn fs_main(in: VsOut) -> FsOut {
     out.normal = vec4<f32>(normalize(in.normal) * 0.5 + vec3<f32>(0.5), 1.0);
     let m = clamp(mat.metallic, 0.0, 1.0);
     let r = clamp(mat.roughness, 0.0, 1.0);
-    out.material = vec4<u32>(u32(m * 255.0), u32(r * 255.0), 0u, 0u);
+    // Mesh materials currently do not expose emissive, material IDs, or feature flags here;
+    // encode explicit zeroes using the shared G-buffer contract so later fields remain stable.
+    out.material = vec4<u32>(
+        encode_gbuffer_unorm8(m),
+        encode_gbuffer_unorm8(r),
+        encode_gbuffer_unorm8(0.0),
+        encode_gbuffer_metadata(0u, 0u),
+    );
     out.depth = in.pos.z;
     return out;
 }
