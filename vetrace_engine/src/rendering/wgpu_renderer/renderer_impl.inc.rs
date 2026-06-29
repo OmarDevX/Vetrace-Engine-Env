@@ -5736,6 +5736,12 @@ impl WgpuRenderer {
             MainComputePipelineKind::Bootstrap
         };
 
+        let mut feature_status = crate::rendering::renderer::RendererHybridFeatureStatus {
+            pathtrace_primary_active: cinematic_pipeline_ready
+                && effective_renderer_mode.uses_path_traced_primary_visibility(),
+            ..Default::default()
+        };
+
         let adaptive_sample_cap = if self.adaptive_quality < 0.67 {
             1
         } else if self.adaptive_quality < 0.9 {
@@ -5746,6 +5752,28 @@ impl WgpuRenderer {
         effective_light_samples = effective_light_samples.min(adaptive_sample_cap);
         effective_dir_shadow_samples = effective_dir_shadow_samples.min(adaptive_sample_cap);
         effective_max_shadow_rays = effective_max_shadow_rays.min(adaptive_sample_cap as u32);
+
+        if effective_renderer_mode.uses_decomposed_rt_effects() {
+            feature_status.hybrid_rt_shadows_active = effective_raytraced_shadows != 0
+                && self.hybrid_rt_shadow_pipeline.is_some();
+            feature_status.hybrid_rt_reflections_active = params.raytraced_reflections_enabled != 0
+                && self.hybrid_rt_reflection_pipeline.is_some();
+            feature_status.hybrid_rtgi_active = dispatch_hybrid_rtgi
+                && self.hybrid_rt_gi_pipeline.is_some();
+        }
+        let effective_raytraced_shadows_param =
+            if effective_renderer_mode.uses_decomposed_rt_effects() {
+                u32::from(feature_status.hybrid_rt_shadows_active)
+            } else {
+                effective_raytraced_shadows
+            };
+        let effective_raytraced_reflections =
+            if effective_renderer_mode.uses_decomposed_rt_effects() {
+                u32::from(feature_status.hybrid_rt_reflections_active)
+            } else {
+                params.raytraced_reflections_enabled
+            };
+
         let shader_params = ShaderParams {
             camera_pos: [
                 params.camera_pos[0],
@@ -5795,7 +5823,7 @@ impl WgpuRenderer {
             light_samples: effective_light_samples,
             dir_shadow_samples: effective_dir_shadow_samples,
             shadow_mode: params.shadow_mode,
-            raytraced_shadows_enabled: effective_raytraced_shadows,
+            raytraced_shadows_enabled: effective_raytraced_shadows_param,
             shadow_quality: effective_shadow_quality,
             max_shadow_rays: effective_max_shadow_rays,
             emissive_shadow_samples: params.emissive_shadow_samples,
@@ -5804,7 +5832,7 @@ impl WgpuRenderer {
             max_rt_shadow_distance: params.max_rt_shadow_distance,
             rt_shadow_ray_t_max: params.rt_shadow_ray_t_max,
             min_soft_shadow_radius: params.min_soft_shadow_radius,
-            raytraced_reflections_enabled: params.raytraced_reflections_enabled,
+            raytraced_reflections_enabled: effective_raytraced_reflections,
             _pad_reflections: 0,
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
@@ -6215,6 +6243,7 @@ impl WgpuRenderer {
             }
         }
         if !pbr_data.is_empty() {
+            feature_status.raster_shadow_maps_active = true;
             let mut bind_groups = Vec::new();
             let mut shadow_bind_groups = Vec::new();
             for inst in pbr_data {
@@ -6549,9 +6578,9 @@ impl WgpuRenderer {
             );
             let comp_params = HybridCompositeParams {
                 temporal_blend: 0.10,
-                rt_gi_enabled: if dispatch_hybrid_rtgi { 1 } else { 0 },
-                rt_reflections_enabled: params.raytraced_reflections_enabled,
-                rt_shadows_enabled: params.raytraced_shadows_enabled,
+                rt_gi_enabled: u32::from(feature_status.hybrid_rtgi_active),
+                rt_reflections_enabled: u32::from(feature_status.hybrid_rt_reflections_active),
+                rt_shadows_enabled: u32::from(feature_status.hybrid_rt_shadows_active),
                 rt_transparency_enabled: 1,
                 atmosphere_enabled: 0,
                 clouds_enabled: if effective_cloud_count > 0 { 1 } else { 0 },
@@ -6567,21 +6596,21 @@ impl WgpuRenderer {
                 label: Some("hybrid_decomposed_rt_effects"),
                 timestamp_writes: None,
             });
-            if params.raytraced_shadows_enabled != 0 {
+            if feature_status.hybrid_rt_shadows_active {
                 if let Some(pipeline) = &self.hybrid_rt_shadow_pipeline {
                     cpass.set_pipeline(pipeline);
                     cpass.set_bind_group(0, &self.hybrid_rt_shadow_bind_group, &[]);
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
-            if params.raytraced_reflections_enabled != 0 {
+            if feature_status.hybrid_rt_reflections_active {
                 if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
                     cpass.set_pipeline(pipeline);
                     cpass.set_bind_group(0, &self.hybrid_rt_reflection_bind_group, &[]);
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
-            if dispatch_hybrid_rtgi {
+            if feature_status.hybrid_rtgi_active {
                 if let Some(pipeline) = &self.hybrid_rt_gi_pipeline {
                     cpass.set_pipeline(pipeline);
                     cpass.set_bind_group(0, &self.hybrid_rt_gi_bind_group, &[]);
@@ -6599,7 +6628,7 @@ impl WgpuRenderer {
                 cpass.dispatch_workgroups(x, y, 1);
             }
             drop(cpass);
-            if params.raytraced_reflections_enabled != 0 {
+            if feature_status.hybrid_rt_reflections_active {
                 encoder.copy_texture_to_texture(
                     ImageCopyTexture {
                         texture: &self.hybrid_rt_reflection_texture,
@@ -7099,19 +7128,20 @@ impl WgpuRenderer {
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::Maintain::Poll);
         stats.total_frame_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
+        stats.feature_status = feature_status;
         stats.raster_pass_ms = stats.total_frame_ms * 0.30;
-        stats.rt_shadow_pass_ms = if effective_raytraced_shadows != 0 {
+        stats.rt_shadow_pass_ms = if feature_status.hybrid_rt_shadows_active {
             stats.total_frame_ms * 0.12
         } else {
             0.0
         };
-        stats.rt_reflection_pass_ms = if params.raytraced_reflections_enabled != 0 {
+        stats.rt_reflection_pass_ms = if feature_status.hybrid_rt_reflections_active {
             stats.total_frame_ms * 0.12
         } else {
             0.0
         };
-        stats.rt_gi_pass_ms = if params.raytraced_gi_enabled != 0
-            || effective_renderer_mode.uses_path_traced_primary_visibility()
+        stats.rt_gi_pass_ms = if feature_status.hybrid_rtgi_active
+            || feature_status.pathtrace_primary_active
         {
             stats.total_frame_ms * 0.16
         } else {
@@ -7162,10 +7192,22 @@ impl WgpuRenderer {
             .default_pos(egui::pos2(12.0, 12.0))
             .resizable(false)
             .show(ctx, |ui| {
-                ui.label(format!("Raster: {:.2} ms", s.raster_pass_ms));
-                ui.label(format!("RT shadows: {:.2} ms", s.rt_shadow_pass_ms));
-                ui.label(format!("RT reflections: {:.2} ms", s.rt_reflection_pass_ms));
-                ui.label(format!("RT GI: {:.2} ms", s.rt_gi_pass_ms));
+                ui.label(format!(
+                    "Raster: {:.2} ms (shadow maps active: {})",
+                    s.raster_pass_ms, s.feature_status.raster_shadow_maps_active
+                ));
+                ui.label(format!(
+                    "RT shadows: {:.2} ms (active: {})",
+                    s.rt_shadow_pass_ms, s.feature_status.hybrid_rt_shadows_active
+                ));
+                ui.label(format!(
+                    "RT reflections: {:.2} ms (active: {})",
+                    s.rt_reflection_pass_ms, s.feature_status.hybrid_rt_reflections_active
+                ));
+                ui.label(format!(
+                    "RT GI: {:.2} ms (active: {})",
+                    s.rt_gi_pass_ms, s.feature_status.hybrid_rtgi_active
+                ));
                 ui.label(format!("Denoise: {:.2} ms", s.denoise_ms));
                 ui.label(format!(
                     "Clouds/fog/atmosphere: {:.2} ms",
@@ -7176,6 +7218,10 @@ impl WgpuRenderer {
                 ui.label(format!(
                     "Adaptive RT quality: {:.0}%",
                     s.adaptive_quality * 100.0
+                ));
+                ui.label(format!(
+                    "Path-traced primary active: {}",
+                    s.feature_status.pathtrace_primary_active
                 ));
             });
     }
