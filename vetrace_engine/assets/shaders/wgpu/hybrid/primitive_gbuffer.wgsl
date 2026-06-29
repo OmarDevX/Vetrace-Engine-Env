@@ -1,3 +1,21 @@
+// Shared raster G-buffer contract (primitive + mesh passes; consumed by hybrid_compose.comp.wgsl):
+// - gbuf_albedo rgba8unorm: rgb = linear base color, a = coverage/valid surface mask.
+// - gbuf_normal rgba16float: xyz = world-space normal encoded as normal * 0.5 + 0.5, w = reserved (1.0).
+// - gbuf_material rgba8uint: x = metallic UNORM8, y = roughness UNORM8, z = emissive luma UNORM8,
+//   w = packed metadata; low nibble = feature flags, high nibble = object/material ID bucket.
+// - depth texture r32float: device depth used for world-position reconstruction and sky rejection.
+const GBUFFER_FEATURE_FLAGS_MASK: u32 = 0x0fu;
+const GBUFFER_ID_SHIFT: u32 = 4u;
+const GBUFFER_ID_MASK: u32 = 0xf0u;
+
+fn encode_gbuffer_unorm8(v: f32) -> u32 {
+    return u32(clamp(v, 0.0, 1.0) * 255.0);
+}
+
+fn encode_gbuffer_metadata(id_bucket: u32, feature_flags: u32) -> u32 {
+    return ((id_bucket & GBUFFER_FEATURE_FLAGS_MASK) << GBUFFER_ID_SHIFT) | (feature_flags & GBUFFER_FEATURE_FLAGS_MASK);
+}
+
 struct Object {
     orientation: vec4<f32>,
     position: vec3<f32>, _pad1: f32,
@@ -101,7 +119,14 @@ fn fs_main(in: VsOut) -> FsOut {
     out.albedo = mat.baseColorFactor;
     out.normal = vec4<f32>(normalize(in.world_normal) * 0.5 + vec3<f32>(0.5), 1.0);
     let emissive_luma = max(max(mat.emissiveFactor.r, mat.emissiveFactor.g), mat.emissiveFactor.b) * mat.emissiveStrength;
-    out.material = vec4<u32>(u32(clamp(mat.metallicFactor, 0.0, 1.0) * 255.0), u32(clamp(mat.roughnessFactor, 0.0, 1.0) * 255.0), u32(clamp(emissive_luma, 0.0, 1.0) * 255.0), 0u);
+    let id_bucket = select(obj.material_index, mat.custom_material_id, mat.has_custom_material != 0u);
+    let feature_flags = mat.material_flags0;
+    out.material = vec4<u32>(
+        encode_gbuffer_unorm8(mat.metallicFactor),
+        encode_gbuffer_unorm8(mat.roughnessFactor),
+        encode_gbuffer_unorm8(emissive_luma),
+        encode_gbuffer_metadata(id_bucket, feature_flags),
+    );
     out.depth = in.pos.z;
     return out;
 }

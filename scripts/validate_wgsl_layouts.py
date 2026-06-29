@@ -39,6 +39,22 @@ EXPECTED_MATERIAL_TAIL = [
     "material_flags6",
 ]
 
+GBUFFER_CONTRACT_SHADERS = [
+    "vetrace_engine/assets/shaders/wgpu/hybrid/primitive_gbuffer.wgsl",
+    "vetrace_engine/shaders/simple_pbr.wgsl",
+    "vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl",
+]
+
+GBUFFER_CONTRACT_SNIPPETS = [
+    "gbuf_albedo rgba8unorm: rgb = linear base color, a = coverage/valid surface mask",
+    "gbuf_normal rgba16float: xyz = world-space normal encoded",
+    "gbuf_material rgba8uint: x = metallic UNORM8, y = roughness UNORM8, z = emissive luma UNORM8",
+    "low nibble = feature flags, high nibble = object/material ID bucket",
+    "depth texture r32float: device depth",
+    "const GBUFFER_FEATURE_FLAGS_MASK: u32 = 0x0fu",
+    "const GBUFFER_ID_SHIFT: u32 = 4u",
+]
+
 
 def rust_struct_fields(path: str, struct_name: str) -> list[str]:
     source = (ROOT / path).read_text()
@@ -96,9 +112,42 @@ def assert_material_stride_contract() -> None:
             raise AssertionError(f"{path} still uses old vec3 padding/material flag access")
 
 
+
+def assert_gbuffer_contract() -> None:
+    for path in GBUFFER_CONTRACT_SHADERS:
+        source = (ROOT / path).read_text()
+        missing = [snippet for snippet in GBUFFER_CONTRACT_SNIPPETS if snippet not in source]
+        if missing:
+            raise AssertionError(f"{path} missing G-buffer contract snippets: {missing}")
+
+    for path in GBUFFER_CONTRACT_SHADERS[:2]:
+        source = (ROOT / path).read_text()
+        required = [
+            "encode_gbuffer_unorm8",
+            "encode_gbuffer_metadata",
+            "encode_gbuffer_unorm8(m",
+        ] if path.endswith("simple_pbr.wgsl") else [
+            "encode_gbuffer_unorm8(mat.metallicFactor)",
+            "encode_gbuffer_unorm8(mat.roughnessFactor)",
+            "encode_gbuffer_unorm8(emissive_luma)",
+            "encode_gbuffer_metadata(id_bucket, feature_flags)",
+        ]
+        missing = [snippet for snippet in required if snippet not in source]
+        if missing:
+            raise AssertionError(f"{path} does not encode material channels through the shared G-buffer helpers: {missing}")
+
+    compose = (ROOT / "vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl").read_text()
+    if "decode_gbuffer_material(textureLoad(gbuf_material" not in compose:
+        raise AssertionError("hybrid_compose.comp.wgsl must consume gbuf_material through decode_gbuffer_material")
+    forbidden = ["f32(material.x) / 255.0", "f32(material.y) / 255.0", "f32(material.z) / 255.0"]
+    found = [snippet for snippet in forbidden if snippet in compose]
+    if found:
+        raise AssertionError(f"hybrid_compose.comp.wgsl still has pass-specific material channel assumptions: {found}")
+
 def main() -> int:
     assert_shader_params_prefixes()
     assert_material_stride_contract()
+    assert_gbuffer_contract()
     print("WGSL layout validation passed")
     return 0
 
