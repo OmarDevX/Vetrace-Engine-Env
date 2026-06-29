@@ -100,7 +100,8 @@ fn fs_main(in: VsOut) -> FsOut {
     var out: FsOut;
     out.albedo = mat.baseColorFactor;
     out.normal = vec4<f32>(normalize(in.world_normal) * 0.5 + vec3<f32>(0.5), 1.0);
-    out.material = vec4<u32>(u32(clamp(mat.metallicFactor, 0.0, 1.0) * 255.0), u32(clamp(mat.roughnessFactor, 0.0, 1.0) * 255.0), 0u, 0u);
+    let emissive_luma = max(max(mat.emissiveFactor.r, mat.emissiveFactor.g), mat.emissiveFactor.b) * mat.emissiveStrength;
+    out.material = vec4<u32>(u32(clamp(mat.metallicFactor, 0.0, 1.0) * 255.0), u32(clamp(mat.roughnessFactor, 0.0, 1.0) * 255.0), u32(clamp(emissive_luma, 0.0, 1.0) * 255.0), 0u);
     out.depth = in.pos.z;
     return out;
 }

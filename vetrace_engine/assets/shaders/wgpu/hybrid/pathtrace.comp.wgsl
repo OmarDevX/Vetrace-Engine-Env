@@ -2334,14 +2334,10 @@ fn shade_raster_visible_pixel(id: vec2<u32>, uv: vec2<f32>, rng: ptr<function, u
         let visible = is_visible(hit_pos + normal * 0.02, hit_pos + light_dir * 1000.0, 0xffffffffu, 0xffffffffu);
         visibility = select(0.0, 1.0, visible);
     }
-    let f0 = mix(vec3<f32>(0.04), albedo, metallic);
-    let half_vec = normalize(light_dir - view_dir);
-    let spec_power = max(2.0, (1.0 - roughness) * 128.0);
-    let spec = pow(max(dot(normal, half_vec), 0.0), spec_power);
-    let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - max(dot(-view_dir, half_vec), 0.0), 5.0);
-    var direct = (albedo * (1.0 - metallic) / 3.14159265 + fresnel * spec) * params.dir_light_color.rgb * params.dir_light_dir.w * n_dot_l * visibility;
+    let fresnel = pbr_reflection_fresnel(albedo, normal, view_dir, metallic);
+    var direct = pbr_direct_light(PbrDirectLightInput(albedo, normal, view_dir, light_dir, params.dir_light_color.rgb * params.dir_light_dir.w, metallic, roughness, visibility));
     let reflection = hybrid_reflection_for_raster(id, dims, hit_pos, normal, view_dir, albedo, metallic, roughness, fresnel, rng);
-    var ambient = albedo * params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * 0.18 + reflection;
+    var ambient = pbr_ambient_diffuse(albedo, params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * 0.18, metallic) + reflection;
     var gi = vec3<f32>(0.0);
     if (params.renderer_mode == RENDERER_MODE_HYBRID_EFFECTS && gi_params.quality != 3u) {
         gi = sample_diffuse_gi(hit_pos + normal * 0.01, normal, rng);

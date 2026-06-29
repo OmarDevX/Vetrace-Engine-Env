@@ -379,6 +379,7 @@ mod layout_tests {
         "rt_shadow_ray_t_max",
         "min_soft_shadow_radius",
         "raytraced_reflections_enabled",
+        "_pad_reflections",
         "inv_view_proj",
         "prev_view_proj",
         "dir_light_dir",
@@ -409,6 +410,7 @@ mod layout_tests {
         "reflection_max_distance",
         "gi_max_distance",
         "min_ray_offset",
+        "_pad_atmos",
         "atmos",
     ];
 
@@ -461,7 +463,11 @@ mod layout_tests {
     const WGSL_PARAMS_SHADERS: &[(&str, &str)] = &[
         (
             "pathtrace.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+            ),
         ),
         (
             "denoise.comp.wgsl",
@@ -501,7 +507,11 @@ mod layout_tests {
 
     const WGSL_MATERIAL_SHADERS: &[(&str, &str)] = &[(
         "pathtrace.comp.wgsl",
-        include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+        concat!(
+            include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
+            "\n",
+            include_str!("../../../assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl"),
+        ),
     )];
 
     fn wgsl_struct_fields<'a>(source: &'a str, struct_name: &str) -> Vec<&'a str> {
