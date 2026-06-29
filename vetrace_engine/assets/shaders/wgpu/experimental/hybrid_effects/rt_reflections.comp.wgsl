@@ -1,6 +1,11 @@
 // Production decomposed hybrid RT reflections pass.
 const T_EPS: f32 = 0.001;
 const INF_T: f32 = 1.0e20;
+const ROUGH_PROBE_ONLY: f32 = 0.60;
+const ROUGH_RT_ALLOWED: f32 = 0.25;
+const SSR_STEPS: i32 = 20;
+const SSR_STRIDE: f32 = 10.0;
+const SSR_THICKNESS: f32 = 0.35;
 
 struct Object {
     orientation: vec4<f32>,
