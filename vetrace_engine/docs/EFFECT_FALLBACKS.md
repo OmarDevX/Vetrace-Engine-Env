@@ -27,3 +27,16 @@ The hybrid renderer degrades costly effects by profile, material tags, distance,
 ## Debug overlay
 
 Enable `PostProcessing::fallback_policy.debug_overlay` or select ray debug view `6` to color fallback decisions: green for high-quality RT/hero pixels, cyan for SSR/probe/raster-only material fallback, amber for raster shadow fallback, and blue for ambient/lightmap-style fallback.
+
+## Policy-driven feature selection
+
+The renderer derives a single `RendererPolicy` once per frame instead of letting independent booleans decide passes in different parts of the render flow. The policy chooses concrete methods for:
+
+- primary visibility: raster, ray-traced, or path-traced;
+- shadows: off, raster map, cascaded map, ray-traced, or raster plus RT contact shadows;
+- reflections: off, probes, SSR, SSR with RT fallback, ray-traced, or path-traced;
+- ambient occlusion: off, SSAO, GTAO, or RTAO;
+- GI: off, baked lightmap, probes, SDFGI, one-bounce RTGI, or path-traced;
+- transparency: raster alpha, weighted OIT, screen-space refraction, ray-traced, or path-traced.
+
+Material tags are inputs to the policy: raster-only materials suppress RT methods, probe-friendly materials prefer probe fallback under low budget, accurate-reflection tags enable SSR-then-RT fallback in hybrid mode, expensive transparent materials can opt into RT transparency when supported, and static emissive materials prefer baked/probe GI.

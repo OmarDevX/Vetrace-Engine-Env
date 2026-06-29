@@ -13,8 +13,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::time::Instant;
-use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
+use wgpu::SurfaceTargetUnsafe;
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
@@ -258,6 +258,7 @@ pub struct WgpuRenderer {
     prev_light_data: Option<LightUniform>,
     sprite_vertices_cache: Vec<[f32; 5]>,
     prev_material_names: Vec<String>,
+    prev_material_fallback_tags: u32,
     prev_shader_defs: Vec<(String, String)>,
     prev_objects: Vec<GpuObject>,
     prev_triangles: Vec<GpuTriangle>,
