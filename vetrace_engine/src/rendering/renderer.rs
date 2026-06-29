@@ -86,7 +86,17 @@ impl Default for RendererProfile {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct RendererHybridFeatureStatus {
+    pub raster_shadow_maps_active: bool,
+    pub hybrid_rt_shadows_active: bool,
+    pub hybrid_rt_reflections_active: bool,
+    pub hybrid_rtgi_active: bool,
+    pub pathtrace_primary_active: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct RendererProfilerStats {
+    pub feature_status: RendererHybridFeatureStatus,
     pub raster_pass_ms: f32,
     pub rt_shadow_pass_ms: f32,
     pub rt_reflection_pass_ms: f32,
