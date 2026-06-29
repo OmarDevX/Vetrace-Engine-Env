@@ -2,6 +2,8 @@
 
 The renderer now uses a mixed architecture: monolithic path tracing remains the production path for primary-visibility path tracing, while `RendererMode::HybridEffects` uses decomposed raster G-buffer plus split RT effect compute passes and a compositor.
 
+For feature-by-feature implementation status and future parity guidance, see `RENDERER_PARITY.md`.
+
 ## Active shader map
 
 | Mode / pass | Rust loader | Active shader(s) | Status |
