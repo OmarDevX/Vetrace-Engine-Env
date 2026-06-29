@@ -85,6 +85,284 @@ impl Default for RendererProfile {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrimaryVisibilityMethod {
+    Raster,
+    Raytraced,
+    PathTraced,
+}
+
+impl Default for PrimaryVisibilityMethod {
+    fn default() -> Self {
+        Self::Raster
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShadowMethod {
+    Off,
+    RasterShadowMap,
+    CascadedShadowMap,
+    Raytraced,
+    RasterPlusRtContact,
+}
+
+impl Default for ShadowMethod {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReflectionMethod {
+    Off,
+    Probe,
+    SSR,
+    SsrThenRtFallback,
+    Raytraced,
+    PathTraced,
+}
+
+impl Default for ReflectionMethod {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AmbientOcclusionMethod {
+    Off,
+    SSAO,
+    GTAO,
+    RTAO,
+}
+
+impl Default for AmbientOcclusionMethod {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GiMethod {
+    Off,
+    BakedLightmap,
+    LightProbes,
+    SDFGI,
+    RTGIOneBounce,
+    PathTraced,
+}
+
+impl Default for GiMethod {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransparencyMethod {
+    RasterAlpha,
+    WeightedOIT,
+    ScreenSpaceRefraction,
+    Raytraced,
+    PathTraced,
+}
+
+impl Default for TransparencyMethod {
+    fn default() -> Self {
+        Self::RasterAlpha
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RendererHardwareCapabilities {
+    pub rt_shadows: bool,
+    pub rt_reflections: bool,
+    pub rt_gi: bool,
+    pub rt_transparency: bool,
+    pub path_tracing: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RendererPolicy {
+    pub renderer_mode: RendererMode,
+    pub profile: RendererProfile,
+    pub primary_visibility: PrimaryVisibilityMethod,
+    pub shadows: ShadowMethod,
+    pub reflections: ReflectionMethod,
+    pub ambient_occlusion: AmbientOcclusionMethod,
+    pub gi: GiMethod,
+    pub transparency: TransparencyMethod,
+}
+
+impl RendererPolicy {
+    pub fn derive(
+        params: &RenderParams,
+        hardware: RendererHardwareCapabilities,
+        material_fallback_tags: u32,
+        adaptive_quality: f32,
+    ) -> Self {
+        use crate::materials::{
+            MATERIAL_TAG_CAN_USE_PROBE, MATERIAL_TAG_EMISSIVE_STATIC,
+            MATERIAL_TAG_NEEDS_ACCURATE_REFLECTION, MATERIAL_TAG_RASTER_ONLY,
+            MATERIAL_TAG_TRANSPARENT_EXPENSIVE,
+        };
+
+        let mut mode = params.renderer_mode;
+        if matches!(params.profile, RendererProfile::Indoor60FPS) {
+            mode = RendererMode::HybridEffects;
+        } else if matches!(params.profile, RendererProfile::Cinematic) {
+            mode = RendererMode::CinematicPathTrace;
+        }
+
+        let raster_only = material_fallback_tags & MATERIAL_TAG_RASTER_ONLY != 0;
+        let needs_accurate_reflection =
+            material_fallback_tags & MATERIAL_TAG_NEEDS_ACCURATE_REFLECTION != 0;
+        let can_use_probe = material_fallback_tags & MATERIAL_TAG_CAN_USE_PROBE != 0;
+        let transparent_expensive =
+            material_fallback_tags & MATERIAL_TAG_TRANSPARENT_EXPENSIVE != 0;
+        let emissive_static = material_fallback_tags & MATERIAL_TAG_EMISSIVE_STATIC != 0;
+        let low_budget = adaptive_quality < 0.67
+            || matches!(
+                params.profile,
+                RendererProfile::Low | RendererProfile::Indoor60FPS
+            );
+        let high_budget = adaptive_quality >= 0.9
+            && matches!(
+                params.profile,
+                RendererProfile::High | RendererProfile::Ultra | RendererProfile::Cinematic
+            );
+
+        let primary_visibility = match mode {
+            RendererMode::RasterGame | RendererMode::HybridEffects => {
+                PrimaryVisibilityMethod::Raster
+            }
+            RendererMode::PathTracePreview if hardware.path_tracing && !raster_only => {
+                PrimaryVisibilityMethod::PathTraced
+            }
+            RendererMode::CinematicPathTrace if hardware.path_tracing && !raster_only => {
+                PrimaryVisibilityMethod::PathTraced
+            }
+            RendererMode::PathTracePreview | RendererMode::CinematicPathTrace => {
+                PrimaryVisibilityMethod::Raster
+            }
+        };
+
+        let shadows = if params.shadow_quality == 0 && params.raytraced_shadows_enabled == 0 {
+            ShadowMethod::Off
+        } else {
+            match primary_visibility {
+                PrimaryVisibilityMethod::PathTraced => ShadowMethod::Raytraced,
+                _ if mode == RendererMode::HybridEffects
+                    && params.raytraced_shadows_enabled != 0
+                    && hardware.rt_shadows
+                    && !raster_only
+                    && !low_budget =>
+                {
+                    ShadowMethod::RasterPlusRtContact
+                }
+                _ if params.shadow_quality > 1 => ShadowMethod::CascadedShadowMap,
+                _ => ShadowMethod::RasterShadowMap,
+            }
+        };
+
+        let reflections = match primary_visibility {
+            PrimaryVisibilityMethod::PathTraced => ReflectionMethod::PathTraced,
+            _ if can_use_probe && !needs_accurate_reflection && low_budget => {
+                ReflectionMethod::Probe
+            }
+            _ if mode == RendererMode::HybridEffects
+                && params.raytraced_reflections_enabled != 0
+                && hardware.rt_reflections
+                && !raster_only
+                && needs_accurate_reflection =>
+            {
+                ReflectionMethod::SsrThenRtFallback
+            }
+            _ if mode == RendererMode::HybridEffects
+                && params.raytraced_reflections_enabled != 0
+                && hardware.rt_reflections
+                && !raster_only
+                && high_budget =>
+            {
+                ReflectionMethod::Raytraced
+            }
+            _ => ReflectionMethod::SSR,
+        };
+
+        let ambient_occlusion = match primary_visibility {
+            PrimaryVisibilityMethod::PathTraced => AmbientOcclusionMethod::Off,
+            _ if mode == RendererMode::HybridEffects
+                && high_budget
+                && hardware.rt_shadows
+                && !raster_only =>
+            {
+                AmbientOcclusionMethod::RTAO
+            }
+            _ if low_budget => AmbientOcclusionMethod::SSAO,
+            _ => AmbientOcclusionMethod::GTAO,
+        };
+
+        let gi = if params.gi_quality == 3 {
+            GiMethod::Off
+        } else {
+            match primary_visibility {
+                PrimaryVisibilityMethod::PathTraced => GiMethod::PathTraced,
+                _ if emissive_static => GiMethod::BakedLightmap,
+                _ => match params.gi_mode {
+                    0 => GiMethod::Off,
+                    1 => GiMethod::BakedLightmap,
+                    2 => GiMethod::LightProbes,
+                    3 => GiMethod::SDFGI,
+                    4 if mode == RendererMode::HybridEffects
+                        && hardware.rt_gi
+                        && !raster_only
+                        && !low_budget =>
+                    {
+                        GiMethod::RTGIOneBounce
+                    }
+                    4 => GiMethod::LightProbes,
+                    5 => GiMethod::SDFGI,
+                    _ => GiMethod::LightProbes,
+                },
+            }
+        };
+
+        let transparency = match primary_visibility {
+            PrimaryVisibilityMethod::PathTraced => TransparencyMethod::PathTraced,
+            _ if mode == RendererMode::HybridEffects
+                && params.raytraced_transparency_enabled != 0
+                && hardware.rt_transparency
+                && transparent_expensive
+                && !raster_only
+                && !low_budget =>
+            {
+                TransparencyMethod::Raytraced
+            }
+            _ if transparent_expensive => TransparencyMethod::ScreenSpaceRefraction,
+            _ if matches!(
+                params.profile,
+                RendererProfile::High | RendererProfile::Ultra
+            ) =>
+            {
+                TransparencyMethod::WeightedOIT
+            }
+            _ => TransparencyMethod::RasterAlpha,
+        };
+
+        Self {
+            renderer_mode: mode,
+            profile: params.profile,
+            primary_visibility,
+            shadows,
+            reflections,
+            ambient_occlusion,
+            gi,
+            transparency,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RendererHybridFeatureStatus {
     pub raster_shadow_maps_active: bool,
@@ -92,6 +370,12 @@ pub struct RendererHybridFeatureStatus {
     pub hybrid_rt_reflections_active: bool,
     pub hybrid_rtgi_active: bool,
     pub pathtrace_primary_active: bool,
+    pub primary_visibility_method: PrimaryVisibilityMethod,
+    pub shadow_method: ShadowMethod,
+    pub reflection_method: ReflectionMethod,
+    pub ambient_occlusion_method: AmbientOcclusionMethod,
+    pub gi_method: GiMethod,
+    pub transparency_method: TransparencyMethod,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

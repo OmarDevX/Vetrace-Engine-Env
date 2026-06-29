@@ -38,3 +38,15 @@ forking shader logic.
 - **Do not treat every experimental shader as a new production path.** The active split RT effect shaders currently live in `assets/shaders/wgpu/experimental/hybrid_effects/` while helper extraction is pending. Extend `rt_shadows.comp.wgsl`, `rt_reflections.comp.wgsl`, `rt_gi.comp.wgsl`, `rt_transparency.comp.wgsl`, and `composite.comp.wgsl` in place when improving hybrid effects, and keep `raster.vert.wgsl`, `raster.frag.wgsl`, and `raytrace.comp.wgsl` as references unless Rust wiring and docs are updated together.
 - **Do not add a second hybrid compositor without a migration plan.** `assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl` is still an active hybrid composition fallback, while `experimental/hybrid_effects/composite.comp.wgsl` composes decomposed hybrid effect targets. New composition features should state which compositor owns them and when duplication will be removed.
 - **Update this matrix with every renderer feature change.** If a feature moves from experimental to production, update this document, `SHADER_ARCHITECTURE.md`, Rust pipeline wiring, and shader comments in the same change.
+
+## Renderer policy layer
+
+`RendererMode` remains the public compatibility switch, but each frame now derives a `RendererPolicy` before dispatch. The policy maps the mode, `RendererProfile`, RT toggles, GI mode, material fallback tags, adaptive quality, and available pipelines into explicit methods for primary visibility, shadows, reflections, AO, GI, and transparency.
+
+Current policy intent:
+
+- `RasterGame`: raster primary visibility, raster shadow maps/cascades, SSAO/GTAO, SSR/probes, baked/probe/SDFGI GI, and raster/weighted transparency.
+- `HybridEffects`: raster primary visibility with policy-selected RT contact shadows, RT reflection fallback, RTGI one-bounce, and RT transparency only when requested, supported, material-relevant, and within quality budget.
+- `PathTracePreview` / `CinematicPathTrace`: path-traced primary visibility with path-traced GI/reflections/transparency and ray-traced shadows when the cinematic pipeline is available; otherwise the renderer reports the selected policy separately from actual active pipeline status.
+
+`RendererHybridFeatureStatus` now carries both legacy booleans and the active policy methods, so profiler/HUD consumers can distinguish “hybrid RT reflections active” from a cheaper policy such as SSR, probes, or SSR with RT fallback.

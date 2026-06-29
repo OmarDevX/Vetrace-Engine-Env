@@ -1368,7 +1368,9 @@ impl WgpuRenderer {
                     concat!(
                         include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
                         "\n",
-                        include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl"),
+                        include_str!(
+                            "../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl"
+                        ),
                     )
                     .into(),
                 ),
@@ -3988,6 +3990,7 @@ impl WgpuRenderer {
             prev_light_data: None,
             sprite_vertices_cache: Vec::new(),
             prev_material_names: Vec::new(),
+            prev_material_fallback_tags: 0,
             prev_shader_defs: Vec::new(),
             prev_objects: Vec::new(),
             prev_triangles: vec![GpuTriangle::zeroed()],
@@ -5072,6 +5075,8 @@ impl WgpuRenderer {
         }
         // Grow material buffers to at least the same minimum capacity used for
         // objects so that the bind group requirements are always met.
+        self.prev_material_fallback_tags =
+            clamped_mats.iter().fold(0, |tags, mat| tags | mat._pad2[0]);
         let mut mat_vec = vec![
             crate::scene::object::GpuMaterial::default();
             MIN_SCENE_CAPACITY.max(clamped_mats.len())
@@ -5703,41 +5708,42 @@ impl WgpuRenderer {
             _ => {}
         }
 
-        // Make GI routing explicit and Unreal-like:
-        // - RasterGame uses baked lightmaps/probes for baseline indirect lighting, or SDFGI
-        //   when scalable dynamic GI is requested.
-        // - HybridEffects may add exactly one RTGI bounce, otherwise it follows the same
-        //   baked/probe/SDFGI contract as raster.
-        // - Path-traced GI is reserved for path-traced primary visibility modes.
-        let uses_path_traced_primary = effective_renderer_mode.uses_path_traced_primary_visibility();
+        let hardware = crate::rendering::renderer::RendererHardwareCapabilities {
+            rt_shadows: self.hybrid_rt_shadow_pipeline.is_some(),
+            rt_reflections: self.hybrid_rt_reflection_pipeline.is_some(),
+            rt_gi: self.hybrid_rt_gi_pipeline.is_some(),
+            rt_transparency: self.hybrid_rt_transparency_pipeline.is_some(),
+            path_tracing: !self.safe_shader_mode,
+        };
+        let policy = crate::rendering::renderer::RendererPolicy::derive(
+            params,
+            hardware,
+            self.prev_material_fallback_tags,
+            self.adaptive_quality,
+        );
+        effective_renderer_mode = policy.renderer_mode;
+
+        // The policy is the single source of truth for feature routing. Keep the legacy
+        // GI constants only as shader ABI values derived from the policy decision.
+        let uses_path_traced_primary = policy.primary_visibility
+            == crate::rendering::renderer::PrimaryVisibilityMethod::PathTraced;
         let uses_hybrid_effects = effective_renderer_mode.uses_decomposed_rt_effects();
         let mut dispatch_sdfgi = false;
         let mut dispatch_hybrid_rtgi = false;
-        if effective_gi_quality == crate::rendering::wgpu_renderer::types::GI_QUALITY_OFF {
-            effective_gi_mode = GI_MODE_OFF;
-        } else if uses_path_traced_primary {
-            effective_gi_mode = GI_MODE_PATH_TRACED_PREVIEW;
-        } else {
-            match effective_gi_mode {
-                GI_MODE_OFF | GI_MODE_BAKED_LIGHTMAP | GI_MODE_LIGHT_PROBES => {}
-                GI_MODE_SDFGI => {
-                    dispatch_sdfgi = true;
-                }
-                GI_MODE_RTGI_ONE_BOUNCE if uses_hybrid_effects => {
-                    dispatch_hybrid_rtgi = true;
-                }
-                GI_MODE_RTGI_ONE_BOUNCE => {
-                    effective_gi_mode = GI_MODE_LIGHT_PROBES;
-                }
-                GI_MODE_PATH_TRACED_PREVIEW => {
-                    effective_gi_mode = GI_MODE_SDFGI;
-                    dispatch_sdfgi = true;
-                }
-                _ => {
-                    effective_gi_mode = GI_MODE_LIGHT_PROBES;
-                }
+        effective_gi_mode = match policy.gi {
+            crate::rendering::renderer::GiMethod::Off => GI_MODE_OFF,
+            crate::rendering::renderer::GiMethod::BakedLightmap => GI_MODE_BAKED_LIGHTMAP,
+            crate::rendering::renderer::GiMethod::LightProbes => GI_MODE_LIGHT_PROBES,
+            crate::rendering::renderer::GiMethod::SDFGI => {
+                dispatch_sdfgi = true;
+                GI_MODE_SDFGI
             }
-        }
+            crate::rendering::renderer::GiMethod::RTGIOneBounce => {
+                dispatch_hybrid_rtgi = true;
+                GI_MODE_RTGI_ONE_BOUNCE
+            }
+            crate::rendering::renderer::GiMethod::PathTraced => GI_MODE_PATH_TRACED_PREVIEW,
+        };
 
         let wants_cinematic_pipeline = uses_path_traced_primary && !self.safe_shader_mode;
         let cinematic_pipeline_ready = if wants_cinematic_pipeline {
@@ -5786,8 +5792,13 @@ impl WgpuRenderer {
         };
 
         let mut feature_status = crate::rendering::renderer::RendererHybridFeatureStatus {
-            pathtrace_primary_active: cinematic_pipeline_ready
-                && effective_renderer_mode.uses_path_traced_primary_visibility(),
+            pathtrace_primary_active: cinematic_pipeline_ready && uses_path_traced_primary,
+            primary_visibility_method: policy.primary_visibility,
+            shadow_method: policy.shadows,
+            reflection_method: policy.reflections,
+            ambient_occlusion_method: policy.ambient_occlusion,
+            gi_method: policy.gi,
+            transparency_method: policy.transparency,
             ..Default::default()
         };
 
@@ -5803,13 +5814,24 @@ impl WgpuRenderer {
         effective_max_shadow_rays = effective_max_shadow_rays.min(adaptive_sample_cap as u32);
 
         if effective_renderer_mode.uses_decomposed_rt_effects() {
-            feature_status.hybrid_rt_shadows_active = effective_raytraced_shadows != 0
-                && self.hybrid_rt_shadow_pipeline.is_some();
-            feature_status.hybrid_rt_reflections_active = params.raytraced_reflections_enabled != 0
-                && self.hybrid_rt_reflection_pipeline.is_some();
-            feature_status.hybrid_rtgi_active = dispatch_hybrid_rtgi
-                && self.hybrid_rt_gi_pipeline.is_some();
+            feature_status.hybrid_rt_shadows_active = matches!(
+                policy.shadows,
+                crate::rendering::renderer::ShadowMethod::Raytraced
+                    | crate::rendering::renderer::ShadowMethod::RasterPlusRtContact
+            );
+            feature_status.hybrid_rt_reflections_active = matches!(
+                policy.reflections,
+                crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
+                    | crate::rendering::renderer::ReflectionMethod::Raytraced
+            );
+            feature_status.hybrid_rtgi_active = dispatch_hybrid_rtgi;
         }
+        feature_status.raster_shadow_maps_active = matches!(
+            policy.shadows,
+            crate::rendering::renderer::ShadowMethod::RasterShadowMap
+                | crate::rendering::renderer::ShadowMethod::CascadedShadowMap
+                | crate::rendering::renderer::ShadowMethod::RasterPlusRtContact
+        );
         let effective_raytraced_shadows_param =
             if effective_renderer_mode.uses_decomposed_rt_effects() {
                 u32::from(feature_status.hybrid_rt_shadows_active)
@@ -6486,8 +6508,7 @@ impl WgpuRenderer {
                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
             }
         }
-        if !self.is_2d && dispatch_sdfgi && self.gi_cache.dirty
-        {
+        if !self.is_2d && dispatch_sdfgi && self.gi_cache.dirty {
             {
                 let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                     label: Some("sdfgi_prepass"),
@@ -6640,7 +6661,10 @@ impl WgpuRenderer {
                 rt_gi_enabled: u32::from(feature_status.hybrid_rtgi_active),
                 rt_reflections_enabled: u32::from(feature_status.hybrid_rt_reflections_active),
                 rt_shadows_enabled: u32::from(feature_status.hybrid_rt_shadows_active),
-                rt_transparency_enabled: 1,
+                rt_transparency_enabled: u32::from(matches!(
+                    policy.transparency,
+                    crate::rendering::renderer::TransparencyMethod::Raytraced
+                )),
                 atmosphere_enabled: 0,
                 clouds_enabled: if effective_cloud_count > 0 { 1 } else { 0 },
                 _pad: 0,
@@ -6655,10 +6679,12 @@ impl WgpuRenderer {
                 if let Some(pipeline) = &self.hybrid_rt_shadow_pipeline {
                     let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                         label: Some("hybrid_rt_shadows"),
-                        timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
-                            query_set,
-                            beginning_of_pass_write_index: Some(PROF_RT_SHADOW_BEGIN),
-                            end_of_pass_write_index: Some(PROF_RT_SHADOW_END),
+                        timestamp_writes: profiler_query_set.map(|query_set| {
+                            ComputePassTimestampWrites {
+                                query_set,
+                                beginning_of_pass_write_index: Some(PROF_RT_SHADOW_BEGIN),
+                                end_of_pass_write_index: Some(PROF_RT_SHADOW_END),
+                            }
                         }),
                     });
                     profiled_rt_shadow = profiler_query_set.is_some();
@@ -6671,10 +6697,12 @@ impl WgpuRenderer {
                 if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
                     let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                         label: Some("hybrid_rt_reflections"),
-                        timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
-                            query_set,
-                            beginning_of_pass_write_index: Some(PROF_RT_REFLECTION_BEGIN),
-                            end_of_pass_write_index: Some(PROF_RT_REFLECTION_END),
+                        timestamp_writes: profiler_query_set.map(|query_set| {
+                            ComputePassTimestampWrites {
+                                query_set,
+                                beginning_of_pass_write_index: Some(PROF_RT_REFLECTION_BEGIN),
+                                end_of_pass_write_index: Some(PROF_RT_REFLECTION_END),
+                            }
                         }),
                     });
                     profiled_rt_reflection = profiler_query_set.is_some();
@@ -6687,10 +6715,12 @@ impl WgpuRenderer {
                 if let Some(pipeline) = &self.hybrid_rt_gi_pipeline {
                     let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                         label: Some("hybrid_rt_gi"),
-                        timestamp_writes: profiler_query_set.map(|query_set| ComputePassTimestampWrites {
-                            query_set,
-                            beginning_of_pass_write_index: Some(PROF_RT_GI_BEGIN),
-                            end_of_pass_write_index: Some(PROF_RT_GI_END),
+                        timestamp_writes: profiler_query_set.map(|query_set| {
+                            ComputePassTimestampWrites {
+                                query_set,
+                                beginning_of_pass_write_index: Some(PROF_RT_GI_BEGIN),
+                                end_of_pass_write_index: Some(PROF_RT_GI_END),
+                            }
                         }),
                     });
                     profiled_rt_gi = profiler_query_set.is_some();
@@ -6704,10 +6734,15 @@ impl WgpuRenderer {
                     label: Some("hybrid_transparency_composite"),
                     timestamp_writes: None,
                 });
-                if let Some(pipeline) = &self.hybrid_rt_transparency_pipeline {
-                    cpass.set_pipeline(pipeline);
-                    cpass.set_bind_group(0, &self.hybrid_rt_transparency_bind_group, &[]);
-                    cpass.dispatch_workgroups(x, y, 1);
+                if matches!(
+                    policy.transparency,
+                    crate::rendering::renderer::TransparencyMethod::Raytraced
+                ) {
+                    if let Some(pipeline) = &self.hybrid_rt_transparency_pipeline {
+                        cpass.set_pipeline(pipeline);
+                        cpass.set_bind_group(0, &self.hybrid_rt_transparency_bind_group, &[]);
+                        cpass.dispatch_workgroups(x, y, 1);
+                    }
                 }
                 if let Some(pipeline) = &self.hybrid_compose_pipeline {
                     cpass.set_pipeline(pipeline);
@@ -7225,7 +7260,11 @@ impl WgpuRenderer {
             for (begin, end, active) in [
                 (PROF_RASTER_BEGIN, PROF_RASTER_END, profiled_raster),
                 (PROF_RT_SHADOW_BEGIN, PROF_RT_SHADOW_END, profiled_rt_shadow),
-                (PROF_RT_REFLECTION_BEGIN, PROF_RT_REFLECTION_END, profiled_rt_reflection),
+                (
+                    PROF_RT_REFLECTION_BEGIN,
+                    PROF_RT_REFLECTION_END,
+                    profiled_rt_reflection,
+                ),
                 (PROF_RT_GI_BEGIN, PROF_RT_GI_END, profiled_rt_gi),
                 (PROF_DENOISE_BEGIN, PROF_DENOISE_END, profiled_denoise),
                 (PROF_CLOUDS_BEGIN, PROF_CLOUDS_END, profiled_clouds),
@@ -7277,19 +7316,28 @@ impl WgpuRenderer {
                             .get(begin as usize)
                             .zip(timestamps.get(end as usize))
                             .map(|(&start, &finish)| {
-                                finish.saturating_sub(start) as f32 * self.profiler_timestamp_period / 1_000_000.0
+                                finish.saturating_sub(start) as f32 * self.profiler_timestamp_period
+                                    / 1_000_000.0
                             })
                             .unwrap_or(0.0)
                     } else {
                         0.0
                     }
                 };
-                stats.raster_pass_ms = elapsed_ms(PROF_RASTER_BEGIN, PROF_RASTER_END, profiled_raster);
-                stats.rt_shadow_pass_ms = elapsed_ms(PROF_RT_SHADOW_BEGIN, PROF_RT_SHADOW_END, profiled_rt_shadow);
-                stats.rt_reflection_pass_ms = elapsed_ms(PROF_RT_REFLECTION_BEGIN, PROF_RT_REFLECTION_END, profiled_rt_reflection);
+                stats.raster_pass_ms =
+                    elapsed_ms(PROF_RASTER_BEGIN, PROF_RASTER_END, profiled_raster);
+                stats.rt_shadow_pass_ms =
+                    elapsed_ms(PROF_RT_SHADOW_BEGIN, PROF_RT_SHADOW_END, profiled_rt_shadow);
+                stats.rt_reflection_pass_ms = elapsed_ms(
+                    PROF_RT_REFLECTION_BEGIN,
+                    PROF_RT_REFLECTION_END,
+                    profiled_rt_reflection,
+                );
                 stats.rt_gi_pass_ms = elapsed_ms(PROF_RT_GI_BEGIN, PROF_RT_GI_END, profiled_rt_gi);
-                stats.denoise_ms = elapsed_ms(PROF_DENOISE_BEGIN, PROF_DENOISE_END, profiled_denoise);
-                stats.clouds_fog_atmosphere_ms = elapsed_ms(PROF_CLOUDS_BEGIN, PROF_CLOUDS_END, profiled_clouds);
+                stats.denoise_ms =
+                    elapsed_ms(PROF_DENOISE_BEGIN, PROF_DENOISE_END, profiled_denoise);
+                stats.clouds_fog_atmosphere_ms =
+                    elapsed_ms(PROF_CLOUDS_BEGIN, PROF_CLOUDS_END, profiled_clouds);
                 drop(data);
                 readback_buffer.unmap();
             } else {
