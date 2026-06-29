@@ -3630,7 +3630,7 @@ impl WgpuRenderer {
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: BindingResource::TextureView(&depth_view),
+                        resource: BindingResource::TextureView(&dv),
                     },
                     BindGroupEntry {
                         binding: 1,
@@ -5975,6 +5975,24 @@ impl WgpuRenderer {
                     usage: BufferUsages::VERTEX,
                 }))
             };
+            let shadow_cube_instance_buffer = if shadow_cube_instances.is_empty() {
+                None
+            } else {
+                Some(self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("primitive_shadow_cube_instances"),
+                    contents: bytemuck::cast_slice(&shadow_cube_instances),
+                    usage: BufferUsages::VERTEX,
+                }))
+            };
+            let shadow_sphere_instance_buffer = if shadow_sphere_instances.is_empty() {
+                None
+            } else {
+                Some(self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("primitive_shadow_sphere_instances"),
+                    contents: bytemuck::cast_slice(&shadow_sphere_instances),
+                    usage: BufferUsages::VERTEX,
+                }))
+            };
             if !shadow_cube_instances.is_empty()
                 || !shadow_sphere_instances.is_empty()
                 || !pbr_data.is_empty()
@@ -5996,13 +6014,7 @@ impl WgpuRenderer {
                 rpass.set_pipeline(&self.primitive_shadow_pipeline);
                 rpass.set_bind_group(0, &self.primitive_gbuffer_bind_group, &[]);
                 if let Some(buffer) = &cube_instance_buffer {
-                    if !shadow_cube_instances.is_empty() {
-                        let shadow_buffer =
-                            self.device.create_buffer_init(&util::BufferInitDescriptor {
-                                label: Some("primitive_shadow_cube_instances"),
-                                contents: bytemuck::cast_slice(&shadow_cube_instances),
-                                usage: BufferUsages::VERTEX,
-                            });
+                    if let Some(shadow_buffer) = &shadow_cube_instance_buffer {
                         rpass.set_vertex_buffer(0, self.primitive_cube_vertex_buffer.slice(..));
                         rpass.set_vertex_buffer(1, shadow_buffer.slice(..));
                         rpass.set_index_buffer(
@@ -6017,13 +6029,7 @@ impl WgpuRenderer {
                     }
                     _ = buffer;
                 }
-                if !shadow_sphere_instances.is_empty() {
-                    let shadow_buffer =
-                        self.device.create_buffer_init(&util::BufferInitDescriptor {
-                            label: Some("primitive_shadow_sphere_instances"),
-                            contents: bytemuck::cast_slice(&shadow_sphere_instances),
-                            usage: BufferUsages::VERTEX,
-                        });
+                if let Some(shadow_buffer) = &shadow_sphere_instance_buffer {
                     rpass.set_vertex_buffer(0, self.primitive_sphere_vertex_buffer.slice(..));
                     rpass.set_vertex_buffer(1, shadow_buffer.slice(..));
                     rpass.set_index_buffer(
@@ -6427,8 +6433,18 @@ impl WgpuRenderer {
                     params.camera_pos[2],
                     0.0,
                 ],
-                dir_light_dir: params.dir_light_dir,
-                dir_light_color: params.dir_light_color,
+                dir_light_dir: [
+                    params.dir_light_dir[0],
+                    params.dir_light_dir[1],
+                    params.dir_light_dir[2],
+                    params.dir_light_intensity,
+                ],
+                dir_light_color: [
+                    params.dir_light_color[0],
+                    params.dir_light_color[1],
+                    params.dir_light_color[2],
+                    0.0,
+                ],
                 enabled: 1,
                 mode: 1,
                 _pad: [effective_gi_mode, 0],
