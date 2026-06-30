@@ -13,8 +13,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::time::Instant;
-use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::SurfaceTargetUnsafe;
+use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
@@ -166,6 +166,10 @@ pub struct WgpuRenderer {
     hybrid_rt_reflection_view: TextureView,
     hybrid_rt_reflection_history_texture: Texture,
     hybrid_rt_reflection_history_view: TextureView,
+    ssr_color_texture: Texture,
+    ssr_color_view: TextureView,
+    ssr_history_texture: Texture,
+    ssr_history_view: TextureView,
     hybrid_rt_gi_texture: Texture,
     hybrid_rt_gi_view: TextureView,
     hybrid_rt_transparency_texture: Texture,
@@ -176,10 +180,13 @@ pub struct WgpuRenderer {
     ambient_occlusion_history_view: TextureView,
     hybrid_rt_params_buffer: Buffer,
     hybrid_composite_params_buffer: Buffer,
+    ssr_params_buffer: Buffer,
     ambient_occlusion_params_buffer: Buffer,
     hybrid_rt_effect_bind_group_layout: BindGroupLayout,
     hybrid_rt_shadow_bind_group: BindGroup,
     hybrid_rt_reflection_bind_group: BindGroup,
+    ssr_bind_group_layout: BindGroupLayout,
+    ssr_bind_group: BindGroup,
     hybrid_rt_gi_bind_group: BindGroup,
     hybrid_rt_transparency_bind_group: BindGroup,
     hybrid_composite_bind_group_layout: BindGroupLayout,
@@ -190,6 +197,7 @@ pub struct WgpuRenderer {
     rtao_bind_group: BindGroup,
     hybrid_rt_shadow_pipeline: Option<ComputePipeline>,
     hybrid_rt_reflection_pipeline: Option<ComputePipeline>,
+    ssr_pipeline: Option<ComputePipeline>,
     hybrid_rt_gi_pipeline: Option<ComputePipeline>,
     hybrid_rt_transparency_pipeline: Option<ComputePipeline>,
     hybrid_compose_pipeline: Option<ComputePipeline>,
