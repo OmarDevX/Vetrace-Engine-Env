@@ -315,6 +315,15 @@ impl RendererPolicy {
                     1 => GiMethod::BakedLightmap,
                     2 => GiMethod::LightProbes,
                     3 => GiMethod::SDFGI,
+                    4 if matches!(
+                        params.profile,
+                        RendererProfile::Low | RendererProfile::Indoor60FPS
+                    ) =>
+                    {
+                        // Keep explicit low-cost profiles on probe GI even if RTGI is requested;
+                        // adaptive quality can also force this through low_budget below.
+                        GiMethod::LightProbes
+                    }
                     4 if mode == RendererMode::HybridEffects
                         && hardware.rt_gi
                         && !raster_only
