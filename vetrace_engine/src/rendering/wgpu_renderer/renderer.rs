@@ -7,7 +7,6 @@ use crate::scene::object::{
 };
 use crate::scene::{bvh::GpuBvhNode, tri_bvh::GpuTriBvhNode};
 use bytemuck::Zeroable;
-use egui::{ClippedPrimitive, TexturesDelta};
 use sdl2::video::Window;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -33,6 +32,16 @@ enum LazyPipelineStatus {
     Compiled,
     Failed,
 }
+
+#[cfg(all(feature = "wgpu", feature = "use_epi"))]
+type WgpuEguiPaint<'a> = (
+    &'a mut crate::rendering::egui_wgpu::EguiRenderer,
+    &'a [egui::ClippedPrimitive],
+    &'a egui::TexturesDelta,
+);
+
+#[cfg(not(all(feature = "wgpu", feature = "use_epi")))]
+type WgpuEguiPaint<'a> = ();
 
 pub struct WgpuRenderer {
     surface: Surface<'static>,

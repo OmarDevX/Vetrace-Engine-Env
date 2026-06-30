@@ -519,8 +519,29 @@ impl WgpuRenderer {
         });
         self.gi_probe_count = probes.len().min(256) as u32;
         self.gi_cache.has_probe_data = true;
-        self.recreate_bind_groups();
+        self.recreate_gi_resolve_bind_group();
         Ok(())
+    }
+
+    fn recreate_gi_resolve_bind_group(&mut self) {
+        self.gi_resolve_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("gi_resolve_bg"),
+            layout: &self.gi_resolve_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.depth_view) },
+                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&self.gbuf_albedo_view) },
+                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.gbuf_normal_view) },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.lightmap_view) },
+                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.gi_radiance_view) },
+                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.hybrid_rt_gi_view) },
+                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.gi_history_view) },
+                BindGroupEntry { binding: 7, resource: BindingResource::TextureView(&self.gi_buffer_view) },
+                BindGroupEntry { binding: 8, resource: self.gi_resolve_params_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 9, resource: self.gi_probe_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 10, resource: self.gi_probe_sh_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
+            ],
+        });
     }
 
     pub fn mark_lightmap_gi_ready(&mut self, has_atlas: bool, has_uvs: bool) {
@@ -4322,7 +4343,7 @@ impl WgpuRenderer {
 
         let gbuf_lightmap_uv_texture = device.create_texture(&TextureDescriptor {
             label: Some("gbuf_lightmap_uv"),
-            size: Extent3d { width, height, depth_or_array_layers: 1 },
+            size: Extent3d { width: render_width, height: render_height, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -6592,11 +6613,7 @@ impl WgpuRenderer {
         params: &RenderParams,
         sprites: &[SpriteRenderData],
         pbr_data: &[PbrRenderData],
-        egui: Option<(
-            &mut crate::rendering::egui_wgpu::EguiRenderer,
-            &[egui::ClippedPrimitive],
-            &egui::TexturesDelta,
-        )>,
+        egui: Option<WgpuEguiPaint<'_>>,
     ) {
         let frame_start = Instant::now();
         let mut stats = crate::rendering::renderer::RendererProfilerStats::default();
@@ -8637,8 +8654,15 @@ impl WgpuRenderer {
         }
         self.pending_blur_regions.clear();
 
-        if let Some((erender, prims, delta)) = egui {
-            erender.paint_jobs(&self.device, &self.queue, &mut encoder, &view, delta, prims);
+        #[cfg(all(feature = "wgpu", feature = "use_epi"))]
+        {
+            if let Some((erender, prims, delta)) = egui {
+                erender.paint_jobs(&self.device, &self.queue, &mut encoder, &view, delta, prims);
+            }
+        }
+        #[cfg(not(all(feature = "wgpu", feature = "use_epi")))]
+        {
+            let _ = egui;
         }
 
         if let (Some(query_set), Some(query_buffer), Some(readback_buffer)) = (
