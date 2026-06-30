@@ -26,6 +26,10 @@ pub const GI_MODE_PATH_TRACED_PREVIEW: u32 = 5;
 // Back-compat aliases for older call sites.
 pub const GI_MODE_SDF: u32 = GI_MODE_SDFGI;
 pub const GI_MODE_PATH: u32 = GI_MODE_PATH_TRACED_PREVIEW;
+pub const AO_METHOD_OFF: u32 = 0;
+pub const AO_METHOD_SSAO: u32 = 1;
+pub const AO_METHOD_GTAO: u32 = 2;
+pub const AO_METHOD_RTAO: u32 = 3;
 
 /// Matrix that converts OpenGL NDC to WGPU's coordinate system.
 /// Accounts for the different Y orientation and depth range.
@@ -298,6 +302,20 @@ pub struct HybridCompositeParams {
     pub rt_transparency_enabled: u32,
     pub atmosphere_enabled: u32,
     pub clouds_enabled: u32,
+    pub _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct AmbientOcclusionParams {
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub camera_pos: [f32; 4],
+    pub tex_size: [f32; 2],
+    pub radius: f32,
+    pub intensity: f32,
+    pub method: u32,
+    pub frame_number: u32,
+    pub temporal_enabled: u32,
     pub _pad: u32,
 }
 

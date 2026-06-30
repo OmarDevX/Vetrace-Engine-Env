@@ -37,6 +37,21 @@ struct Params {
     total_triangles: u32,
     total_bvh_nodes: u32,
     total_tri_bvh_nodes: u32,
+    dof_aperture: f32,
+    dof_focus_dist: f32,
+    dof_enable: u32,
+    _pad_dof: u32,
+    atmosphere: u32,
+    atmo_count: u32,
+    cloud_count: u32,
+    atmosphere_mode: u32,
+    atmosphere_sun_controls: vec4<f32>,
+    cloud_history_weight: f32,
+    cloud_sample_count: u32,
+    cloud_temporal_quality: u32,
+    cloud_shadow_mode: u32,
+    renderer_mode: u32,
+    rt_debug_view: u32,
 };
 
 
@@ -82,6 +97,7 @@ fn decode_gbuffer_material(material: vec4<u32>) -> GBufferMaterial {
 @group(0) @binding(41) var raster_shadow_map: texture_depth_2d;
 @group(0) @binding(42) var raster_shadow_sampler: sampler_comparison;
 @group(0) @binding(43) var gi_buffer: texture_2d<f32>;
+@group(0) @binding(44) var ambient_occlusion_tex: texture_2d<f32>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -123,8 +139,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let shadow_factor = mix(0.25, 1.0, raster_shadow);
     let direct = pbr_direct_light(PbrDirectLightInput(albedo, n, view_dir, light_dir, params.dir_light_color.xyz * params.dir_light_dir.w, metallic, roughness, shadow_factor));
     let gi = textureLoad(gi_buffer, px, 0).rgb;
+    let ao = clamp(textureLoad(ambient_occlusion_tex, px, 0).r, 0.0, 1.0);
+    if (params.rt_debug_view == 5u) {
+        textureStore(color_tex, px, vec4<f32>(vec3<f32>(ao), 1.0));
+        return;
+    }
     let sky_irradiance = params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * (0.12 + 0.08 * roughness);
-    let ambient = pbr_ambient_diffuse(albedo, sky_irradiance + gi, metallic);
+    let ambient = pbr_ambient_diffuse(albedo, (sky_irradiance + gi) * ao, metallic);
     let fresnel = pbr_reflection_fresnel(albedo, n, view_dir, metallic);
     let reflection_probe = mix(params.skycolor.rgb * fresnel, albedo * params.skycolor.rgb * 0.18, roughness) * select(0.35, 1.0, params.raytraced_reflections_enabled != 0u);
     let lit = emissive + direct + ambient + reflection_probe;

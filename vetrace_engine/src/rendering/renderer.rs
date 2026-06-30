@@ -369,6 +369,8 @@ pub struct RendererHybridFeatureStatus {
     pub hybrid_rt_shadows_active: bool,
     pub hybrid_rt_reflections_active: bool,
     pub hybrid_rtgi_active: bool,
+    pub ambient_occlusion_active: bool,
+    pub ambient_occlusion_fallback: bool,
     pub pathtrace_primary_active: bool,
     pub primary_visibility_method: PrimaryVisibilityMethod,
     pub shadow_method: ShadowMethod,
