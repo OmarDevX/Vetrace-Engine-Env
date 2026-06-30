@@ -621,7 +621,7 @@ mod layout_tests {
         let compose = include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl");
         let ao = include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl");
         let ssr = include_str!("../../../assets/shaders/wgpu/hybrid/ssr.comp.wgsl");
-        let rt = include_str!("../../../assets/shaders/wgpu/hybrid/rt_ao.comp.wgsl");
+        let rt = include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl");
         let gi = include_str!("../../../assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl");
         assert!(
             ao.contains("ao") && ao.contains("textureStore"),
@@ -656,11 +656,11 @@ mod layout_tests {
         ),
         (
             "rt_ao.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/hybrid/rt_ao.comp.wgsl"),
+            include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl"),
         ),
         (
             "rt_gi.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/hybrid/rt_gi.comp.wgsl"),
+            include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl"),
         ),
         (
             "gi_resolve.comp.wgsl",
