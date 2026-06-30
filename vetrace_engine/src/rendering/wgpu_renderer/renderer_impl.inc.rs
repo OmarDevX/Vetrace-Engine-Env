@@ -1578,6 +1578,151 @@ impl WgpuRenderer {
                     },
                 ],
             });
+        let rtao_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("rtao_bgl"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Uint,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Uint,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Uint,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: TextureFormat::R16Float,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 10,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 11,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 12,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 13,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
         let hybrid_composite_bind_group_layout =
             device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("hybrid_composite_bgl"),
@@ -1785,6 +1930,11 @@ impl WgpuRenderer {
             bind_group_layouts: &[&hybrid_rt_effect_bind_group_layout],
             push_constant_ranges: &[],
         });
+        let rtao_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("rtao_pl"),
+            bind_group_layouts: &[&rtao_bind_group_layout],
+            push_constant_ranges: &[],
+        });
         let hybrid_composite_pipeline_layout =
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("hybrid_composite_pl"),
@@ -1840,6 +1990,13 @@ impl WgpuRenderer {
             "ambient_occlusion_pipeline",
             include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl"),
             &ambient_occlusion_pipeline_layout,
+        );
+        let rtao_pipeline = make_hybrid_pipeline(
+            "rtao_pipeline",
+            include_str!(
+                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl"
+            ),
+            &rtao_pipeline_layout,
         );
         let hybrid_composite_pipeline = make_hybrid_pipeline(
             "hybrid_composite_pipeline",
@@ -3818,6 +3975,68 @@ impl WgpuRenderer {
                 ],
             })
         };
+        let rtao_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("rtao_bg"),
+            layout: &rtao_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&dv),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: hybrid_rt_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: object_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: triangle_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: tri_bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: material_buffer.as_entire_binding(),
+                },
+            ],
+        });
         let hybrid_rt_shadow_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &hybrid_rt_shadow_view);
         let hybrid_rt_reflection_bind_group =
@@ -4080,12 +4299,15 @@ impl WgpuRenderer {
             hybrid_composite_bind_group,
             ambient_occlusion_bind_group_layout,
             ambient_occlusion_bind_group,
+            rtao_bind_group_layout,
+            rtao_bind_group,
             hybrid_rt_shadow_pipeline,
             hybrid_rt_reflection_pipeline,
             hybrid_rt_gi_pipeline,
             hybrid_rt_transparency_pipeline,
             hybrid_compose_pipeline,
             ambient_occlusion_pipeline,
+            rtao_pipeline,
             hybrid_compose_pipeline_error,
             cinematic_compute_pipeline: None,
             cinematic_cloud_shadow_pipeline: None,
@@ -4842,6 +5064,68 @@ impl WgpuRenderer {
             "hybrid_rt_transparency_bg",
             &self.hybrid_rt_transparency_view,
         );
+        self.rtao_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("rtao_bg"),
+            layout: &self.rtao_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.depth_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: self.hybrid_rt_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: self.object_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: self.triangle_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: self.bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: self.tri_bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: self.material_buffer.as_entire_binding(),
+                },
+            ],
+        });
         self.hybrid_composite_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("hybrid_composite_bg"),
             layout: &self.hybrid_composite_bind_group_layout,
@@ -5656,6 +5940,68 @@ impl WgpuRenderer {
             "hybrid_rt_transparency_bg",
             &self.hybrid_rt_transparency_view,
         );
+        self.rtao_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("rtao_bg"),
+            layout: &self.rtao_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.depth_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: self.hybrid_rt_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: self.params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: self.object_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: self.triangle_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: self.bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: self.tri_bvh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: self.material_buffer.as_entire_binding(),
+                },
+            ],
+        });
 
         self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("primitive_gbuffer_bg"),
@@ -5926,6 +6272,7 @@ impl WgpuRenderer {
             rt_reflections: self.hybrid_rt_reflection_pipeline.is_some(),
             rt_gi: self.hybrid_rt_gi_pipeline.is_some(),
             rt_transparency: self.hybrid_rt_transparency_pipeline.is_some(),
+            rt_ao: self.rtao_pipeline.is_some(),
             path_tracing: !self.safe_shader_mode,
         };
         let policy = crate::rendering::renderer::RendererPolicy::derive(
@@ -6890,11 +7237,43 @@ impl WgpuRenderer {
             );
             let (x, y) = ((self.width + 7) / 8, (self.height + 7) / 8);
             let ao_method = Self::ambient_occlusion_method_constant(policy.ambient_occlusion);
-            let ao_dispatchable = !self.is_2d && matches!(ao_method, AO_METHOD_SSAO | AO_METHOD_GTAO);
-            feature_status.ambient_occlusion_fallback =
-                !matches!(ao_method, AO_METHOD_OFF | AO_METHOD_SSAO | AO_METHOD_GTAO)
-                    || (ao_dispatchable && self.ambient_occlusion_pipeline.is_none());
-            if ao_dispatchable {
+            let rtao_dispatchable = !self.is_2d
+                && ao_method == AO_METHOD_RTAO
+                && self.rtao_pipeline.is_some()
+                && hardware.rt_ao;
+            let screen_ao_method = if ao_method == AO_METHOD_RTAO && !rtao_dispatchable {
+                if self.ambient_occlusion_pipeline.is_some() {
+                    AO_METHOD_GTAO
+                } else {
+                    AO_METHOD_OFF
+                }
+            } else {
+                ao_method
+            };
+            let ao_dispatchable =
+                !self.is_2d && matches!(screen_ao_method, AO_METHOD_SSAO | AO_METHOD_GTAO);
+            feature_status.ambient_occlusion_method = match screen_ao_method {
+                AO_METHOD_RTAO => crate::rendering::renderer::AmbientOcclusionMethod::RTAO,
+                AO_METHOD_GTAO => crate::rendering::renderer::AmbientOcclusionMethod::GTAO,
+                AO_METHOD_SSAO => crate::rendering::renderer::AmbientOcclusionMethod::SSAO,
+                _ => crate::rendering::renderer::AmbientOcclusionMethod::Off,
+            };
+            feature_status.ambient_occlusion_fallback = ao_method != screen_ao_method
+                || (ao_dispatchable && self.ambient_occlusion_pipeline.is_none())
+                || (ao_method == AO_METHOD_RTAO && !rtao_dispatchable);
+            if rtao_dispatchable {
+                if let Some(pipeline) = &self.rtao_pipeline {
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("rt_ao"),
+                        timestamp_writes: None,
+                    });
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.rtao_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                    feature_status.ambient_occlusion_active = true;
+                    feature_status.ambient_occlusion_fallback = false;
+                }
+            } else if ao_dispatchable {
                 let ao_params = AmbientOcclusionParams {
                     inv_view_proj: params.inv_view_proj,
                     camera_pos: [
@@ -6906,7 +7285,7 @@ impl WgpuRenderer {
                     tex_size: [self.width as f32, self.height as f32],
                     radius: 2.0,
                     intensity: 1.4,
-                    method: ao_method,
+                    method: screen_ao_method,
                     frame_number: self.frame_number.max(0) as u32,
                     temporal_enabled: u32::from(self.frame_number > 0),
                     _pad: 0,

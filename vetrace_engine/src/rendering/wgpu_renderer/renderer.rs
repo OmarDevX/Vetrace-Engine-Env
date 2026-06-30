@@ -13,8 +13,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::time::Instant;
-use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
+use wgpu::SurfaceTargetUnsafe;
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
@@ -186,12 +186,15 @@ pub struct WgpuRenderer {
     hybrid_composite_bind_group: BindGroup,
     ambient_occlusion_bind_group_layout: BindGroupLayout,
     ambient_occlusion_bind_group: BindGroup,
+    rtao_bind_group_layout: BindGroupLayout,
+    rtao_bind_group: BindGroup,
     hybrid_rt_shadow_pipeline: Option<ComputePipeline>,
     hybrid_rt_reflection_pipeline: Option<ComputePipeline>,
     hybrid_rt_gi_pipeline: Option<ComputePipeline>,
     hybrid_rt_transparency_pipeline: Option<ComputePipeline>,
     hybrid_compose_pipeline: Option<ComputePipeline>,
     ambient_occlusion_pipeline: Option<ComputePipeline>,
+    rtao_pipeline: Option<ComputePipeline>,
     hybrid_compose_pipeline_error: Option<String>,
     cinematic_compute_pipeline: Option<ComputePipeline>,
     cinematic_cloud_shadow_pipeline: Option<ComputePipeline>,

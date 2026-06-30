@@ -180,6 +180,7 @@ pub struct RendererHardwareCapabilities {
     pub rt_reflections: bool,
     pub rt_gi: bool,
     pub rt_transparency: bool,
+    pub rt_ao: bool,
     pub path_tracing: bool,
 }
 
@@ -294,7 +295,7 @@ impl RendererPolicy {
             PrimaryVisibilityMethod::PathTraced => AmbientOcclusionMethod::Off,
             _ if mode == RendererMode::HybridEffects
                 && high_budget
-                && hardware.rt_shadows
+                && hardware.rt_ao
                 && !raster_only =>
             {
                 AmbientOcclusionMethod::RTAO
