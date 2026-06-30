@@ -33,7 +33,7 @@ wayland-backend = { version = "0.3", features = ["dlopen"] }
 rapier3d = "0.26.1"
 bvh = "0.11"
 image = { version = "0.25", features = ["png", "jpeg"] }
-kira = "0.10"
+kira = { version = "0.10", optional = true }
 mint = "0.5"
 either = "1"
 transform-gizmo-egui = "0.3"
@@ -45,6 +45,7 @@ enumset = "1.1.7"
 
 [dev-dependencies]
 rand = "0.8"
+naga = { version = "0.20", features = ["wgsl-in"] }
 vetrace_editor = { path = "../vetrace_editor" }
 
 [dependencies.epi]
@@ -52,7 +53,9 @@ version = "0.17"
 optional = true
 
 [features]
-default = ["sdl2_bundled", "use_epi", "wgpu"]
+default = ["sdl2_bundled", "use_epi", "wgpu", "audio"]
+audio = ["kira"]
+headless-check = []
 
 sdl2_unsafe_textures = ["sdl2/unsafe_textures"]
 sdl2_gfx = ["sdl2/gfx"]

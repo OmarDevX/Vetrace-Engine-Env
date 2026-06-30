@@ -6806,6 +6806,21 @@ impl WgpuRenderer {
             MainComputePipelineKind::Bootstrap
         };
         let profiler_query_set = self.profiler_query_set.as_ref();
+        let has_bvh_accel_data = self.bvh_node_count > 0 && self.tri_bvh_node_count > 0;
+        let profile_budget_downgraded = self.adaptive_quality < 0.99;
+        let pipeline_reason = |pipeline_ready: bool| {
+            if self.safe_shader_mode {
+                crate::rendering::renderer::RendererFallbackReason::SafeShaderMode
+            } else if !pipeline_ready {
+                crate::rendering::renderer::RendererFallbackReason::MissingPipeline
+            } else if !has_bvh_accel_data {
+                crate::rendering::renderer::RendererFallbackReason::MissingBvhAccelerationData
+            } else if profile_budget_downgraded {
+                crate::rendering::renderer::RendererFallbackReason::ProfileBudgetDowngrade
+            } else {
+                crate::rendering::renderer::RendererFallbackReason::MissingHardware
+            }
+        };
 
         let mut feature_status = crate::rendering::renderer::RendererHybridFeatureStatus {
             pathtrace_primary_active: cinematic_pipeline_ready && uses_path_traced_primary,
@@ -6939,6 +6954,28 @@ impl WgpuRenderer {
         } else {
             crate::rendering::renderer::ShadowMethod::Off
         };
+        if feature_status.requested_primary_visibility_method != feature_status.active_primary_visibility_method {
+            feature_status.primary_visibility_fallback_reason = pipeline_reason(cinematic_pipeline_ready);
+        }
+        if feature_status.requested_shadow_method != feature_status.active_shadow_method {
+            feature_status.shadow_fallback_reason = pipeline_reason(self.hybrid_rt_shadow_pipeline.is_some());
+        }
+        if feature_status.requested_reflection_method != feature_status.active_reflection_method {
+            feature_status.reflection_fallback_reason = pipeline_reason(
+                self.ssr_pipeline.is_some() || self.hybrid_rt_reflection_pipeline.is_some(),
+            );
+        }
+        if feature_status.requested_transparency_method != feature_status.active_transparency_method {
+            feature_status.transparency_fallback_reason = pipeline_reason(self.hybrid_rt_transparency_pipeline.is_some());
+        }
+        if policy.gi == crate::rendering::renderer::GiMethod::BakedLightmap && !baked_gi_ready {
+            feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingLightmaps;
+        } else if policy.gi == crate::rendering::renderer::GiMethod::LightProbes && !probe_gi_ready {
+            feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingProbes;
+        } else if policy.gi != feature_status.active_gi_method {
+            feature_status.gi_fallback_reason = pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
+        }
+
         let effective_raytraced_shadows_param =
             if effective_renderer_mode.uses_decomposed_rt_effects() {
                 u32::from(feature_status.hybrid_rt_shadows_active)
@@ -7816,7 +7853,7 @@ impl WgpuRenderer {
                 enabled: 1,
                 mode: 1,
                 gi_mode: effective_gi_mode,
-                rtao_sample_count: if policy.adaptive_quality { 6 } else { 8 },
+                rtao_sample_count: if self.adaptive_quality < 0.9 { 6 } else { 8 },
                 rtao_radius_bits: f32::to_bits(params.gi_max_distance.min(2.0).max(0.05)),
                 _pad: 0,
             };
@@ -8023,6 +8060,9 @@ impl WgpuRenderer {
             } else {
                 feature_status.active_gi_method = crate::rendering::renderer::GiMethod::Off;
                 feature_status.hybrid_rtgi_active = false;
+                if feature_status.gi_fallback_reason == crate::rendering::renderer::RendererFallbackReason::None {
+                    feature_status.gi_fallback_reason = pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
+                }
             }
             {
                 let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -8731,6 +8771,10 @@ impl WgpuRenderer {
     }
 
     pub fn draw_profiler_hud(&self, ctx: &egui::Context) {
+        fn fallback_suffix(reason: crate::rendering::renderer::RendererFallbackReason) -> String {
+            let label = reason.hud_label();
+            if label.is_empty() { String::new() } else { format!(" [{label}]") }
+        }
         let s = self.profiler_stats();
         egui::Window::new("Renderer Profiler")
             .default_pos(egui::pos2(12.0, 12.0))
@@ -8741,38 +8785,44 @@ impl WgpuRenderer {
                     s.raster_pass_ms, s.feature_status.raster_shadow_maps_active
                 ));
                 ui.label(format!(
-                    "Primary visibility: requested {:?} / active {:?}",
+                    "Primary visibility: requested {:?} / active {:?}{}",
                     s.feature_status.requested_primary_visibility_method,
-                    s.feature_status.active_primary_visibility_method
+                    s.feature_status.active_primary_visibility_method,
+                    fallback_suffix(s.feature_status.primary_visibility_fallback_reason)
                 ));
                 ui.label(format!(
-                    "Shadows: requested {:?} / active {:?} ({:.2} ms)",
+                    "Shadows: requested {:?} / active {:?}{} ({:.2} ms)",
                     s.feature_status.requested_shadow_method,
                     s.feature_status.active_shadow_method,
+                    fallback_suffix(s.feature_status.shadow_fallback_reason),
                     s.rt_shadow_pass_ms
                 ));
                 ui.label(format!(
-                    "Reflections: requested {:?} / active {:?} ({:.2} ms)",
+                    "Reflections: requested {:?} / active {:?}{} ({:.2} ms)",
                     s.feature_status.requested_reflection_method,
                     s.feature_status.active_reflection_method,
+                    fallback_suffix(s.feature_status.reflection_fallback_reason),
                     s.rt_reflection_pass_ms
                 ));
                 ui.label(format!(
-                    "AO: requested {:?} / active {:?} (fallback: {})",
+                    "AO: requested {:?} / active {:?}{} (fallback: {})",
                     s.feature_status.requested_ambient_occlusion_method,
                     s.feature_status.active_ambient_occlusion_method,
+                    fallback_suffix(s.feature_status.ambient_occlusion_fallback_reason),
                     s.feature_status.ambient_occlusion_fallback
                 ));
                 ui.label(format!(
-                    "GI: requested {:?} / active {:?} ({:.2} ms)",
+                    "GI: requested {:?} / active {:?}{} ({:.2} ms)",
                     s.feature_status.requested_gi_method,
                     s.feature_status.active_gi_method,
+                    fallback_suffix(s.feature_status.gi_fallback_reason),
                     s.rt_gi_pass_ms
                 ));
                 ui.label(format!(
-                    "Transparency: requested {:?} / active {:?}",
+                    "Transparency: requested {:?} / active {:?}{}",
                     s.feature_status.requested_transparency_method,
-                    s.feature_status.active_transparency_method
+                    s.feature_status.active_transparency_method,
+                    fallback_suffix(s.feature_status.transparency_fallback_reason)
                 ));
                 ui.label(format!("Denoise: {:.2} ms", s.denoise_ms));
                 ui.label(format!(
