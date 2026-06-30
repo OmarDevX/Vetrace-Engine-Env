@@ -26,6 +26,41 @@ An experimental **raytracing-capable game engine** written in Rust, powered by:
 
 ---
 
+
+## Build features and renderer-only validation
+
+Default engine builds enable the SDL2, `epi`, and WGPU renderer features, but
+do **not** enable runtime audio. Audio is optional because the `audio` feature
+pulls in `kira`/`cpal`, which uses ALSA on Linux and requires system audio
+development packages. Enable it explicitly only when building audio playback
+paths:
+
+```sh
+cargo check -p vetrace_engine --features audio
+```
+
+On Debian/Ubuntu systems, audio-enabled builds require ALSA development headers:
+
+```sh
+sudo apt-get install libasound2-dev
+```
+
+For CI, shader work, and renderer-only validation on machines without OS audio
+packages, use the `headless-check` feature with default features disabled. This
+keeps WGPU renderer code enabled while avoiding audio crates such as
+`alsa-sys`:
+
+```sh
+cargo check -p vetrace_engine --no-default-features --features headless-check
+```
+
+You can verify that the renderer-only dependency graph does not include ALSA
+with:
+
+```sh
+! cargo tree -p vetrace_engine --no-default-features --features headless-check -e normal | rg "alsa-sys"
+```
+
 ## 📦 Usage
 
 Add this to your `Cargo.toml` (after it's published):
