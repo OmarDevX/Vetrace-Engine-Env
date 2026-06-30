@@ -51,6 +51,44 @@ struct RtEffectParams {
 @group(0) @binding(21) var textures: binding_array<texture_2d<f32>>;
 @group(0) @binding(22) var material_sampler: sampler;
 // Shared BVH declarations/traversal are concatenated by Rust from hybrid/bvh_traversal.wgsl.
+
+fn unpack_normal(pixel: vec2<i32>) -> vec3<f32> {
+    return normalize(textureLoad(normal_tex, pixel, 0).xyz * 2.0 - vec3<f32>(1.0));
+}
+
+fn reconstruct_world(pixel: vec2<i32>, dims: vec2<u32>, depth: f32) -> vec3<f32> {
+    let uv = (vec2<f32>(pixel) + vec2<f32>(0.5)) / vec2<f32>(dims);
+    var world = rt_params.inv_view_proj * vec4<f32>(uv * 2.0 - vec2<f32>(1.0), depth, 1.0);
+    return (world / max(world.w, 1.0e-6)).xyz;
+}
+
+fn hash11(n: u32) -> f32 {
+    var x = n;
+    x = (x ^ 61u) ^ (x >> 16u);
+    x = x * 9u;
+    x = x ^ (x >> 4u);
+    x = x * 0x27d4eb2du;
+    x = x ^ (x >> 15u);
+    return f32(x & 0x00ffffffu) / 16777215.0;
+}
+
+fn tangent_basis(n: vec3<f32>) -> mat3x3<f32> {
+    let up = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(n.y) > 0.95);
+    let t = normalize(cross(up, n));
+    let b = cross(n, t);
+    return mat3x3<f32>(t, b, n);
+}
+
+fn cosine_dir(n: vec3<f32>, pixel: vec2<u32>, sample: u32) -> vec3<f32> {
+    let seed = pixel.x * 1973u + pixel.y * 9277u + u32(max(params.frame_number, 0)) * 26699u + sample * 101u;
+    let u1 = hash11(seed + 17u);
+    let u2 = hash11(seed + 53u);
+    let r = sqrt(u1);
+    let phi = 2.0 * PI * u2;
+    let local = vec3<f32>(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
+    return normalize(tangent_basis(n) * local);
+}
+
 fn visible_to_light(pos: vec3<f32>, n: vec3<f32>, l: vec3<f32>, max_objects: u32) -> f32 {
     if (dot(n, l) <= 0.0) { return 0.0; }
     let h = trace_scene(pos + n * T_EPS, l, max_objects, 64u);
