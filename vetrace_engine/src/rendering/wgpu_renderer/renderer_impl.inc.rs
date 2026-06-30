@@ -2094,6 +2094,7 @@ impl WgpuRenderer {
                     BindGroupLayoutEntry { binding: 44, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                     BindGroupLayoutEntry { binding: 45, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                     BindGroupLayoutEntry { binding: 46, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                    BindGroupLayoutEntry { binding: 47, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                 ],
             });
         let gi_resolve_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -3881,6 +3882,11 @@ impl WgpuRenderer {
                         blend: None,
                         write_mask: ColorWrites::ALL,
                     }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgba16Float,
+                        blend: Some(BlendState::REPLACE),
+                        write_mask: ColorWrites::ALL,
+                    }),
                 ],
                 compilation_options: Default::default(),
             }),
@@ -4002,6 +4008,11 @@ impl WgpuRenderer {
                     Some(ColorTargetState {
                         format: TextureFormat::R32Float,
                         blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgba16Float,
+                        blend: Some(BlendState::REPLACE),
                         write_mask: ColorWrites::ALL,
                     }),
                 ],
@@ -4347,8 +4358,8 @@ impl WgpuRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: TextureFormat::Rg16Float,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let gbuf_lightmap_uv_view = gbuf_lightmap_uv_texture.create_view(&TextureViewDescriptor::default());
@@ -4431,6 +4442,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 44, resource: BindingResource::TextureView(&ambient_occlusion_view) },
                 BindGroupEntry { binding: 45, resource: BindingResource::TextureView(&ssr_color_view) },
                 BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&hybrid_rt_reflection_view) },
+                BindGroupEntry { binding: 47, resource: BindingResource::TextureView(&gbuf_lightmap_uv_view) },
             ],
         });
         let ambient_occlusion_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -4962,8 +4974,8 @@ impl WgpuRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: TextureFormat::Rg16Float,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         self.gbuf_lightmap_uv_view = self.gbuf_lightmap_uv_texture.create_view(&TextureViewDescriptor::default());
@@ -5606,6 +5618,7 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 44, resource: BindingResource::TextureView(&self.ambient_occlusion_view) },
                 BindGroupEntry { binding: 45, resource: BindingResource::TextureView(&self.ssr_color_view) },
                 BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view) },
+                BindGroupEntry { binding: 47, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
             ],
         });
         self.ambient_occlusion_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -7486,6 +7499,14 @@ impl WgpuRenderer {
                             store: StoreOp::Store,
                         },
                     }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.gbuf_lightmap_uv_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
+                    }),
                 ],
                 depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                     view: &self.depth_stencil_view,
@@ -7698,6 +7719,14 @@ impl WgpuRenderer {
                     }),
                     Some(RenderPassColorAttachment {
                         view: &self.depth_view,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                    }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.gbuf_lightmap_uv_view,
                         resolve_target: None,
                         ops: Operations {
                             load: LoadOp::Load,

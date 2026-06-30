@@ -4,6 +4,7 @@
 // - gbuf_material rgba8uint: x = metallic UNORM8, y = roughness UNORM8, z = emissive luma UNORM8,
 //   w = packed metadata; low nibble = feature flags, high nibble = object/material ID bucket.
 // - depth texture r32float: device depth used for world-position reconstruction and sky rejection.
+// - gbuf_lightmap_uv rgba16float: xy = authored lightmap UV, z = validity mask, w = reserved.
 const GBUFFER_FEATURE_FLAGS_MASK: u32 = 0x0fu;
 const GBUFFER_ID_SHIFT: u32 = 4u;
 const GBUFFER_ID_MASK: u32 = 0xf0u;
@@ -109,6 +110,7 @@ struct FsOut {
     @location(1) normal: vec4<f32>,
     @location(2) material: vec4<u32>,
     @location(3) depth: f32,
+    @location(4) lightmap_uv: vec4<f32>,
 };
 
 @fragment
@@ -128,5 +130,7 @@ fn fs_main(in: VsOut) -> FsOut {
         encode_gbuffer_metadata(id_bucket, feature_flags),
     );
     out.depth = in.pos.z;
+    // Procedural primitives do not carry authored lightmap unwraps; mark invalid.
+    out.lightmap_uv = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     return out;
 }
