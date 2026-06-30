@@ -279,6 +279,17 @@ fn create_cloud_temporal_texture(
 }
 
 impl WgpuRenderer {
+    fn ambient_occlusion_method_constant(
+        method: crate::rendering::renderer::AmbientOcclusionMethod,
+    ) -> u32 {
+        match method {
+            crate::rendering::renderer::AmbientOcclusionMethod::Off => AO_METHOD_OFF,
+            crate::rendering::renderer::AmbientOcclusionMethod::SSAO => AO_METHOD_SSAO,
+            crate::rendering::renderer::AmbientOcclusionMethod::GTAO => AO_METHOD_GTAO,
+            crate::rendering::renderer::AmbientOcclusionMethod::RTAO => AO_METHOD_RTAO,
+        }
+    }
+
     fn create_sdfgi_mip_bind_groups(
         device: &Device,
         texture: &Texture,
@@ -822,6 +833,21 @@ impl WgpuRenderer {
             create_hybrid_effect_texture("hybrid_rt_gi_radiance");
         let (hybrid_rt_transparency_texture, hybrid_rt_transparency_view) =
             create_hybrid_effect_texture("hybrid_rt_transparency_radiance");
+        let (ambient_occlusion_texture, ambient_occlusion_view) = create_cloud_temporal_texture(
+            &device,
+            render_width,
+            render_height,
+            TextureFormat::R16Float,
+            "ambient_occlusion_current",
+        );
+        let (ambient_occlusion_history_texture, ambient_occlusion_history_view) =
+            create_cloud_temporal_texture(
+                &device,
+                render_width,
+                render_height,
+                TextureFormat::R16Float,
+                "ambient_occlusion_history",
+            );
         let hybrid_rt_params_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("hybrid_rt_params"),
             size: std::mem::size_of::<HybridRtEffectParams>() as u64,
@@ -831,6 +857,12 @@ impl WgpuRenderer {
         let hybrid_composite_params_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("hybrid_composite_params"),
             size: std::mem::size_of::<HybridCompositeParams>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ambient_occlusion_params_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("ambient_occlusion_params"),
+            size: std::mem::size_of::<AmbientOcclusionParams>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1330,6 +1362,16 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 44,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -1670,6 +1712,72 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 13,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let ambient_occlusion_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("ambient_occlusion_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::R16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
         let hybrid_rt_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -1681,6 +1789,12 @@ impl WgpuRenderer {
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("hybrid_composite_pl"),
                 bind_group_layouts: &[&hybrid_composite_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let ambient_occlusion_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("ambient_occlusion_pl"),
+                bind_group_layouts: &[&ambient_occlusion_bind_group_layout],
                 push_constant_ranges: &[],
             });
         let make_hybrid_pipeline =
@@ -1722,6 +1836,11 @@ impl WgpuRenderer {
             &hybrid_rt_pipeline_layout,
         );
         let hybrid_rt_transparency_pipeline = make_hybrid_pipeline("hybrid_rt_transparency_pipeline", include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_transparency.comp.wgsl"), &hybrid_rt_pipeline_layout);
+        let ambient_occlusion_pipeline = make_hybrid_pipeline(
+            "ambient_occlusion_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl"),
+            &ambient_occlusion_pipeline_layout,
+        );
         let hybrid_composite_pipeline = make_hybrid_pipeline(
             "hybrid_composite_pipeline",
             include_str!(
@@ -2437,6 +2556,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 43,
                     resource: BindingResource::TextureView(&gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 44,
+                    resource: BindingResource::TextureView(&ambient_occlusion_view),
                 },
             ],
         });
@@ -3759,14 +3882,44 @@ impl WgpuRenderer {
                     binding: 12,
                     resource: BindingResource::TextureView(&gbuf_material_view),
                 },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: BindingResource::TextureView(&ambient_occlusion_view),
+                },
+            ],
+        });
+        let ambient_occlusion_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("ambient_occlusion_bg"),
+            layout: &ambient_occlusion_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&dv),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&ambient_occlusion_history_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: ambient_occlusion_params_buffer.as_entire_binding(),
+                },
             ],
         });
 
         boot_log("WgpuRenderer::new: all pipelines created; constructing renderer");
         Self {
             surface,
-            device,
-            queue,
+            device: device.clone(),
+            queue: queue.clone(),
             config,
             surface_width,
             surface_height,
@@ -3911,8 +4064,13 @@ impl WgpuRenderer {
             hybrid_rt_gi_view,
             hybrid_rt_transparency_texture,
             hybrid_rt_transparency_view,
+            ambient_occlusion_texture,
+            ambient_occlusion_view,
+            ambient_occlusion_history_texture,
+            ambient_occlusion_history_view,
             hybrid_rt_params_buffer,
             hybrid_composite_params_buffer,
+            ambient_occlusion_params_buffer,
             hybrid_rt_effect_bind_group_layout,
             hybrid_rt_shadow_bind_group,
             hybrid_rt_reflection_bind_group,
@@ -3920,11 +4078,14 @@ impl WgpuRenderer {
             hybrid_rt_transparency_bind_group,
             hybrid_composite_bind_group_layout,
             hybrid_composite_bind_group,
+            ambient_occlusion_bind_group_layout,
+            ambient_occlusion_bind_group,
             hybrid_rt_shadow_pipeline,
             hybrid_rt_reflection_pipeline,
             hybrid_rt_gi_pipeline,
             hybrid_rt_transparency_pipeline,
             hybrid_compose_pipeline,
+            ambient_occlusion_pipeline,
             hybrid_compose_pipeline_error,
             cinematic_compute_pipeline: None,
             cinematic_cloud_shadow_pipeline: None,
@@ -4180,6 +4341,21 @@ impl WgpuRenderer {
             create_hybrid_effect_texture("hybrid_rt_gi_radiance");
         let (hybrid_rt_transparency_texture, hybrid_rt_transparency_view) =
             create_hybrid_effect_texture("hybrid_rt_transparency_radiance");
+        let (ambient_occlusion_texture, ambient_occlusion_view) = create_cloud_temporal_texture(
+            &self.device,
+            self.width,
+            self.height,
+            TextureFormat::R16Float,
+            "ambient_occlusion_current",
+        );
+        let (ambient_occlusion_history_texture, ambient_occlusion_history_view) =
+            create_cloud_temporal_texture(
+                &self.device,
+                self.width,
+                self.height,
+                TextureFormat::R16Float,
+                "ambient_occlusion_history",
+            );
         self.screen_texture = st;
         self.screen_view = screen_view;
         self.screen_history_texture = screen_history_texture;
@@ -4262,6 +4438,10 @@ impl WgpuRenderer {
         self.hybrid_rt_gi_view = hybrid_rt_gi_view;
         self.hybrid_rt_transparency_texture = hybrid_rt_transparency_texture;
         self.hybrid_rt_transparency_view = hybrid_rt_transparency_view;
+        self.ambient_occlusion_texture = ambient_occlusion_texture;
+        self.ambient_occlusion_view = ambient_occlusion_view;
+        self.ambient_occlusion_history_texture = ambient_occlusion_history_texture;
+        self.ambient_occlusion_history_view = ambient_occlusion_history_view;
         self.blur_src_texture = blur_src_texture;
         self.blur_src_view = blur_src_view;
         self.sampler = sampler;
@@ -4582,6 +4762,10 @@ impl WgpuRenderer {
                     binding: 43,
                     resource: BindingResource::TextureView(&self.gi_buffer_view),
                 },
+                BindGroupEntry {
+                    binding: 44,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_view),
+                },
             ],
         });
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
@@ -4713,6 +4897,36 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 12,
                     resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_view),
+                },
+            ],
+        });
+        self.ambient_occlusion_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("ambient_occlusion_bg"),
+            layout: &self.ambient_occlusion_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.depth_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_history_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: self.ambient_occlusion_params_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -5621,7 +5835,6 @@ impl WgpuRenderer {
         const PROF_DENOISE_END: u32 = 9;
         const PROF_CLOUDS_BEGIN: u32 = 10;
         const PROF_CLOUDS_END: u32 = 11;
-        let profiler_query_set = self.profiler_query_set.as_ref();
         let mut profiled_raster = false;
         let mut profiled_rt_shadow = false;
         let mut profiled_rt_reflection = false;
@@ -5790,6 +6003,7 @@ impl WgpuRenderer {
             }
             MainComputePipelineKind::Bootstrap
         };
+        let profiler_query_set = self.profiler_query_set.as_ref();
 
         let mut feature_status = crate::rendering::renderer::RendererHybridFeatureStatus {
             pathtrace_primary_active: cinematic_pipeline_ready && uses_path_traced_primary,
@@ -6675,6 +6889,45 @@ impl WgpuRenderer {
                 bytemuck::bytes_of(&comp_params),
             );
             let (x, y) = ((self.width + 7) / 8, (self.height + 7) / 8);
+            let ao_method = Self::ambient_occlusion_method_constant(policy.ambient_occlusion);
+            let ao_dispatchable = !self.is_2d && matches!(ao_method, AO_METHOD_SSAO | AO_METHOD_GTAO);
+            feature_status.ambient_occlusion_fallback =
+                !matches!(ao_method, AO_METHOD_OFF | AO_METHOD_SSAO | AO_METHOD_GTAO)
+                    || (ao_dispatchable && self.ambient_occlusion_pipeline.is_none());
+            if ao_dispatchable {
+                let ao_params = AmbientOcclusionParams {
+                    inv_view_proj: params.inv_view_proj,
+                    camera_pos: [
+                        params.camera_pos[0],
+                        params.camera_pos[1],
+                        params.camera_pos[2],
+                        0.0,
+                    ],
+                    tex_size: [self.width as f32, self.height as f32],
+                    radius: 2.0,
+                    intensity: 1.4,
+                    method: ao_method,
+                    frame_number: self.frame_number.max(0) as u32,
+                    temporal_enabled: u32::from(self.frame_number > 0),
+                    _pad: 0,
+                };
+                self.queue.write_buffer(
+                    &self.ambient_occlusion_params_buffer,
+                    0,
+                    bytemuck::bytes_of(&ao_params),
+                );
+                if let Some(pipeline) = &self.ambient_occlusion_pipeline {
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("ambient_occlusion"),
+                        timestamp_writes: None,
+                    });
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.ambient_occlusion_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                    feature_status.ambient_occlusion_active = true;
+                    feature_status.ambient_occlusion_fallback = false;
+                }
+            }
             if feature_status.hybrid_rt_shadows_active {
                 if let Some(pipeline) = &self.hybrid_rt_shadow_pipeline {
                     let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -6760,6 +7013,27 @@ impl WgpuRenderer {
                     },
                     ImageCopyTexture {
                         texture: &self.hybrid_rt_reflection_history_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    Extent3d {
+                        width: self.width,
+                        height: self.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+            if feature_status.ambient_occlusion_active {
+                encoder.copy_texture_to_texture(
+                    ImageCopyTexture {
+                        texture: &self.ambient_occlusion_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    ImageCopyTexture {
+                        texture: &self.ambient_occlusion_history_texture,
                         mip_level: 0,
                         origin: Origin3d::ZERO,
                         aspect: TextureAspect::All,

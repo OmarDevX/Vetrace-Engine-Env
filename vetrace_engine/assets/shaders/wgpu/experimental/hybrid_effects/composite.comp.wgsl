@@ -11,6 +11,7 @@
 @group(0) @binding(10) var cloud_overlay: texture_2d<f32>;
 @group(0) @binding(11) var cloud_transmittance: texture_2d<f32>;
 @group(0) @binding(12) var gbuf_material: texture_2d<u32>;
+@group(0) @binding(13) var ambient_occlusion_tex: texture_2d<f32>;
 
 struct CompositeParams {
     temporal_blend: f32,
@@ -37,7 +38,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let baked_gi = textureLoad(baked_gi_buffer, gi_uv, 0).rgb;
     let rt_gi = select(vec3<f32>(0.0), textureLoad(rt_gi_radiance, pixel, 0).rgb, comp_params.rt_gi_enabled != 0u);
     let hist_gi = textureLoad(gi_history, gi_uv).rgb;
-    let blended_gi = mix(baked_gi + rt_gi, hist_gi, comp_params.temporal_blend);
+    let ao = clamp(textureLoad(ambient_occlusion_tex, pixel, 0).r, 0.0, 1.0);
+    let blended_gi = mix((baked_gi + rt_gi) * ao, hist_gi, comp_params.temporal_blend);
     let shadow = select(1.0, textureLoad(rt_shadow_mask, pixel, 0).r, comp_params.rt_shadows_enabled != 0u);
     let mat = textureLoad(gbuf_material, pixel, 0);
     let roughness = clamp(f32(mat.g) / 255.0, 0.04, 1.0);
