@@ -343,13 +343,19 @@ pub struct HybridRtEffectParams {
 pub struct SsrParams {
     pub inv_view_proj: [[f32; 4]; 4],
     pub view_proj: [[f32; 4]; 4],
+    pub prev_view_proj: [[f32; 4]; 4],
     pub camera_pos: [f32; 4],
     pub tex_size: [f32; 2],
     pub max_distance: f32,
     pub thickness: f32,
+    pub temporal_blend: f32,
+    pub roughness_cutoff: f32,
+    pub confidence_threshold: f32,
+    pub stride: f32,
+    pub max_steps: u32,
     pub frame_number: u32,
     pub enabled: u32,
-    pub _pad: [u32; 2],
+    pub _pad: u32,
 }
 
 #[repr(C)]

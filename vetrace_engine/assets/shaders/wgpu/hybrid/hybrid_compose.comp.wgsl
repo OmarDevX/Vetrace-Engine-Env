@@ -180,6 +180,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let reflection_probe = mix(params.skycolor.rgb * fresnel, albedo * params.skycolor.rgb * 0.18, roughness);
     let ray_or_probe = mix(reflection_probe, rt_color, rt_confidence);
     let reflection_radiance = mix(ray_or_probe, ssr_color, ssr_weight);
+    if (params.rt_debug_view == 10u) {
+        textureStore(color_tex, px, vec4<f32>(reflection_radiance, 1.0));
+        return;
+    }
     let reflection_source = reflection_radiance * fresnel * smoothness;
     let lit = emissive + direct + ambient + reflection_source;
     textureStore(color_tex, px, vec4<f32>(lit, 1.0));

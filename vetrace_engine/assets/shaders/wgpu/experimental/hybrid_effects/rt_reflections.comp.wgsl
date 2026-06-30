@@ -249,7 +249,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let high_confidence_ssr = ssr_confidence >= SSR_HIGH_CONFIDENCE && !needs_accurate_reflection && !mirror_like;
 
     if (probe_fallback_acceptable) {
-        textureStore(effect_out, pixel, vec4<f32>(probe * fresnel * 0.35, 0.0));
+        // Probe/final blend is owned by hybrid_compose; RT output stays RT-only.
+        textureStore(effect_out, pixel, vec4<f32>(0.0));
         return;
     }
     if (high_confidence_ssr) {
@@ -272,10 +273,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let rt_hit = trace_reflection(world + n * max(params.min_ray_offset, T_EPS), normalize(reflect(-v, n)), params.reflection_max_distance, probe);
         reflection = mix(probe, rt_hit.rgb, rt_hit.a) * fresnel * (1.0 - roughness * 0.5);
         confidence = max(rt_hit.a, 0.30);
-    } else if (roughness >= ROUGH_RT_ALLOWED && roughness < ROUGH_PROBE_ONLY) {
-        reflection = mix(probe * fresnel, ssr_color, clamp(ssr_confidence * 0.5, 0.0, 0.35));
-        confidence = 0.25;
     }
 
+    // Alpha is RT confidence only. SSR/probe confidence remains in their own inputs.
     textureStore(effect_out, pixel, vec4<f32>(reflection, confidence));
 }

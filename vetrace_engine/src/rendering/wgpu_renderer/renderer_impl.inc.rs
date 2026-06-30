@@ -54,6 +54,56 @@ struct PrimitiveInstance {
     _pad: [u32; 3],
 }
 
+
+#[derive(Clone, Copy, Debug)]
+struct SsrQuality {
+    max_steps: u32,
+    stride: f32,
+    thickness: f32,
+    roughness_cutoff: f32,
+    confidence_threshold: f32,
+    temporal_blend: f32,
+}
+
+impl SsrQuality {
+    fn for_profile(
+        profile: crate::rendering::renderer::RendererProfile,
+        adaptive_quality: f32,
+    ) -> Self {
+        let quality = adaptive_quality.clamp(0.5, 1.0);
+        let mut ssr = match profile {
+            crate::rendering::renderer::RendererProfile::Cinematic => Self {
+                max_steps: 48, stride: 0.65, thickness: 0.24, roughness_cutoff: 0.72, confidence_threshold: 0.12, temporal_blend: 0.30,
+            },
+            crate::rendering::renderer::RendererProfile::Ultra => Self {
+                max_steps: 40, stride: 0.75, thickness: 0.27, roughness_cutoff: 0.68, confidence_threshold: 0.14, temporal_blend: 0.28,
+            },
+            crate::rendering::renderer::RendererProfile::High => Self {
+                max_steps: 34, stride: 0.90, thickness: 0.30, roughness_cutoff: 0.62, confidence_threshold: 0.16, temporal_blend: 0.24,
+            },
+            crate::rendering::renderer::RendererProfile::Balanced => Self {
+                max_steps: 28, stride: 1.00, thickness: 0.35, roughness_cutoff: 0.56, confidence_threshold: 0.18, temporal_blend: 0.20,
+            },
+            crate::rendering::renderer::RendererProfile::Indoor60FPS => Self {
+                max_steps: 22, stride: 1.20, thickness: 0.42, roughness_cutoff: 0.50, confidence_threshold: 0.22, temporal_blend: 0.16,
+            },
+            crate::rendering::renderer::RendererProfile::Low => Self {
+                max_steps: 18, stride: 1.45, thickness: 0.48, roughness_cutoff: 0.44, confidence_threshold: 0.26, temporal_blend: 0.12,
+            },
+        };
+        if quality < 0.9 {
+            let scale = (quality / 0.9).clamp(0.55, 1.0);
+            ssr.max_steps = ((ssr.max_steps as f32 * scale).round() as u32).max(12);
+            ssr.stride /= scale;
+            ssr.thickness += (1.0 - scale) * 0.12;
+            ssr.roughness_cutoff = (ssr.roughness_cutoff - (1.0 - scale) * 0.12).max(0.35);
+            ssr.confidence_threshold = (ssr.confidence_threshold + (1.0 - scale) * 0.12).min(0.4);
+            ssr.temporal_blend = (ssr.temporal_blend * scale).clamp(0.08, 0.32);
+        }
+        ssr
+    }
+}
+
 const MAX_BLUR_REGIONS: usize = 16;
 
 fn primitive_vertices_from_triangles(tris: &[GpuTriangle]) -> (Vec<PrimitiveVertex>, Vec<u32>) {
@@ -6662,6 +6712,7 @@ impl WgpuRenderer {
             self.prev_material_fallback_tags,
             self.adaptive_quality,
         );
+        let ssr_quality = SsrQuality::for_profile(params.profile, self.adaptive_quality);
         effective_renderer_mode = policy.renderer_mode;
 
         // The policy is the single source of truth for feature routing. Keep the legacy
@@ -7895,13 +7946,19 @@ impl WgpuRenderer {
                 let ssr_params = SsrParams {
                     inv_view_proj: params.inv_view_proj,
                     view_proj: current_vp.to_cols_array_2d(),
+                    prev_view_proj: self.prev_view_proj,
                     camera_pos: [params.camera_pos[0], params.camera_pos[1], params.camera_pos[2], 0.0],
                     tex_size: [self.width as f32, self.height as f32],
                     max_distance: params.reflection_max_distance.max(0.01),
-                    thickness: 0.35,
+                    thickness: ssr_quality.thickness,
+                    temporal_blend: ssr_quality.temporal_blend,
+                    roughness_cutoff: ssr_quality.roughness_cutoff,
+                    confidence_threshold: ssr_quality.confidence_threshold,
+                    stride: ssr_quality.stride,
+                    max_steps: ssr_quality.max_steps,
                     frame_number: self.frame_number.max(0) as u32,
                     enabled: 1,
-                    _pad: [0, 0],
+                    _pad: 0,
                 };
                 self.queue.write_buffer(&self.ssr_params_buffer, 0, bytemuck::bytes_of(&ssr_params));
                 if let Some(pipeline) = &self.ssr_pipeline {
