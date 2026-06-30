@@ -3859,6 +3859,7 @@ dependencies = [
  "memoffset",
  "mint",
  "mlua",
+ "naga",
  "once_cell",
  "parking_lot",
  "pollster 0.3.0",

@@ -599,6 +599,215 @@ mod layout_tests {
         ),
     )];
 
+    #[test]
+    fn standalone_hybrid_wgsl_modules_parse() {
+        for (name, source) in STANDALONE_HYBRID_WGSL {
+            naga::front::wgsl::parse_str(source)
+                .unwrap_or_else(|err| panic!("{name} failed standalone WGSL parsing: {err}"));
+        }
+    }
+
+    #[test]
+    fn hybrid_bind_group_layouts_match_shader_bindings() {
+        for (name, source, expected) in HYBRID_BINDING_LAYOUTS {
+            let mut bindings = wgsl_bindings(source);
+            bindings.sort_unstable();
+            assert_eq!(bindings, *expected, "{name} bind group bindings drifted");
+        }
+    }
+
+    #[test]
+    fn hybrid_debug_view_smoke_paths_are_present() {
+        let compose = include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl");
+        let ao = include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl");
+        let ssr = include_str!("../../../assets/shaders/wgpu/hybrid/ssr.comp.wgsl");
+        let rt = include_str!("../../../assets/shaders/wgpu/hybrid/rt_ao.comp.wgsl");
+        let gi = include_str!("../../../assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl");
+        assert!(
+            ao.contains("ao") && ao.contains("textureStore"),
+            "AO grayscale smoke path missing"
+        );
+        assert!(
+            ssr.contains("confidence") && ssr.contains("textureStore"),
+            "SSR confidence/color smoke path missing"
+        );
+        assert!(
+            rt.contains("rt_debug_view") || compose.contains("rt_reflection"),
+            "RT reflection debug smoke path missing"
+        );
+        assert!(
+            gi.contains("resolved") || gi.contains("out_gi"),
+            "resolved GI smoke path missing"
+        );
+        assert!(
+            compose.contains("final") || compose.contains("composite"),
+            "final composite smoke path missing"
+        );
+    }
+
+    const STANDALONE_HYBRID_WGSL: &[(&str, &str)] = &[
+        (
+            "ambient_occlusion.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl"),
+        ),
+        (
+            "ssr.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ssr.comp.wgsl"),
+        ),
+        (
+            "rt_ao.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/rt_ao.comp.wgsl"),
+        ),
+        (
+            "rt_gi.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/rt_gi.comp.wgsl"),
+        ),
+        (
+            "gi_resolve.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl"),
+        ),
+        (
+            "hybrid_compose.comp.wgsl",
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl")
+            ),
+        ),
+    ];
+
+    const HYBRID_BINDING_LAYOUTS: &[(&str, &str, &[(u32, u32)])] = &[
+        (
+            "hybrid_compose",
+            STANDALONE_HYBRID_WGSL[5].1,
+            &[
+                (0, 0),
+                (0, 1),
+                (0, 2),
+                (0, 3),
+                (0, 4),
+                (0, 5),
+                (0, 6),
+                (0, 7),
+                (0, 8),
+                (0, 9),
+                (0, 10),
+                (0, 11),
+                (0, 12),
+                (0, 13),
+                (0, 14),
+            ],
+        ),
+        (
+            "ambient_occlusion",
+            STANDALONE_HYBRID_WGSL[0].1,
+            &[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (0, 5)],
+        ),
+        (
+            "ssr",
+            STANDALONE_HYBRID_WGSL[1].1,
+            &[
+                (0, 0),
+                (0, 1),
+                (0, 2),
+                (0, 3),
+                (0, 4),
+                (0, 5),
+                (0, 6),
+                (0, 7),
+            ],
+        ),
+        (
+            "rt_ao",
+            STANDALONE_HYBRID_WGSL[2].1,
+            &[
+                (0, 0),
+                (0, 1),
+                (0, 2),
+                (0, 3),
+                (0, 4),
+                (0, 5),
+                (0, 6),
+                (0, 7),
+                (0, 8),
+                (0, 9),
+                (0, 10),
+                (0, 11),
+                (0, 12),
+                (0, 13),
+                (0, 14),
+            ],
+        ),
+        (
+            "rt_gi",
+            STANDALONE_HYBRID_WGSL[3].1,
+            &[
+                (0, 0),
+                (0, 1),
+                (0, 2),
+                (0, 3),
+                (0, 4),
+                (0, 5),
+                (0, 6),
+                (0, 7),
+                (0, 8),
+                (0, 9),
+                (0, 10),
+                (0, 11),
+                (0, 12),
+                (0, 13),
+            ],
+        ),
+        (
+            "gi_resolve",
+            STANDALONE_HYBRID_WGSL[4].1,
+            &[
+                (0, 0),
+                (0, 1),
+                (0, 2),
+                (0, 3),
+                (0, 4),
+                (0, 5),
+                (0, 6),
+                (0, 7),
+                (0, 8),
+                (0, 9),
+                (0, 10),
+                (0, 11),
+                (0, 12),
+                (0, 13),
+                (0, 14),
+                (0, 15),
+                (0, 16),
+                (0, 17),
+                (0, 18),
+            ],
+        ),
+    ];
+
+    fn wgsl_bindings(source: &str) -> Vec<(u32, u32)> {
+        source
+            .lines()
+            .filter_map(|line| {
+                let g = line
+                    .split("@group(")
+                    .nth(1)?
+                    .split(')')
+                    .next()?
+                    .parse()
+                    .ok()?;
+                let b = line
+                    .split("@binding(")
+                    .nth(1)?
+                    .split(')')
+                    .next()?
+                    .parse()
+                    .ok()?;
+                Some((g, b))
+            })
+            .collect()
+    }
+
     fn wgsl_struct_fields<'a>(source: &'a str, struct_name: &str) -> Vec<&'a str> {
         let struct_start = source
             .find(&format!("struct {struct_name} {{"))

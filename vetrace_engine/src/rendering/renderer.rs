@@ -373,6 +373,39 @@ impl RendererPolicy {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RendererFallbackReason {
+    None,
+    MissingPipeline,
+    MissingHardware,
+    SafeShaderMode,
+    MissingBvhAccelerationData,
+    MissingLightmaps,
+    MissingProbes,
+    ProfileBudgetDowngrade,
+}
+
+impl Default for RendererFallbackReason {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl RendererFallbackReason {
+    pub fn hud_label(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::MissingPipeline => "missing pipeline",
+            Self::MissingHardware => "missing hardware",
+            Self::SafeShaderMode => "safe shader mode",
+            Self::MissingBvhAccelerationData => "missing BVH/acceleration data",
+            Self::MissingLightmaps => "missing lightmaps",
+            Self::MissingProbes => "missing probes",
+            Self::ProfileBudgetDowngrade => "profile-budget downgrade",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RendererHybridFeatureStatus {
     pub raster_shadow_maps_active: bool,
@@ -395,6 +428,12 @@ pub struct RendererHybridFeatureStatus {
     pub active_gi_method: GiMethod,
     pub requested_transparency_method: TransparencyMethod,
     pub active_transparency_method: TransparencyMethod,
+    pub primary_visibility_fallback_reason: RendererFallbackReason,
+    pub shadow_fallback_reason: RendererFallbackReason,
+    pub reflection_fallback_reason: RendererFallbackReason,
+    pub ambient_occlusion_fallback_reason: RendererFallbackReason,
+    pub gi_fallback_reason: RendererFallbackReason,
+    pub transparency_fallback_reason: RendererFallbackReason,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
