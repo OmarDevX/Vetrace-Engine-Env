@@ -3,9 +3,8 @@ const T_EPS: f32 = 0.001;
 const INF_T: f32 = 1.0e20;
 const ROUGH_PROBE_ONLY: f32 = 0.60;
 const ROUGH_RT_ALLOWED: f32 = 0.25;
-const SSR_STEPS: i32 = 20;
-const SSR_STRIDE: f32 = 10.0;
-const SSR_THICKNESS: f32 = 0.35;
+const SSR_HIGH_CONFIDENCE: f32 = 0.65;
+const MATERIAL_FLAG_ACCURATE_REFLECTION: u32 = 0x1u;
 
 struct Object {
     orientation: vec4<f32>,
@@ -169,11 +168,6 @@ fn unpack_normal(pixel: vec2<i32>) -> vec3<f32> {
     return normalize(textureLoad(normal_tex, pixel, 0).xyz * 2.0 - vec3<f32>(1.0));
 }
 
-fn project_to_uv(world: vec3<f32>) -> vec2<f32> {
-    let clip = rt_params.view_proj * vec4<f32>(world, 1.0);
-    let ndc = clip.xyz / max(clip.w, 1.0e-6);
-    return ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
-}
 
 fn probe_reflection(albedo: vec3<f32>, n: vec3<f32>, v: vec3<f32>, roughness: f32) -> vec3<f32> {
     // Cheap reflection-probe/cubemap stand-in: blend sky/directional ambient by the reflected lobe.
@@ -182,32 +176,6 @@ fn probe_reflection(albedo: vec3<f32>, n: vec3<f32>, v: vec3<f32>, roughness: f3
     let horizon = clamp(r.y * 0.5 + 0.5, 0.0, 1.0);
     let sky_probe = mix(rt_params.dir_light_color.rgb * 0.18, rt_params.dir_light_color.rgb, horizon);
     return mix(sky_probe, albedo, roughness * 0.65);
-}
-
-fn screen_space_reflection(pixel: vec2<i32>, dims: vec2<u32>, world: vec3<f32>, n: vec3<f32>, v: vec3<f32>, roughness: f32) -> vec4<f32> {
-    let ray_dir = normalize(reflect(-v, n));
-    var hit_confidence = 0.0;
-    var hit_color = vec3<f32>(0.0);
-
-    for (var i: i32 = 1; i <= SSR_STEPS; i = i + 1) {
-        let t = f32(i) * SSR_STRIDE * (0.025 + roughness * 0.04);
-        let sample_world = world + ray_dir * t;
-        let uv = project_to_uv(sample_world);
-        if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) { break; }
-        let sp = vec2<i32>(uv * vec2<f32>(dims));
-        let sd = textureLoad(depth_tex, sp, 0).x;
-        if (sd >= 0.9999) { continue; }
-        let scene_world = reconstruct_world(sp, dims, sd);
-        let depth_error = abs(length(scene_world - rt_params.camera_pos.xyz) - length(sample_world - rt_params.camera_pos.xyz));
-        let sn = unpack_normal(sp);
-        let normal_ok = max(dot(sn, n), 0.0);
-        if (depth_error < SSR_THICKNESS + roughness * 0.08 && normal_ok > 0.35) {
-            hit_color = textureLoad(albedo_tex, sp, 0).rgb;
-            hit_confidence = normal_ok * (1.0 - f32(i) / f32(SSR_STEPS + 1));
-            break;
-        }
-    }
-    return vec4<f32>(hit_color, hit_confidence);
 }
 
 fn rt_resolution_lane(pixel: vec2<i32>, roughness: f32) -> bool {
@@ -272,35 +240,41 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
 
     let probe = probe_reflection(albedo, n, v, roughness);
-    if (roughness > ROUGH_PROBE_ONLY) {
+    let ssr = textureLoad(ssr_tex, pixel, 0);
+    let ssr_confidence = clamp(ssr.a, 0.0, 1.0);
+    let ssr_color = ssr.rgb * fresnel;
+    let needs_accurate_reflection = (material.custom_flags & MATERIAL_FLAG_ACCURATE_REFLECTION) != 0u || object_id != 0u;
+    let mirror_like = roughness <= 0.08;
+    let probe_fallback_acceptable = roughness >= ROUGH_PROBE_ONLY && !needs_accurate_reflection && !mirror_like;
+    let high_confidence_ssr = ssr_confidence >= SSR_HIGH_CONFIDENCE && !needs_accurate_reflection && !mirror_like;
+
+    if (probe_fallback_acceptable) {
         textureStore(effect_out, pixel, vec4<f32>(probe * fresnel * 0.35, 0.0));
         return;
     }
-
-    let standalone_ssr = textureLoad(ssr_tex, pixel, 0);
-    let local_ssr = screen_space_reflection(pixel, dims, world, n, v, roughness);
-    let ssr = select(local_ssr, standalone_ssr, standalone_ssr.a > local_ssr.a);
-    let ssr_color = ssr.rgb * fresnel;
-    if (ssr.a > 0.55) {
-        textureStore(effect_out, pixel, vec4<f32>(mix(probe * fresnel, ssr_color, ssr.a), ssr.a));
+    if (high_confidence_ssr) {
+        // SSR owns this pixel; keep the RT output/history separate by writing no RT contribution.
+        textureStore(effect_out, pixel, vec4<f32>(0.0, 0.0, 0.0, 0.0));
         return;
     }
 
-    let important_object = object_id != 0u;
-    let insufficient_fallback = ssr.a < 0.55;
-    let smooth_enough = roughness < ROUGH_RT_ALLOWED;
-    let mid_roughness_blend = roughness >= ROUGH_RT_ALLOWED && roughness <= ROUGH_PROBE_ONLY;
-    let rt_allowed = params.raytraced_reflections_enabled != 0u && params.reflection_max_distance > T_EPS && smooth_enough && important_object && insufficient_fallback && rt_resolution_lane(pixel, roughness);
+    let low_confidence_ssr = ssr_confidence < SSR_HIGH_CONFIDENCE;
+    let smooth_enough = roughness < ROUGH_RT_ALLOWED || mirror_like || needs_accurate_reflection;
+    let rt_allowed = params.raytraced_reflections_enabled != 0u
+        && params.reflection_max_distance > T_EPS
+        && smooth_enough
+        && (low_confidence_ssr || mirror_like || needs_accurate_reflection)
+        && rt_resolution_lane(pixel, roughness);
 
-    var reflection = mix(probe * fresnel, ssr_color, ssr.a);
-    var confidence = max(ssr.a, 0.25);
+    var reflection = vec3<f32>(0.0);
+    var confidence = 0.0;
     if (rt_allowed) {
         let rt_hit = trace_reflection(world + n * max(params.min_ray_offset, T_EPS), normalize(reflect(-v, n)), params.reflection_max_distance, probe);
         reflection = mix(probe, rt_hit.rgb, rt_hit.a) * fresnel * (1.0 - roughness * 0.5);
         confidence = max(rt_hit.a, 0.30);
-    } else if (mid_roughness_blend) {
-        reflection = mix(probe * fresnel, ssr_color, clamp(ssr.a * 0.75, 0.0, 0.5));
-        confidence = max(confidence, 0.35);
+    } else if (roughness >= ROUGH_RT_ALLOWED && roughness < ROUGH_PROBE_ONLY) {
+        reflection = mix(probe * fresnel, ssr_color, clamp(ssr_confidence * 0.5, 0.0, 0.35));
+        confidence = 0.25;
     }
 
     textureStore(effect_out, pixel, vec4<f32>(reflection, confidence));

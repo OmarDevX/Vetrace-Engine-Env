@@ -1908,6 +1908,7 @@ impl WgpuRenderer {
                         count: None,
                     },
                     BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                    BindGroupLayoutEntry { binding: 46, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                 ],
             });
         let gi_resolve_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -4215,6 +4216,7 @@ impl WgpuRenderer {
                     resource: BindingResource::TextureView(&ambient_occlusion_view),
                 },
                 BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&ssr_color_view) },
+                BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&hybrid_rt_reflection_view) },
             ],
         });
         let ambient_occlusion_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -5348,6 +5350,7 @@ impl WgpuRenderer {
                     resource: BindingResource::TextureView(&self.ambient_occlusion_view),
                 },
                 BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
+                BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view) },
             ],
         });
         self.ambient_occlusion_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -7538,6 +7541,8 @@ impl WgpuRenderer {
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
+            // Reflection order is intentional: resolve SSR first, run RT only as the fallback layer,
+            // then let hybrid compose blend probe/SSR/RT using their per-pixel confidence.
             if feature_status.ssr_reflections_active {
                 let ssr_params = SsrParams {
                     inv_view_proj: params.inv_view_proj,
