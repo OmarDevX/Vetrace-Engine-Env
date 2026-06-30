@@ -61,6 +61,7 @@ struct Params {
 // - gbuf_material rgba8uint: x = metallic UNORM8, y = roughness UNORM8, z = emissive luma UNORM8,
 //   w = packed metadata; low nibble = feature flags, high nibble = object/material ID bucket.
 // - depth texture r32float: device depth used for world-position reconstruction and sky rejection.
+// - gbuf_lightmap_uv rgba16float: xy = authored lightmap UV, z = validity mask, w = reserved.
 const GBUFFER_FEATURE_FLAGS_MASK: u32 = 0x0fu;
 const GBUFFER_ID_SHIFT: u32 = 4u;
 const GBUFFER_ID_MASK: u32 = 0xf0u;
@@ -100,6 +101,7 @@ fn decode_gbuffer_material(material: vec4<u32>) -> GBufferMaterial {
 @group(0) @binding(44) var ambient_occlusion_tex: texture_2d<f32>;
 @group(0) @binding(45) var ssr_reflection_tex: texture_2d<f32>;
 @group(0) @binding(46) var rt_reflection_tex: texture_2d<f32>;
+@group(0) @binding(47) var gbuf_lightmap_uv: texture_2d<f32>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -170,6 +172,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     if (params.rt_debug_view == 9u) {
         textureStore(color_tex, px, vec4<f32>(gi, 1.0));
+        return;
+    }
+    if (params.rt_debug_view == 11u) {
+        let lm = textureLoad(gbuf_lightmap_uv, px, 0);
+        let valid = clamp(lm.z, 0.0, 1.0);
+        textureStore(color_tex, px, vec4<f32>(lm.xy * valid, valid, 1.0));
         return;
     }
     let reflective_feature = select(0.65, 1.0, (gbuffer_material.feature_flags & 0x1u) != 0u);
