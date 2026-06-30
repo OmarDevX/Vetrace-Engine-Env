@@ -69,6 +69,11 @@ pub struct WgpuRenderer {
     gbuf_normal_view: TextureView,
     gbuf_material_texture: Texture,
     gbuf_material_view: TextureView,
+    gbuf_lightmap_uv_texture: Texture,
+    gbuf_lightmap_uv_view: TextureView,
+    gi_probe_buffer: Buffer,
+    gi_probe_sh_buffer: Buffer,
+    gi_probe_count: u32,
     gi_sdf_texture: Texture,
     gi_sdf_view: TextureView,
     gi_sdf_storage_view: TextureView,
@@ -310,6 +315,10 @@ struct GiCacheState {
     bake_settings_hash: u64,
     artifact_path: Option<std::path::PathBuf>,
     probe_metadata: Option<String>,
+    has_lightmap_atlas: bool,
+    has_lightmap_uvs: bool,
+    has_probe_data: bool,
+    has_sdfgi_volume: bool,
 }
 
 impl GiCacheState {

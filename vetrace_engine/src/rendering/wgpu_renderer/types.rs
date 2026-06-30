@@ -64,9 +64,28 @@ pub struct GiResolveParams {
     pub probe_blend: f32,
     pub sdfgi_blend: f32,
     pub rtgi_blend: f32,
-    pub _pad1: [f32; 3],
+    pub probe_count: u32,
+    pub gi_resource_flags: u32,
+    pub _pad1: [u32; 2],
+    pub sdfgi_origin: [f32; 4],
+    pub sdfgi_extent_voxel: [f32; 4],
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct GpuLightProbeData {
+    pub position_radius: [f32; 4],
+    /// x = visibility multiplier, y = artist/importance weight, z/w reserved.
+    pub weight_visibility: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct GpuLightProbeSh {
+    /// Nine RGB SH/irradiance coefficients per probe, padded to vec4 for WGSL layout.
+    pub coeffs: [[f32; 4]; 9],
 }
 
 #[repr(C)]

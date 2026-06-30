@@ -440,6 +440,44 @@ impl WgpuRenderer {
         self.gi_cache.mark_dirty();
     }
 
+    pub fn upload_light_probe_gi_data(
+        &mut self,
+        probes: &[GpuLightProbeData],
+        coefficients: &[GpuLightProbeSh],
+    ) -> Result<(), String> {
+        if probes.is_empty() {
+            self.gi_probe_count = 0;
+            self.gi_cache.has_probe_data = false;
+            return Ok(());
+        }
+        if coefficients.len() < probes.len() {
+            return Err(format!(
+                "light probe GI upload requires at least one SH/irradiance coefficient block per probe: probes={}, coefficients={}",
+                probes.len(),
+                coefficients.len()
+            ));
+        }
+        self.gi_probe_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("gi_probe_data"),
+            contents: bytemuck::cast_slice(probes),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+        self.gi_probe_sh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("gi_probe_sh_coefficients"),
+            contents: bytemuck::cast_slice(&coefficients[..probes.len()]),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+        self.gi_probe_count = probes.len().min(256) as u32;
+        self.gi_cache.has_probe_data = true;
+        self.recreate_bind_groups();
+        Ok(())
+    }
+
+    pub fn mark_lightmap_gi_ready(&mut self, has_atlas: bool, has_uvs: bool) {
+        self.gi_cache.has_lightmap_atlas = has_atlas;
+        self.gi_cache.has_lightmap_uvs = has_uvs;
+    }
+
     pub fn bake_lighting<P: AsRef<std::path::Path>>(
         &mut self,
         artifact_path: P,
@@ -458,6 +496,9 @@ impl WgpuRenderer {
         self.gi_cache.bake_settings_hash = settings_hash;
         self.gi_cache.artifact_path = Some(artifact_path.as_ref().to_path_buf());
         self.gi_cache.probe_metadata = Some("dynamic objects sample baked probes/lightmaps; only dynamic shadows/reflections stay real-time".to_string());
+        self.gi_cache.has_lightmap_atlas = true;
+        self.gi_cache.has_lightmap_uvs = true;
+        self.gi_cache.has_probe_data = true;
         self.gi_cache.dirty = false;
         Ok(())
     }
@@ -475,6 +516,9 @@ impl WgpuRenderer {
             self.gi_cache.last_baked_scene_hash = self.gi_cache.static_scene_hash;
             self.gi_cache.bake_settings_hash = Self::bake_settings_hash(params);
             self.gi_cache.artifact_path = Some(artifact_path.as_ref().to_path_buf());
+            self.gi_cache.has_lightmap_atlas = true;
+            self.gi_cache.has_lightmap_uvs = true;
+            self.gi_cache.has_probe_data = true;
             self.gi_cache.dirty = false;
         }
         Ok(matches)
@@ -728,6 +772,16 @@ impl WgpuRenderer {
             size: std::mem::size_of::<GiResolveParams>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
+        });
+        let gi_probe_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("gi_probe_data"),
+            contents: &[0u8; 32],
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+        let gi_probe_sh_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("gi_probe_sh_coefficients"),
+            contents: &[0u8; 128],
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
         let postfx_buffer = device.create_buffer(&BufferDescriptor {
@@ -1991,6 +2045,9 @@ impl WgpuRenderer {
                 BindGroupLayoutEntry { binding: 6, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                 BindGroupLayoutEntry { binding: 7, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::Rgba16Float, view_dimension: TextureViewDimension::D2 }, count: None },
                 BindGroupLayoutEntry { binding: 8, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                BindGroupLayoutEntry { binding: 9, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                BindGroupLayoutEntry { binding: 10, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                BindGroupLayoutEntry { binding: 11, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
             ],
         });
         let ambient_occlusion_bind_group_layout =
@@ -4212,6 +4269,18 @@ impl WgpuRenderer {
             make_hybrid_rt_bind_group("hybrid_rt_gi_bg", &hybrid_rt_gi_view);
         let hybrid_rt_transparency_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_transparency_bg", &hybrid_rt_transparency_view);
+
+        let gbuf_lightmap_uv_texture = device.create_texture(&TextureDescriptor {
+            label: Some("gbuf_lightmap_uv"),
+            size: Extent3d { width, height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rg16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let gbuf_lightmap_uv_view = gbuf_lightmap_uv_texture.create_view(&TextureViewDescriptor::default());
         let gi_resolve_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("gi_resolve_bg"),
             layout: &gi_resolve_bind_group_layout,
@@ -4225,6 +4294,9 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&gi_history_view) },
                 BindGroupEntry { binding: 7, resource: BindingResource::TextureView(&gi_buffer_view) },
                 BindGroupEntry { binding: 8, resource: gi_resolve_params_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 9, resource: gi_probe_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 10, resource: gi_probe_sh_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&gbuf_lightmap_uv_view) },
             ],
         });
         let hybrid_composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -4369,6 +4441,11 @@ impl WgpuRenderer {
             gbuf_normal_view,
             gbuf_material_texture: gm_t,
             gbuf_material_view,
+            gbuf_lightmap_uv_texture,
+            gbuf_lightmap_uv_view,
+            gi_probe_buffer,
+            gi_probe_sh_buffer,
+            gi_probe_count: 0,
             gi_sdf_texture,
             gi_sdf_view,
             gi_sdf_storage_view,
@@ -4812,6 +4889,17 @@ impl WgpuRenderer {
         self.gbuf_normal_view = gbuf_normal_view;
         self.gbuf_material_texture = gm_t;
         self.gbuf_material_view = gbuf_material_view;
+        self.gbuf_lightmap_uv_texture = self.device.create_texture(&TextureDescriptor {
+            label: Some("gbuf_lightmap_uv"),
+            size: Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rg16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        self.gbuf_lightmap_uv_view = self.gbuf_lightmap_uv_texture.create_view(&TextureViewDescriptor::default());
         self.gi_sdf_texture = gi_sdf_texture;
         self.gi_sdf_view = gi_sdf_view;
         self.gi_sdf_storage_view = gi_sdf_storage_view;
@@ -5382,6 +5470,9 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.gi_history_view) },
                 BindGroupEntry { binding: 7, resource: BindingResource::TextureView(&self.gi_buffer_view) },
                 BindGroupEntry { binding: 8, resource: self.gi_resolve_params_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 9, resource: self.gi_probe_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 10, resource: self.gi_probe_sh_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
             ],
         });
         self.hybrid_composite_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -6601,6 +6692,18 @@ impl WgpuRenderer {
             crate::rendering::renderer::GiMethod::SDFGI => GI_RESOLVE_METHOD_SDFGI,
             crate::rendering::renderer::GiMethod::RTGIOneBounce => GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE,
         };
+        let baked_gi_ready = self.gi_cache.has_lightmap_atlas && self.gi_cache.has_lightmap_uvs;
+        let probe_gi_ready = self.gi_cache.has_probe_data && self.gi_probe_count > 0;
+        let sdfgi_ready = self.gi_cache.has_sdfgi_volume && !self.gi_cache.dirty;
+        if gi_resolve_method == GI_RESOLVE_METHOD_BAKED_LIGHTMAP && !baked_gi_ready {
+            gi_resolve_method = GI_RESOLVE_METHOD_OFF;
+        }
+        if gi_resolve_method == GI_RESOLVE_METHOD_LIGHT_PROBES && !probe_gi_ready {
+            gi_resolve_method = GI_RESOLVE_METHOD_OFF;
+        }
+        if gi_resolve_method == GI_RESOLVE_METHOD_SDFGI && !sdfgi_ready {
+            gi_resolve_method = GI_RESOLVE_METHOD_OFF;
+        }
         if gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE && self.hybrid_rt_gi_pipeline.is_none() {
             gi_resolve_method = GI_RESOLVE_METHOD_OFF;
             dispatch_hybrid_rtgi = false;
@@ -6944,7 +7047,14 @@ impl WgpuRenderer {
             probe_blend: 1.0,
             sdfgi_blend: 1.0,
             rtgi_blend: 1.0,
-            _pad1: [0.0; 3],
+            probe_count: self.gi_probe_count,
+            gi_resource_flags: (self.gi_cache.has_lightmap_atlas as u32)
+                | ((self.gi_cache.has_lightmap_uvs as u32) << 1)
+                | ((self.gi_cache.has_probe_data as u32) << 2)
+                | ((self.gi_cache.has_sdfgi_volume as u32) << 3),
+            _pad1: [0; 2],
+            sdfgi_origin: [-32.0, -32.0, -32.0, 0.0],
+            sdfgi_extent_voxel: [64.0, 64.0, 64.0 / GI_SDF_RES as f32, 0.05],
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
         };
@@ -7551,6 +7661,7 @@ impl WgpuRenderer {
                 );
             }
             self.gi_cache.last_baked_scene_hash = self.gi_cache.static_scene_hash;
+            self.gi_cache.has_sdfgi_volume = true;
             self.gi_cache.dirty = false;
         }
         if !self.is_2d {
