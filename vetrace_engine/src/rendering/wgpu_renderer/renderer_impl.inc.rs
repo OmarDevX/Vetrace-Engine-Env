@@ -1398,6 +1398,16 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 46,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -1908,6 +1918,9 @@ impl WgpuRenderer {
                         count: None,
                     },
                     BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                    BindGroupLayoutEntry { binding: 43, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                    BindGroupLayoutEntry { binding: 44, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                    BindGroupLayoutEntry { binding: 45, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                     BindGroupLayoutEntry { binding: 46, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                 ],
             });
@@ -2797,6 +2810,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 45,
                     resource: BindingResource::TextureView(&ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 46,
+                    resource: BindingResource::TextureView(&hybrid_rt_reflection_view),
                 },
             ],
         });
@@ -4216,6 +4233,9 @@ impl WgpuRenderer {
                     resource: BindingResource::TextureView(&ambient_occlusion_view),
                 },
                 BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&ssr_color_view) },
+                BindGroupEntry { binding: 43, resource: BindingResource::TextureView(&gi_buffer_view) },
+                BindGroupEntry { binding: 44, resource: BindingResource::TextureView(&ambient_occlusion_view) },
+                BindGroupEntry { binding: 45, resource: BindingResource::TextureView(&ssr_color_view) },
                 BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&hybrid_rt_reflection_view) },
             ],
         });
@@ -5121,6 +5141,10 @@ impl WgpuRenderer {
                     binding: 45,
                     resource: BindingResource::TextureView(&self.ssr_color_view),
                 },
+                BindGroupEntry {
+                    binding: 46,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view),
+                },
             ],
         });
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
@@ -5350,6 +5374,9 @@ impl WgpuRenderer {
                     resource: BindingResource::TextureView(&self.ambient_occlusion_view),
                 },
                 BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
+                BindGroupEntry { binding: 43, resource: BindingResource::TextureView(&self.gi_buffer_view) },
+                BindGroupEntry { binding: 44, resource: BindingResource::TextureView(&self.ambient_occlusion_view) },
+                BindGroupEntry { binding: 45, resource: BindingResource::TextureView(&self.ssr_color_view) },
                 BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view) },
             ],
         });
@@ -6028,6 +6055,18 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 43,
                     resource: BindingResource::TextureView(&self.gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 44,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 45,
+                    resource: BindingResource::TextureView(&self.ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 46,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view),
                 },
             ],
         });
@@ -6960,6 +6999,38 @@ impl WgpuRenderer {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("render"),
             });
+        {
+            // Neutral fallbacks for optional hybrid inputs. Active passes overwrite these
+            // later in the frame; inactive passes leave composition inputs safe.
+            let _fallback_clear = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("hybrid_input_fallback_clear"),
+                color_attachments: &[
+                    Some(RenderPassColorAttachment {
+                        view: &self.ambient_occlusion_view,
+                        resolve_target: None,
+                        ops: Operations { load: LoadOp::Clear(Color::WHITE), store: StoreOp::Store },
+                    }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.ssr_color_view,
+                        resolve_target: None,
+                        ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                    }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.hybrid_rt_reflection_view,
+                        resolve_target: None,
+                        ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                    }),
+                    Some(RenderPassColorAttachment {
+                        view: &self.gi_buffer_view,
+                        resolve_target: None,
+                        ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                    }),
+                ],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+        }
         let mut cube_instances = Vec::new();
         let mut sphere_instances = Vec::new();
         let mut shadow_cube_instances = Vec::new();

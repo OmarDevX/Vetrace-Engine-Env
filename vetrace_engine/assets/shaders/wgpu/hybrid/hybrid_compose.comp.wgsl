@@ -98,8 +98,8 @@ fn decode_gbuffer_material(material: vec4<u32>) -> GBufferMaterial {
 @group(0) @binding(42) var raster_shadow_sampler: sampler_comparison;
 @group(0) @binding(43) var gi_buffer: texture_2d<f32>;
 @group(0) @binding(44) var ambient_occlusion_tex: texture_2d<f32>;
+@group(0) @binding(45) var ssr_reflection_tex: texture_2d<f32>;
 @group(0) @binding(46) var rt_reflection_tex: texture_2d<f32>;
-@group(0) @binding(14) var ssr_reflection_tex: texture_2d<f32>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -140,26 +140,47 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let shadow_factor = mix(0.25, 1.0, raster_shadow);
     let direct = pbr_direct_light(PbrDirectLightInput(albedo, n, view_dir, light_dir, params.dir_light_color.xyz * params.dir_light_dir.w, metallic, roughness, shadow_factor));
+    // AO is a single-channel visibility term.  Keep it scoped to indirect terms so
+    // contact occlusion does not double-darken the direct-light shadowing path.
     let gi = textureLoad(gi_buffer, px, 0).rgb;
-    let ao = clamp(textureLoad(ambient_occlusion_tex, px, 0).r, 0.0, 1.0);
+    let ao_visibility = clamp(textureLoad(ambient_occlusion_tex, px, 0).r, 0.0, 1.0);
     if (params.rt_debug_view == 5u) {
-        textureStore(color_tex, px, vec4<f32>(vec3<f32>(ao), 1.0));
+        textureStore(color_tex, px, vec4<f32>(vec3<f32>(ao_visibility), 1.0));
         return;
     }
-    let sky_irradiance = params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * (0.12 + 0.08 * roughness);
-    let ambient = pbr_ambient_diffuse(albedo, (sky_irradiance + gi) * ao, metallic);
+    let sky_irradiance = params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * (0.12 + 0.08 * roughness) * ao_visibility;
+    let ambient = pbr_ambient_diffuse(albedo, sky_irradiance + gi * ao_visibility, metallic);
     let fresnel = pbr_reflection_fresnel(albedo, n, view_dir, metallic);
     let ssr = textureLoad(ssr_reflection_tex, px, 0);
     let rt = textureLoad(rt_reflection_tex, px, 0);
-    let ssr_conf = clamp(ssr.a, 0.0, 1.0) * (1.0 - roughness * 0.65);
-    let rt_conf = clamp(rt.a, 0.0, 1.0) * (1.0 - roughness * 0.35);
-    let probe_conf = clamp(roughness * 1.35 + (1.0 - max(ssr_conf, rt_conf)) * 0.35, 0.0, 1.0);
+    let ssr_color = max(ssr.rgb, vec3<f32>(0.0));
+    let rt_color = max(rt.rgb, vec3<f32>(0.0));
+    let ssr_confidence = clamp(ssr.a, 0.0, 1.0);
+    if (params.rt_debug_view == 6u) {
+        textureStore(color_tex, px, vec4<f32>(vec3<f32>(ssr_confidence), 1.0));
+        return;
+    }
+    if (params.rt_debug_view == 7u) {
+        textureStore(color_tex, px, vec4<f32>(ssr_color, 1.0));
+        return;
+    }
+    if (params.rt_debug_view == 8u) {
+        textureStore(color_tex, px, vec4<f32>(rt_color, 1.0));
+        return;
+    }
+    if (params.rt_debug_view == 9u) {
+        textureStore(color_tex, px, vec4<f32>(gi, 1.0));
+        return;
+    }
+    let reflective_feature = select(0.65, 1.0, (gbuffer_material.feature_flags & 0x1u) != 0u);
+    let specular_strength = clamp(mix(0.35, 1.0, metallic) * reflective_feature, 0.0, 1.0);
+    let smoothness = (1.0 - roughness) * (1.0 - roughness);
+    let ssr_weight = ssr_confidence * smoothness * specular_strength;
+    let rt_confidence = clamp(rt.a, 0.0, 1.0) * (1.0 - roughness * 0.35) * specular_strength;
     let reflection_probe = mix(params.skycolor.rgb * fresnel, albedo * params.skycolor.rgb * 0.18, roughness);
-    let ssr_source = ssr.rgb * fresnel;
-    let rt_source = rt.rgb;
-    let screen_or_probe = mix(reflection_probe, ssr_source, ssr_conf);
-    let rt_weight = rt_conf * (1.0 - ssr_conf * 0.75);
-    let reflection_source = mix(screen_or_probe, rt_source, rt_weight) * (1.0 - probe_conf * 0.15);
+    let ray_or_probe = mix(reflection_probe, rt_color, rt_confidence);
+    let reflection_radiance = mix(ray_or_probe, ssr_color, ssr_weight);
+    let reflection_source = reflection_radiance * fresnel * smoothness;
     let lit = emissive + direct + ambient + reflection_source;
     textureStore(color_tex, px, vec4<f32>(lit, 1.0));
 }
