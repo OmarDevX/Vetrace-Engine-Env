@@ -1988,16 +1988,6 @@ impl WgpuRenderer {
                         count: None,
                     },
                     BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::StorageTexture {
-                            access: StorageTextureAccess::ReadWrite,
-                            format: TextureFormat::Rgba16Float,
-                            view_dimension: TextureViewDimension::D2,
-                        },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
                         binding: 4,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Buffer {
@@ -4387,10 +4377,6 @@ impl WgpuRenderer {
                     resource: BindingResource::TextureView(&gi_buffer_view),
                 },
                 BindGroupEntry {
-                    binding: 3,
-                    resource: BindingResource::TextureView(&gi_history_view),
-                },
-                BindGroupEntry {
                     binding: 4,
                     resource: hybrid_composite_params_buffer.as_entire_binding(),
                 },
@@ -5561,10 +5547,6 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 2,
                     resource: BindingResource::TextureView(&self.gi_buffer_view),
-                },
-                BindGroupEntry {
-                    binding: 3,
-                    resource: BindingResource::TextureView(&self.gi_history_view),
                 },
                 BindGroupEntry {
                     binding: 4,
