@@ -48,6 +48,8 @@ struct RtEffectParams {
 @group(0) @binding(6) var effect_out: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(7) var<uniform> rt_params: RtEffectParams;
 @group(0) @binding(8) var<uniform> params: Params;
+@group(0) @binding(21) var textures: binding_array<texture_2d<f32>>;
+@group(0) @binding(22) var material_sampler: sampler;
 // Shared BVH declarations/traversal are concatenated by Rust from hybrid/bvh_traversal.wgsl.
 fn visible_to_light(pos: vec3<f32>, n: vec3<f32>, l: vec3<f32>, max_objects: u32) -> f32 {
     if (dot(n, l) <= 0.0) { return 0.0; }
@@ -61,18 +63,15 @@ fn sky_radiance(rd: vec3<f32>) -> vec3<f32> {
 fn material_radiance(hit: Hit, hit_pos: vec3<f32>, max_objects: u32) -> vec3<f32> {
     let mat = materials[hit.material_index];
     var albedo = mat.baseColorFactor.rgb;
-    let clip = rt_params.view_proj * vec4<f32>(hit_pos, 1.0);
-    if (mat.baseColorTex != 0u && clip.w > 0.0) {
-        let ndc = clip.xyz / clip.w;
-        let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
-        let dims = textureDimensions(albedo_tex);
-        if (all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0))) {
-            let spx = vec2<i32>(clamp(uv * vec2<f32>(dims), vec2<f32>(0.0), vec2<f32>(dims - vec2<u32>(1u))));
-            let sd = textureLoad(depth_tex, spx, 0).x;
-            if (abs(sd - ndc.z) < 0.01) { albedo = textureLoad(albedo_tex, spx, 0).rgb; }
-        }
+    if (mat.baseColorTex != 0u) {
+        albedo = mat.baseColorFactor.rgb * textureSampleLevel(textures[mat.baseColorTex], material_sampler, hit.uv, 0.0).rgb;
     }
-    let emissive = mat.emissiveFactor * mat.emissiveStrength;
+    var emissive_texel = vec3<f32>(1.0);
+    let emissive_tex = mat.material_flags1;
+    if (emissive_tex != 0u) {
+        emissive_texel = textureSampleLevel(textures[emissive_tex], material_sampler, hit.uv, 0.0).rgb;
+    }
+    let emissive = mat.emissiveFactor * mat.emissiveStrength * emissive_texel;
     let l = normalize(-params.dir_light_dir.xyz);
     let ndotl = max(dot(hit.normal, l), 0.0);
     let vis = visible_to_light(hit_pos + hit.normal * T_EPS, hit.normal, l, max_objects);
@@ -91,6 +90,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (depth >= 0.9999) { write_miss(pixel); return; }
     let n = unpack_normal(pixel);
     let world = reconstruct_world(pixel, dims, depth);
+    // Primary-surface albedo still comes from the raster G-buffer; screen-projected albedo is no longer used for secondary hits.
     let surface_albedo = textureLoad(albedo_tex, pixel, 0).rgb;
     let adaptive_samples = u32(max(params.light_samples, 1));
     let high_quality = adaptive_samples >= 2u && params.max_bounces > 1;

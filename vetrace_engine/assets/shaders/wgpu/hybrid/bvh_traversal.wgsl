@@ -54,7 +54,16 @@ struct MaterialParams {
     material_flags4: u32, material_flags5: u32, material_flags6: u32,
 };
 
-struct Hit { t: f32, material_index: u32, normal: vec3<f32>, hit: u32, pos: vec3<f32> };
+struct Hit {
+    t: f32,
+    material_index: u32,
+    normal: vec3<f32>,
+    hit: u32,
+    pos: vec3<f32>,
+    tri: u32,
+    bary_uv: vec2<f32>,
+    uv: vec2<f32>,
+};
 
 @group(0) @binding(9) var<storage, read> objects: array<Object>;
 @group(0) @binding(10) var<storage, read> triangles: array<Triangle>;
@@ -87,7 +96,7 @@ fn in_bounds_tri_node(i: u32) -> bool { return i < params.total_tri_bvh_nodes; }
 fn in_bounds_tri(i: u32) -> bool { return i < params.total_triangles; }
 
 fn trace_mesh(ro: vec3<f32>, rd: vec3<f32>, obj: Object, best_t: f32) -> Hit {
-    var best = Hit(best_t, obj.material_index, vec3<f32>(0.0, 1.0, 0.0), 0u, vec3<f32>(0.0));
+    var best = Hit(best_t, obj.material_index, vec3<f32>(0.0, 1.0, 0.0), 0u, vec3<f32>(0.0), 0xffffffffu, vec2<f32>(0.0), vec2<f32>(0.0));
     if (obj.tri_bvh_count == 0u || obj.tri_bvh_start >= params.total_tri_bvh_nodes) { return best; }
     var steps = 0u; var stack: array<i32, 128>; var sp: i32 = 0; stack[sp] = i32(obj.tri_bvh_start); sp = sp + 1;
     loop {
@@ -102,7 +111,16 @@ fn trace_mesh(ro: vec3<f32>, rd: vec3<f32>, obj: Object, best_t: f32) -> Hit {
                 let tri = triangles[ti]; let res = intersect_triangle(ro, rd, tri);
                 if (res.x < best.t) {
                     let w = 1.0 - res.y - res.z;
-                    best = Hit(res.x, select(obj.material_index, tri.material_index, tri.material_index != 0u), normalize(tri.n0 * w + tri.n1 * res.y + tri.n2 * res.z), 1u, ro + rd * res.x);
+                    best = Hit(
+                        res.x,
+                        select(obj.material_index, tri.material_index, tri.material_index != 0u),
+                        normalize(tri.n0 * w + tri.n1 * res.y + tri.n2 * res.z),
+                        1u,
+                        ro + rd * res.x,
+                        ti,
+                        res.yz,
+                        tri.uv0 + tri.duv1 * res.y + tri.duv2 * res.z
+                    );
                 }
             }
         } else {
@@ -114,7 +132,7 @@ fn trace_mesh(ro: vec3<f32>, rd: vec3<f32>, obj: Object, best_t: f32) -> Hit {
 }
 
 fn trace_scene_limit(ro: vec3<f32>, rd: vec3<f32>, max_t: f32) -> Hit {
-    var best = Hit(max_t, 0u, vec3<f32>(0.0, 1.0, 0.0), 0u, vec3<f32>(0.0));
+    var best = Hit(max_t, 0u, vec3<f32>(0.0, 1.0, 0.0), 0u, vec3<f32>(0.0), 0xffffffffu, vec2<f32>(0.0), vec2<f32>(0.0));
     if (params.total_bvh_nodes == 0u) { return best; }
     var steps = 0u; var stack: array<i32, 128>; var sp: i32 = 0; stack[sp] = 0; sp = sp + 1;
     loop {
@@ -132,7 +150,7 @@ fn trace_scene_limit(ro: vec3<f32>, rd: vec3<f32>, max_t: f32) -> Hit {
                 else {
                     let half_extent = max(obj.size * obj.scale * 0.5, vec3<f32>(0.0001));
                     let t = select(intersect_sphere(ro, rd, obj), intersect_aabb(ro, rd, obj.position - half_extent, obj.position + half_extent), obj.is_cube != 0u);
-                    if (t < best.t) { let hp = ro + rd * t; let gn = select(normalize(hp - obj.position), normalize((hp - obj.position) / half_extent), obj.is_cube != 0u); best = Hit(t, obj.material_index, gn, 1u, hp); }
+                    if (t < best.t) { let hp = ro + rd * t; let gn = select(normalize(hp - obj.position), normalize((hp - obj.position) / half_extent), obj.is_cube != 0u); best = Hit(t, obj.material_index, gn, 1u, hp, 0xffffffffu, vec2<f32>(0.0), vec2<f32>(0.0)); }
                 }
             }
         } else {

@@ -1465,6 +1465,16 @@ impl Engine {
             } else {
                 0
             };
+            let emissive_tex_idx = if let Some(tex) = mat.emissive_tex.clone() {
+                let ptr = std::sync::Arc::as_ptr(&tex.0);
+                *tex_map.entry(ptr).or_insert_with(|| {
+                    let idx = tex_handles.len() as u32 + 1;
+                    tex_handles.push(tex.clone());
+                    idx
+                })
+            } else {
+                0
+            };
             gpu_materials.push(GpuMaterial {
                 base_color_factor: mat.base_color,
                 emissive_factor,
@@ -1474,6 +1484,7 @@ impl Engine {
                 ior: mat.ior,
                 base_color_tex: tex_idx,
                 f0,
+                _pad2: [mat.fallback_tags, emissive_tex_idx, 0, 0, 0, 0, 0],
                 ..Default::default()
             });
         }
@@ -1516,6 +1527,16 @@ impl Engine {
                     } else {
                         0
                     };
+                    let emissive_tex_idx = if let Some(tex) = mat.emissive_tex.clone() {
+                        let ptr = std::sync::Arc::as_ptr(&tex.0);
+                        *tex_map.entry(ptr).or_insert_with(|| {
+                            let idx = tex_handles.len() as u32 + 1;
+                            tex_handles.push(tex.clone());
+                            idx
+                        })
+                    } else {
+                        0
+                    };
                     gpu_materials.push(GpuMaterial {
                         base_color_factor: mat.base_color,
                         emissive_factor,
@@ -1525,6 +1546,7 @@ impl Engine {
                         ior: mat.ior,
                         base_color_tex: tex_idx,
                         f0,
+                        _pad2: [mat.fallback_tags, emissive_tex_idx, 0, 0, 0, 0, 0],
                         ..Default::default()
                     });
                     idx
