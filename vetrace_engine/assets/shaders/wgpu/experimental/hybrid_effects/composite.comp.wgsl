@@ -2,7 +2,6 @@
 @group(0) @binding(0) var raster_direct_tex: texture_2d<f32>;
 @group(0) @binding(1) var out_tex: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(43) var resolved_gi_buffer: texture_2d<f32>;
-@group(0) @binding(3) var gi_history: texture_storage_2d<rgba16float, read_write>;
 @group(0) @binding(5) var rt_shadow_mask: texture_2d<f32>;
 @group(0) @binding(46) var rt_reflection_radiance: texture_2d<f32>;
 @group(0) @binding(7) var rt_gi_radiance: texture_2d<f32>;
@@ -63,5 +62,4 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         color = color * trans + cloud;
     }
     textureStore(out_tex, pixel, vec4<f32>(color, 1.0));
-    textureStore(gi_history, gi_uv, vec4<f32>(blended_gi, 1.0));
 }
