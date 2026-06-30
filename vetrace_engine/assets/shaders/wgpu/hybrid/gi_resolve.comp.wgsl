@@ -42,6 +42,42 @@ fn resolve_light_probe(pixel: vec2<i32>) -> vec3<f32> {
     return vec3<f32>(0.42, 0.50, 0.62) * (0.35 + 0.65 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
 }
 
+fn reconstruct_world(pixel: vec2<i32>, dims: vec2<u32>, depth: f32) -> vec3<f32> {
+    let uv = (vec2<f32>(pixel) + vec2<f32>(0.5)) / vec2<f32>(dims);
+    var world = params.inv_view_proj * vec4<f32>(uv * 2.0 - vec2<f32>(1.0), depth, 1.0);
+    return (world / world.w).xyz;
+}
+
+fn load_rtgi_denoised(pixel: vec2<i32>, dims: vec2<u32>) -> vec3<f32> {
+    let center_n = unpack_normal(pixel);
+    let center_depth = textureLoad(depth_tex, pixel, 0).r;
+    var sum = textureLoad(rtgi_radiance, pixel, 0).rgb;
+    var wsum = 1.0;
+    for (var oy = -1; oy <= 1; oy = oy + 1) {
+        for (var ox = -1; ox <= 1; ox = ox + 1) {
+            if (ox == 0 && oy == 0) { continue; }
+            let q = pixel + vec2<i32>(ox, oy);
+            if (q.x < 0 || q.y < 0 || q.x >= i32(dims.x) || q.y >= i32(dims.y) || !resolved_surface(q)) { continue; }
+            let ndot = max(dot(center_n, unpack_normal(q)), 0.0);
+            let d = abs(textureLoad(depth_tex, q, 0).r - center_depth);
+            let w = ndot * ndot * exp(-d * 96.0);
+            sum = sum + textureLoad(rtgi_radiance, q, 0).rgb * w;
+            wsum = wsum + w;
+        }
+    }
+    return sum / max(wsum, 1.0e-4);
+}
+
+fn reproject_history(pixel: vec2<i32>, dims: vec2<u32>) -> vec3<f32> {
+    let world = reconstruct_world(pixel, dims, textureLoad(depth_tex, pixel, 0).r);
+    let prev_clip = params.prev_view_proj * vec4<f32>(world, 1.0);
+    let prev_ndc = prev_clip.xyz / max(prev_clip.w, 1.0e-5);
+    let prev_uv = prev_ndc.xy * 0.5 + vec2<f32>(0.5);
+    let prev_px = vec2<i32>(prev_uv * vec2<f32>(dims));
+    if (prev_px.x < 0 || prev_px.y < 0 || prev_px.x >= i32(dims.x) || prev_px.y >= i32(dims.y)) { return textureLoad(gi_history, pixel, 0).rgb; }
+    return textureLoad(gi_history, prev_px, 0).rgb;
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(depth_tex);
@@ -63,12 +99,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let coord = vec3<i32>(vec3<u32>(id.x % sdf_dims.x, id.y % sdf_dims.y, (params.frame_number / 4u) % sdf_dims.z));
         gi = textureLoad(sdfgi_radiance, coord, 0).rgb * params.sdfgi_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE) {
-        gi = textureLoad(rtgi_radiance, pixel, 0).rgb * params.rtgi_blend;
+        gi = load_rtgi_denoised(pixel, dims) * params.rtgi_blend;
     }
 
     if (params.frame_number > 0u && params.temporal_blend > 0.0) {
-        let history = textureLoad(gi_history, pixel, 0).rgb;
-        gi = mix(gi, history, clamp(params.temporal_blend, 0.0, 0.98));
+        let history = reproject_history(pixel, dims);
+        let lo = max(vec3<f32>(0.0), gi - vec3<f32>(params.rtgi_blend + 0.25));
+        let hi = gi + vec3<f32>(params.rtgi_blend + 0.25);
+        gi = mix(gi, clamp(history, lo, hi), clamp(params.temporal_blend, 0.0, 0.96));
     }
     textureStore(gi_buffer, pixel, vec4<f32>(max(gi, vec3<f32>(0.0)), 1.0));
 }
