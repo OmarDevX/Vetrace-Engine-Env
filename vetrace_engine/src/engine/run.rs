@@ -1,15 +1,15 @@
-use super::engine::{sdl_event_to_egui_event, EmptyBehaviour};
 use super::Engine;
+use super::engine::{EmptyBehaviour, sdl_event_to_egui_event};
+use crate::Behaviour;
+use crate::CustomMaterial;
 use crate::components::components::ObjectRef;
 use crate::gpu::{MeshHandle, TextureHandle};
 use crate::materials::PbrMaterial;
 use crate::math::{look_at, perspective, vec3_to_array};
+use crate::rendering::RenderParams;
 #[cfg(feature = "wgpu")]
 use crate::rendering::wgpu_renderer::PbrRenderData;
-use crate::rendering::RenderParams;
 use crate::scene::object::GpuMaterial;
-use crate::Behaviour;
-use crate::CustomMaterial;
 use egui::{Pos2, Rect, ViewportId, ViewportInfo};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use sdl2::event::Event as SdlEvent;
@@ -193,6 +193,16 @@ impl Engine {
                 } else {
                     0
                 };
+                let emissive_tex_idx = if let Some(tex) = mat.emissive_tex.clone() {
+                    let ptr = std::sync::Arc::as_ptr(&tex.0);
+                    *tex_map.entry(ptr).or_insert_with(|| {
+                        let idx = tex_handles.len() as u32 + 1;
+                        tex_handles.push(tex.clone());
+                        idx
+                    })
+                } else {
+                    0
+                };
                 gpu_materials.push(GpuMaterial {
                     base_color_factor: mat.base_color,
                     emissive_factor,
@@ -202,7 +212,7 @@ impl Engine {
                     ior: mat.ior,
                     base_color_tex: tex_idx,
                     f0,
-                    _pad2: [mat.fallback_tags, 0, 0, 0, 0, 0, 0],
+                    _pad2: [mat.fallback_tags, emissive_tex_idx, 0, 0, 0, 0, 0],
                     ..Default::default()
                 });
             }
@@ -261,6 +271,16 @@ impl Engine {
                         } else {
                             0
                         };
+                        let emissive_tex_idx = if let Some(tex) = mat.emissive_tex.clone() {
+                            let ptr = std::sync::Arc::as_ptr(&tex.0);
+                            *tex_map.entry(ptr).or_insert_with(|| {
+                                let idx = tex_handles.len() as u32 + 1;
+                                tex_handles.push(tex.clone());
+                                idx
+                            })
+                        } else {
+                            0
+                        };
                         gpu_materials.push(GpuMaterial {
                             base_color_factor: mat.base_color,
                             emissive_factor,
@@ -270,7 +290,7 @@ impl Engine {
                             ior: mat.ior,
                             base_color_tex: tex_idx,
                             f0,
-                            _pad2: [mat.fallback_tags, 0, 0, 0, 0, 0, 0],
+                            _pad2: [mat.fallback_tags, emissive_tex_idx, 0, 0, 0, 0, 0],
                             ..Default::default()
                         });
                         idx

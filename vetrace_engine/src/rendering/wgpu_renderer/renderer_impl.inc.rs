@@ -1793,6 +1793,8 @@ impl WgpuRenderer {
                         count: None,
                     },
                     BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                    BindGroupLayoutEntry { binding: 21, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: std::num::NonZeroU32::new(texture_array_limit) },
+                    BindGroupLayoutEntry { binding: 22, visibility: ShaderStages::COMPUTE, ty: BindingType::Sampler(SamplerBindingType::Filtering), count: None },
                 ],
             });
         let ssr_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -4249,6 +4251,8 @@ impl WgpuRenderer {
                         resource: material_buffer.as_entire_binding(),
                     },
                     BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&ssr_color_view) },
+                    BindGroupEntry { binding: 21, resource: BindingResource::TextureViewArray(&tex_views) },
+                    BindGroupEntry { binding: 22, resource: BindingResource::Sampler(&linear_sampler) },
                 ],
             })
         };
@@ -5369,6 +5373,7 @@ impl WgpuRenderer {
                 },
             ],
         });
+        let hybrid_rt_tex_views: Vec<&TextureView> = self.material_textures.iter().map(|t| &t.0.view).collect();
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
             self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some(label),
@@ -5431,6 +5436,8 @@ impl WgpuRenderer {
                         resource: self.material_buffer.as_entire_binding(),
                     },
                     BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
+                    BindGroupEntry { binding: 21, resource: BindingResource::TextureViewArray(&hybrid_rt_tex_views) },
+                    BindGroupEntry { binding: 22, resource: BindingResource::Sampler(&self.linear_sampler) },
                 ],
             })
         };
@@ -6291,6 +6298,7 @@ impl WgpuRenderer {
                 },
             ],
         });
+        let hybrid_rt_tex_views: Vec<&TextureView> = self.material_textures.iter().map(|t| &t.0.view).collect();
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
             self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some(label),
@@ -6353,6 +6361,8 @@ impl WgpuRenderer {
                         resource: self.material_buffer.as_entire_binding(),
                     },
                     BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
+                    BindGroupEntry { binding: 21, resource: BindingResource::TextureViewArray(&hybrid_rt_tex_views) },
+                    BindGroupEntry { binding: 22, resource: BindingResource::Sampler(&self.linear_sampler) },
                 ],
             })
         };
