@@ -6545,12 +6545,34 @@ impl WgpuRenderer {
 
         let mut feature_status = crate::rendering::renderer::RendererHybridFeatureStatus {
             pathtrace_primary_active: cinematic_pipeline_ready && uses_path_traced_primary,
-            primary_visibility_method: policy.primary_visibility,
-            shadow_method: policy.shadows,
-            reflection_method: policy.reflections,
-            ambient_occlusion_method: policy.ambient_occlusion,
-            gi_method: policy.gi,
-            transparency_method: policy.transparency,
+            requested_primary_visibility_method: policy.primary_visibility,
+            active_primary_visibility_method: if cinematic_pipeline_ready && uses_path_traced_primary {
+                crate::rendering::renderer::PrimaryVisibilityMethod::PathTraced
+            } else {
+                crate::rendering::renderer::PrimaryVisibilityMethod::Raster
+            },
+            requested_shadow_method: policy.shadows,
+            requested_reflection_method: policy.reflections,
+            requested_ambient_occlusion_method: policy.ambient_occlusion,
+            requested_gi_method: policy.gi,
+            requested_transparency_method: policy.transparency,
+            active_transparency_method: match policy.transparency {
+                crate::rendering::renderer::TransparencyMethod::PathTraced
+                    if cinematic_pipeline_ready && uses_path_traced_primary =>
+                {
+                    crate::rendering::renderer::TransparencyMethod::PathTraced
+                }
+                crate::rendering::renderer::TransparencyMethod::Raytraced
+                    if uses_hybrid_effects && self.hybrid_rt_transparency_pipeline.is_some() =>
+                {
+                    crate::rendering::renderer::TransparencyMethod::Raytraced
+                }
+                crate::rendering::renderer::TransparencyMethod::Raytraced => {
+                    crate::rendering::renderer::TransparencyMethod::ScreenSpaceRefraction
+                }
+                crate::rendering::renderer::TransparencyMethod::PathTraced => crate::rendering::renderer::TransparencyMethod::RasterAlpha,
+                method => method,
+            },
             ..Default::default()
         };
 
@@ -6570,7 +6592,7 @@ impl WgpuRenderer {
                 policy.shadows,
                 crate::rendering::renderer::ShadowMethod::Raytraced
                     | crate::rendering::renderer::ShadowMethod::RasterPlusRtContact
-            );
+            ) && self.hybrid_rt_shadow_pipeline.is_some();
             feature_status.ssr_reflections_active = matches!(
                 policy.reflections,
                 crate::rendering::renderer::ReflectionMethod::SSR
@@ -6580,8 +6602,46 @@ impl WgpuRenderer {
                 policy.reflections,
                 crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
                     | crate::rendering::renderer::ReflectionMethod::Raytraced
-            );
-            feature_status.hybrid_rtgi_active = dispatch_hybrid_rtgi;
+            ) && self.hybrid_rt_reflection_pipeline.is_some();
+            feature_status.hybrid_rtgi_active =
+                dispatch_hybrid_rtgi && self.hybrid_rt_gi_pipeline.is_some();
+            feature_status.active_reflection_method = if feature_status.hybrid_rt_reflections_active
+                && feature_status.ssr_reflections_active
+            {
+                crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
+            } else if feature_status.hybrid_rt_reflections_active {
+                crate::rendering::renderer::ReflectionMethod::Raytraced
+            } else if feature_status.ssr_reflections_active {
+                crate::rendering::renderer::ReflectionMethod::SSR
+            } else if matches!(
+                policy.reflections,
+                crate::rendering::renderer::ReflectionMethod::Probe
+            ) {
+                crate::rendering::renderer::ReflectionMethod::Probe
+            } else {
+                crate::rendering::renderer::ReflectionMethod::Off
+            };
+        } else {
+            feature_status.active_reflection_method = if matches!(
+                policy.reflections,
+                crate::rendering::renderer::ReflectionMethod::PathTraced
+            ) && cinematic_pipeline_ready
+                && uses_path_traced_primary
+            {
+                crate::rendering::renderer::ReflectionMethod::PathTraced
+            } else if matches!(
+                policy.reflections,
+                crate::rendering::renderer::ReflectionMethod::Probe
+            ) {
+                crate::rendering::renderer::ReflectionMethod::Probe
+            } else if matches!(
+                policy.reflections,
+                crate::rendering::renderer::ReflectionMethod::SSR
+            ) {
+                crate::rendering::renderer::ReflectionMethod::SSR
+            } else {
+                crate::rendering::renderer::ReflectionMethod::Off
+            };
         }
         feature_status.raster_shadow_maps_active = matches!(
             policy.shadows,
@@ -6589,6 +6649,18 @@ impl WgpuRenderer {
                 | crate::rendering::renderer::ShadowMethod::CascadedShadowMap
                 | crate::rendering::renderer::ShadowMethod::RasterPlusRtContact
         );
+        feature_status.active_shadow_method = if feature_status.hybrid_rt_shadows_active {
+            policy.shadows
+        } else if feature_status.raster_shadow_maps_active {
+            match policy.shadows {
+                crate::rendering::renderer::ShadowMethod::CascadedShadowMap => {
+                    crate::rendering::renderer::ShadowMethod::CascadedShadowMap
+                }
+                _ => crate::rendering::renderer::ShadowMethod::RasterShadowMap,
+            }
+        } else {
+            crate::rendering::renderer::ShadowMethod::Off
+        };
         let effective_raytraced_shadows_param =
             if effective_renderer_mode.uses_decomposed_rt_effects() {
                 u32::from(feature_status.hybrid_rt_shadows_active)
@@ -7468,12 +7540,8 @@ impl WgpuRenderer {
             };
             let ao_dispatchable =
                 !self.is_2d && matches!(screen_ao_method, AO_METHOD_SSAO | AO_METHOD_GTAO);
-            feature_status.ambient_occlusion_method = match screen_ao_method {
-                AO_METHOD_RTAO => crate::rendering::renderer::AmbientOcclusionMethod::RTAO,
-                AO_METHOD_GTAO => crate::rendering::renderer::AmbientOcclusionMethod::GTAO,
-                AO_METHOD_SSAO => crate::rendering::renderer::AmbientOcclusionMethod::SSAO,
-                _ => crate::rendering::renderer::AmbientOcclusionMethod::Off,
-            };
+            feature_status.active_ambient_occlusion_method =
+                crate::rendering::renderer::AmbientOcclusionMethod::Off;
             feature_status.ambient_occlusion_fallback = ao_method != screen_ao_method
                 || (ao_dispatchable && self.ambient_occlusion_pipeline.is_none())
                 || (ao_method == AO_METHOD_RTAO && !rtao_dispatchable);
@@ -7488,6 +7556,8 @@ impl WgpuRenderer {
                     cpass.dispatch_workgroups(x, y, 1);
                     feature_status.ambient_occlusion_active = true;
                     feature_status.ambient_occlusion_fallback = false;
+                    feature_status.active_ambient_occlusion_method =
+                        crate::rendering::renderer::AmbientOcclusionMethod::RTAO;
                 }
             } else if ao_dispatchable {
                 let ao_params = AmbientOcclusionParams {
@@ -7521,6 +7591,11 @@ impl WgpuRenderer {
                     cpass.dispatch_workgroups(x, y, 1);
                     feature_status.ambient_occlusion_active = true;
                     feature_status.ambient_occlusion_fallback = false;
+                    feature_status.active_ambient_occlusion_method = match screen_ao_method {
+                        AO_METHOD_GTAO => crate::rendering::renderer::AmbientOcclusionMethod::GTAO,
+                        AO_METHOD_SSAO => crate::rendering::renderer::AmbientOcclusionMethod::SSAO,
+                        _ => crate::rendering::renderer::AmbientOcclusionMethod::Off,
+                    };
                 }
             }
             if feature_status.hybrid_rt_shadows_active {
@@ -7607,7 +7682,7 @@ impl WgpuRenderer {
                 cpass.set_pipeline(pipeline);
                 cpass.set_bind_group(0, &self.gi_resolve_bind_group, &[]);
                 cpass.dispatch_workgroups(x, y, 1);
-                feature_status.gi_method = match gi_resolve_method {
+                feature_status.active_gi_method = match gi_resolve_method {
                     GI_RESOLVE_METHOD_BAKED_LIGHTMAP => crate::rendering::renderer::GiMethod::BakedLightmap,
                     GI_RESOLVE_METHOD_LIGHT_PROBES => crate::rendering::renderer::GiMethod::LightProbes,
                     GI_RESOLVE_METHOD_SDFGI => crate::rendering::renderer::GiMethod::SDFGI,
@@ -7616,7 +7691,7 @@ impl WgpuRenderer {
                 };
                 feature_status.hybrid_rtgi_active = gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE;
             } else {
-                feature_status.gi_method = crate::rendering::renderer::GiMethod::Off;
+                feature_status.active_gi_method = crate::rendering::renderer::GiMethod::Off;
                 feature_status.hybrid_rtgi_active = false;
             }
             {
@@ -8312,16 +8387,38 @@ impl WgpuRenderer {
                     s.raster_pass_ms, s.feature_status.raster_shadow_maps_active
                 ));
                 ui.label(format!(
-                    "RT shadows: {:.2} ms (active: {})",
-                    s.rt_shadow_pass_ms, s.feature_status.hybrid_rt_shadows_active
+                    "Primary visibility: requested {:?} / active {:?}",
+                    s.feature_status.requested_primary_visibility_method,
+                    s.feature_status.active_primary_visibility_method
                 ));
                 ui.label(format!(
-                    "RT reflections: {:.2} ms (active: {})",
-                    s.rt_reflection_pass_ms, s.feature_status.hybrid_rt_reflections_active
+                    "Shadows: requested {:?} / active {:?} ({:.2} ms)",
+                    s.feature_status.requested_shadow_method,
+                    s.feature_status.active_shadow_method,
+                    s.rt_shadow_pass_ms
                 ));
                 ui.label(format!(
-                    "RT GI: {:.2} ms (active: {})",
-                    s.rt_gi_pass_ms, s.feature_status.hybrid_rtgi_active
+                    "Reflections: requested {:?} / active {:?} ({:.2} ms)",
+                    s.feature_status.requested_reflection_method,
+                    s.feature_status.active_reflection_method,
+                    s.rt_reflection_pass_ms
+                ));
+                ui.label(format!(
+                    "AO: requested {:?} / active {:?} (fallback: {})",
+                    s.feature_status.requested_ambient_occlusion_method,
+                    s.feature_status.active_ambient_occlusion_method,
+                    s.feature_status.ambient_occlusion_fallback
+                ));
+                ui.label(format!(
+                    "GI: requested {:?} / active {:?} ({:.2} ms)",
+                    s.feature_status.requested_gi_method,
+                    s.feature_status.active_gi_method,
+                    s.rt_gi_pass_ms
+                ));
+                ui.label(format!(
+                    "Transparency: requested {:?} / active {:?}",
+                    s.feature_status.requested_transparency_method,
+                    s.feature_status.active_transparency_method
                 ));
                 ui.label(format!("Denoise: {:.2} ms", s.denoise_ms));
                 ui.label(format!(
