@@ -14,7 +14,11 @@ struct GiResolveParams {
     probe_blend: f32,
     sdfgi_blend: f32,
     rtgi_blend: f32,
-    _pad1: vec3<f32>,
+    probe_count: u32,
+    gi_resource_flags: u32,
+    _pad1: vec2<u32>,
+    sdfgi_origin: vec4<f32>,
+    sdfgi_extent_voxel: vec4<f32>,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
 };
@@ -29,6 +33,20 @@ struct GiResolveParams {
 @group(0) @binding(7) var gi_buffer: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(8) var<uniform> params: GiResolveParams;
 
+struct LightProbe {
+    position_radius: vec4<f32>,
+    weight_visibility: vec4<f32>,
+};
+
+@group(0) @binding(9) var<storage, read> light_probes: array<LightProbe>;
+@group(0) @binding(10) var<storage, read> light_probe_sh: array<vec4<f32>>;
+@group(0) @binding(11) var gbuf_lightmap_uv: texture_2d<f32>;
+
+const GI_RESOURCE_LIGHTMAP_ATLAS: u32 = 1u;
+const GI_RESOURCE_LIGHTMAP_UVS: u32 = 2u;
+const GI_RESOURCE_PROBES: u32 = 4u;
+const GI_RESOURCE_SDFGI: u32 = 8u;
+
 fn resolved_surface(pixel: vec2<i32>) -> bool {
     return textureLoad(depth_tex, pixel, 0).r < 0.9999 && textureLoad(gbuf_albedo, pixel, 0).a > 0.0;
 }
@@ -37,9 +55,55 @@ fn unpack_normal(pixel: vec2<i32>) -> vec3<f32> {
     return normalize(textureLoad(gbuf_normal, pixel, 0).xyz * 2.0 - vec3<f32>(1.0));
 }
 
-fn resolve_light_probe(pixel: vec2<i32>) -> vec3<f32> {
-    let n = unpack_normal(pixel);
-    return vec3<f32>(0.42, 0.50, 0.62) * (0.35 + 0.65 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
+fn eval_probe_sh(probe_index: u32, n: vec3<f32>) -> vec3<f32> {
+    let base = probe_index * 9u;
+    let c0 = light_probe_sh[base + 0u].rgb;
+    let c1 = light_probe_sh[base + 1u].rgb;
+    let c2 = light_probe_sh[base + 2u].rgb;
+    let c3 = light_probe_sh[base + 3u].rgb;
+    // L0/L1 irradiance SH. Remaining coefficients are reserved for L2 producers.
+    return max(c0 + c1 * n.y + c2 * n.z + c3 * n.x, vec3<f32>(0.0));
+}
+
+fn resolve_light_probe(world_pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    if ((params.gi_resource_flags & GI_RESOURCE_PROBES) == 0u || params.probe_count == 0u) {
+        return vec3<f32>(0.0);
+    }
+    var sum = vec3<f32>(0.0);
+    var wsum = 0.0;
+    let count = min(params.probe_count, 256u);
+    for (var i = 0u; i < count; i = i + 1u) {
+        let p = light_probes[i];
+        let to_probe = p.position_radius.xyz - world_pos;
+        let dist = length(to_probe);
+        let radius = max(p.position_radius.w, 1.0e-3);
+        let falloff = max(1.0 - dist / radius, 0.0);
+        let visibility = clamp(p.weight_visibility.x, 0.0, 1.0);
+        let artist_weight = max(p.weight_visibility.y, 0.0);
+        let w = falloff * falloff * visibility * max(artist_weight, 1.0e-4);
+        sum = sum + eval_probe_sh(i, n) * w;
+        wsum = wsum + w;
+    }
+    return sum / max(wsum, 1.0e-4);
+}
+
+fn resolve_baked_lightmap(pixel: vec2<i32>) -> vec3<f32> {
+    if ((params.gi_resource_flags & (GI_RESOURCE_LIGHTMAP_ATLAS | GI_RESOURCE_LIGHTMAP_UVS)) != (GI_RESOURCE_LIGHTMAP_ATLAS | GI_RESOURCE_LIGHTMAP_UVS)) { return vec3<f32>(0.0); }
+    let uvw = textureLoad(gbuf_lightmap_uv, pixel, 0);
+    if (uvw.z <= 0.0) { return vec3<f32>(0.0); }
+    let lm_dims = textureDimensions(lightmap_tex);
+    let coord = clamp(vec2<i32>(uvw.xy * vec2<f32>(lm_dims)), vec2<i32>(0), vec2<i32>(lm_dims) - vec2<i32>(1));
+    return textureLoad(lightmap_tex, coord, 0).rgb;
+}
+
+fn resolve_sdfgi(world_pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    if ((params.gi_resource_flags & GI_RESOURCE_SDFGI) == 0u) { return vec3<f32>(0.0); }
+    let sdf_dims = textureDimensions(sdfgi_radiance);
+    let biased = world_pos + n * max(params.sdfgi_extent_voxel.w, 0.0);
+    let local = (biased - params.sdfgi_origin.xyz) / max(params.sdfgi_extent_voxel.xyz, vec3<f32>(1.0e-4));
+    if (any(local < vec3<f32>(0.0)) || any(local > vec3<f32>(1.0))) { return vec3<f32>(0.0); }
+    let coord = clamp(vec3<i32>(local * vec3<f32>(sdf_dims)), vec3<i32>(0), vec3<i32>(sdf_dims) - vec3<i32>(1));
+    return textureLoad(sdfgi_radiance, coord, 0).rgb;
 }
 
 fn reconstruct_world(pixel: vec2<i32>, dims: vec2<u32>, depth: f32) -> vec3<f32> {
@@ -88,16 +152,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    let uv = (vec2<f32>(id.xy) + vec2<f32>(0.5)) / vec2<f32>(dims);
+    let world = reconstruct_world(pixel, dims, textureLoad(depth_tex, pixel, 0).r);
+    let n = unpack_normal(pixel);
     var gi = vec3<f32>(0.0);
     if (params.selected_method == GI_RESOLVE_METHOD_BAKED_LIGHTMAP) {
-        gi = textureLoad(lightmap_tex, pixel, 0).rgb * params.baked_blend;
+        gi = resolve_baked_lightmap(pixel) * params.baked_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_LIGHT_PROBES) {
-        gi = resolve_light_probe(pixel) * params.probe_blend;
+        gi = resolve_light_probe(world, n) * params.probe_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_SDFGI) {
-        let sdf_dims = textureDimensions(sdfgi_radiance);
-        let coord = vec3<i32>(vec3<u32>(id.x % sdf_dims.x, id.y % sdf_dims.y, (params.frame_number / 4u) % sdf_dims.z));
-        gi = textureLoad(sdfgi_radiance, coord, 0).rgb * params.sdfgi_blend;
+        gi = resolve_sdfgi(world, n) * params.sdfgi_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE) {
         gi = load_rtgi_denoised(pixel, dims) * params.rtgi_blend;
     }
