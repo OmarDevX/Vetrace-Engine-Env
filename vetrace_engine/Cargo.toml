@@ -53,9 +53,12 @@ version = "0.17"
 optional = true
 
 [features]
-default = ["sdl2_bundled", "use_epi", "wgpu", "audio"]
+default = ["sdl2_bundled", "use_epi", "wgpu"]
+# Audio output is opt-in because Kira uses cpal/ALSA on Linux, which requires
+# OS audio development packages that are unnecessary for renderer-only checks.
 audio = ["kira"]
-headless-check = []
+# Renderer validation profile: enables the WGPU renderer without optional audio.
+headless-check = ["wgpu"]
 
 sdl2_unsafe_textures = ["sdl2/unsafe_textures"]
 sdl2_gfx = ["sdl2/gfx"]
