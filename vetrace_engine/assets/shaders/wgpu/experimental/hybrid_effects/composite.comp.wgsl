@@ -1,18 +1,18 @@
 // Production-active decomposed hybrid effects compositor.
 @group(0) @binding(0) var raster_direct_tex: texture_2d<f32>;
 @group(0) @binding(1) var out_tex: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(2) var resolved_gi_buffer: texture_2d<f32>;
+@group(0) @binding(43) var resolved_gi_buffer: texture_2d<f32>;
 @group(0) @binding(3) var gi_history: texture_storage_2d<rgba16float, read_write>;
 @group(0) @binding(5) var rt_shadow_mask: texture_2d<f32>;
-@group(0) @binding(6) var rt_reflection_radiance: texture_2d<f32>;
+@group(0) @binding(46) var rt_reflection_radiance: texture_2d<f32>;
 @group(0) @binding(7) var rt_gi_radiance: texture_2d<f32>;
 @group(0) @binding(8) var rt_transparency_radiance: texture_2d<f32>;
 @group(0) @binding(9) var atmosphere_overlay: texture_2d<f32>;
 @group(0) @binding(10) var cloud_overlay: texture_2d<f32>;
 @group(0) @binding(11) var cloud_transmittance: texture_2d<f32>;
 @group(0) @binding(12) var gbuf_material: texture_2d<u32>;
-@group(0) @binding(13) var ambient_occlusion_tex: texture_2d<f32>;
-@group(0) @binding(14) var ssr_reflection_radiance: texture_2d<f32>;
+@group(0) @binding(44) var ambient_occlusion_tex: texture_2d<f32>;
+@group(0) @binding(45) var ssr_reflection_radiance: texture_2d<f32>;
 
 struct CompositeParams {
     temporal_blend: f32,
