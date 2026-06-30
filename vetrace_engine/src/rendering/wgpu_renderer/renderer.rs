@@ -170,6 +170,7 @@ pub struct WgpuRenderer {
     hybrid_rt_reflection_view: TextureView,
     hybrid_rt_reflection_history_texture: Texture,
     hybrid_rt_reflection_history_view: TextureView,
+    // Optional resolve outputs/history are always present so fallback bind groups remain valid.
     ssr_color_texture: Texture,
     ssr_color_view: TextureView,
     ssr_history_texture: Texture,

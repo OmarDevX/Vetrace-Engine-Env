@@ -278,6 +278,49 @@ fn create_cloud_temporal_texture(
     (texture, view)
 }
 
+fn write_r16float_texture(queue: &Queue, texture: &Texture, width: u32, height: u32, value: u16) {
+    let texels = vec![value; (width * height) as usize];
+    queue.write_texture(
+        ImageCopyTexture { texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+        bytemuck::cast_slice(&texels),
+        ImageDataLayout { offset: 0, bytes_per_row: Some(2 * width), rows_per_image: Some(height) },
+        Extent3d { width, height, depth_or_array_layers: 1 },
+    );
+}
+
+fn write_rgba16float_texture(queue: &Queue, texture: &Texture, width: u32, height: u32, value: [u16; 4]) {
+    let texels = vec![value; (width * height) as usize];
+    queue.write_texture(
+        ImageCopyTexture { texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+        bytemuck::cast_slice(&texels),
+        ImageDataLayout { offset: 0, bytes_per_row: Some(8 * width), rows_per_image: Some(height) },
+        Extent3d { width, height, depth_or_array_layers: 1 },
+    );
+}
+
+fn initialize_resolve_fallback_textures(
+    queue: &Queue,
+    width: u32,
+    height: u32,
+    ambient_occlusion_texture: &Texture,
+    ambient_occlusion_history_texture: &Texture,
+    ssr_color_texture: &Texture,
+    ssr_history_texture: &Texture,
+    hybrid_rt_gi_texture: &Texture,
+    gi_history_texture: &Texture,
+    gi_buffer_texture: &Texture,
+) {
+    const F16_ZERO: u16 = 0x0000;
+    const F16_ONE: u16 = 0x3c00;
+    write_r16float_texture(queue, ambient_occlusion_texture, width, height, F16_ONE);
+    write_r16float_texture(queue, ambient_occlusion_history_texture, width, height, F16_ONE);
+    write_rgba16float_texture(queue, ssr_color_texture, width, height, [F16_ZERO; 4]);
+    write_rgba16float_texture(queue, ssr_history_texture, width, height, [F16_ZERO; 4]);
+    write_rgba16float_texture(queue, hybrid_rt_gi_texture, width, height, [F16_ZERO; 4]);
+    write_rgba16float_texture(queue, gi_history_texture, width, height, [F16_ZERO; 4]);
+    write_rgba16float_texture(queue, gi_buffer_texture, width, height, [F16_ZERO; 4]);
+}
+
 impl WgpuRenderer {
     fn ambient_occlusion_method_constant(
         method: crate::rendering::renderer::AmbientOcclusionMethod,
@@ -858,6 +901,18 @@ impl WgpuRenderer {
                 TextureFormat::R16Float,
                 "ambient_occlusion_history",
             );
+        initialize_resolve_fallback_textures(
+            queue.as_ref(),
+            render_width,
+            render_height,
+            &ambient_occlusion_texture,
+            &ambient_occlusion_history_texture,
+            &ssr_color_texture,
+            &ssr_history_texture,
+            &hybrid_rt_gi_texture,
+            &gi_history_texture,
+            &gi_buffer_texture,
+        );
         let hybrid_rt_params_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("hybrid_rt_params"),
             size: std::mem::size_of::<HybridRtEffectParams>() as u64,
@@ -4704,6 +4759,10 @@ impl WgpuRenderer {
             create_hybrid_effect_texture("hybrid_rt_reflection_radiance");
         let (hybrid_rt_reflection_history_texture, hybrid_rt_reflection_history_view) =
             create_hybrid_effect_texture("hybrid_rt_reflection_history");
+        let (ssr_color_texture, ssr_color_view) =
+            create_hybrid_effect_texture("ssr_reflection_radiance");
+        let (ssr_history_texture, ssr_history_view) =
+            create_hybrid_effect_texture("ssr_reflection_history");
         let (hybrid_rt_gi_texture, hybrid_rt_gi_view) =
             create_hybrid_effect_texture("hybrid_rt_gi_radiance");
         let (hybrid_rt_transparency_texture, hybrid_rt_transparency_view) =
@@ -4723,6 +4782,18 @@ impl WgpuRenderer {
                 TextureFormat::R16Float,
                 "ambient_occlusion_history",
             );
+        initialize_resolve_fallback_textures(
+            self.queue.as_ref(),
+            self.width,
+            self.height,
+            &ambient_occlusion_texture,
+            &ambient_occlusion_history_texture,
+            &ssr_color_texture,
+            &ssr_history_texture,
+            &hybrid_rt_gi_texture,
+            &gi_history_texture,
+            &gi_buffer_texture,
+        );
         self.screen_texture = st;
         self.screen_view = screen_view;
         self.screen_history_texture = screen_history_texture;
@@ -6627,6 +6698,9 @@ impl WgpuRenderer {
         effective_max_shadow_rays = effective_max_shadow_rays.min(adaptive_sample_cap as u32);
 
         if effective_renderer_mode.uses_decomposed_rt_effects() {
+            if self.safe_shader_mode {
+                render_log("optional AO/SSR/GI pipelines disabled by VETRACE_SAFE_SHADER=1; using initialized fallback resolve textures");
+            }
             feature_status.hybrid_rt_shadows_active = matches!(
                 policy.shadows,
                 crate::rendering::renderer::ShadowMethod::Raytraced
@@ -6644,6 +6718,17 @@ impl WgpuRenderer {
             ) && self.hybrid_rt_reflection_pipeline.is_some();
             feature_status.hybrid_rtgi_active =
                 dispatch_hybrid_rtgi && self.hybrid_rt_gi_pipeline.is_some();
+            if matches!(
+                policy.reflections,
+                crate::rendering::renderer::ReflectionMethod::SSR
+                    | crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
+            ) && self.ssr_pipeline.is_none()
+            {
+                render_log("SSR pipeline unavailable; compositor will sample transparent SSR fallback");
+            }
+            if dispatch_hybrid_rtgi && self.hybrid_rt_gi_pipeline.is_none() {
+                render_log("RTGI producer pipeline unavailable; GI resolve will use black RTGI fallback");
+            }
             feature_status.active_reflection_method = if feature_status.hybrid_rt_reflections_active
                 && feature_status.ssr_reflections_active
             {
@@ -7611,6 +7696,9 @@ impl WgpuRenderer {
             };
             let ao_dispatchable =
                 !self.is_2d && matches!(screen_ao_method, AO_METHOD_SSAO | AO_METHOD_GTAO);
+            if ao_dispatchable && self.ambient_occlusion_pipeline.is_none() {
+                render_log("AO pipeline unavailable; compositor will sample neutral AO fallback");
+            }
             feature_status.active_ambient_occlusion_method =
                 crate::rendering::renderer::AmbientOcclusionMethod::Off;
             feature_status.ambient_occlusion_fallback = ao_method != screen_ao_method
@@ -7826,6 +7914,30 @@ impl WgpuRenderer {
                     },
                     ImageCopyTexture {
                         texture: &self.ambient_occlusion_history_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    Extent3d {
+                        width: self.width,
+                        height: self.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+            if !matches!(
+                feature_status.active_gi_method,
+                crate::rendering::renderer::GiMethod::Off
+            ) {
+                encoder.copy_texture_to_texture(
+                    ImageCopyTexture {
+                        texture: &self.gi_buffer_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    ImageCopyTexture {
+                        texture: &self.gi_history_texture,
                         mip_level: 0,
                         origin: Origin3d::ZERO,
                         aspect: TextureAspect::All,
