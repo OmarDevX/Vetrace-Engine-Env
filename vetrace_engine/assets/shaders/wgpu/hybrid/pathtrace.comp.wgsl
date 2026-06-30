@@ -42,6 +42,9 @@ struct Triangle {
     duv2: vec2<f32>, material_index: u32, _pad6: u32,
 };
 
+// Keep BVH leaf interpretation synchronized with hybrid/bvh_traversal.wgsl:
+// TLAS leaf child_object.x/y < 0 with child_object.z/w as object indices;
+// BLAS leaf child_tri.x/y < 0 with child_tri.z as the triangle index.
 struct BvhNode {
     bmin: vec4<f32>,
     bmax: vec4<f32>,

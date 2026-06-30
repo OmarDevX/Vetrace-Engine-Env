@@ -621,7 +621,11 @@ mod layout_tests {
         let compose = include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl");
         let ao = include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl");
         let ssr = include_str!("../../../assets/shaders/wgpu/hybrid/ssr.comp.wgsl");
-        let rt = include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl");
+        let rt = concat!(
+            include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+            "\n",
+            include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl")
+        );
         let gi = include_str!("../../../assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl");
         assert!(
             ao.contains("ao") && ao.contains("textureStore"),
@@ -656,11 +660,27 @@ mod layout_tests {
         ),
         (
             "rt_ao.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl"),
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl")
+            ),
         ),
         (
             "rt_gi.comp.wgsl",
-            include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl"),
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl")
+            ),
+        ),
+        (
+            "rt_reflections.comp.wgsl",
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_reflections.comp.wgsl")
+            ),
         ),
         (
             "gi_resolve.comp.wgsl",
@@ -679,7 +699,7 @@ mod layout_tests {
     const HYBRID_BINDING_LAYOUTS: &[(&str, &str, &[(u32, u32)])] = &[
         (
             "hybrid_compose",
-            STANDALONE_HYBRID_WGSL[5].1,
+            STANDALONE_HYBRID_WGSL[6].1,
             &[
                 (0, 0),
                 (0, 1),
@@ -735,7 +755,6 @@ mod layout_tests {
                 (0, 11),
                 (0, 12),
                 (0, 13),
-                (0, 14),
             ],
         ),
         (
@@ -760,7 +779,7 @@ mod layout_tests {
         ),
         (
             "gi_resolve",
-            STANDALONE_HYBRID_WGSL[4].1,
+            STANDALONE_HYBRID_WGSL[5].1,
             &[
                 (0, 0),
                 (0, 1),

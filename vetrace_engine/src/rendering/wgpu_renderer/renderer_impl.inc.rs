@@ -2235,15 +2235,19 @@ impl WgpuRenderer {
         );
         let hybrid_rt_reflection_pipeline = make_hybrid_pipeline(
             "hybrid_rt_reflections_pipeline",
-            include_str!(
-                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_reflections.comp.wgsl"
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_reflections.comp.wgsl")
             ),
             &hybrid_rt_pipeline_layout,
         );
         let hybrid_rt_gi_pipeline = make_hybrid_pipeline(
             "hybrid_rt_gi_pipeline",
-            include_str!(
-                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl"
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl")
             ),
             &hybrid_rt_pipeline_layout,
         );
@@ -2255,8 +2259,10 @@ impl WgpuRenderer {
         );
         let rtao_pipeline = make_hybrid_pipeline(
             "rtao_pipeline",
-            include_str!(
-                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl"
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl")
             ),
             &rtao_pipeline_layout,
         );
