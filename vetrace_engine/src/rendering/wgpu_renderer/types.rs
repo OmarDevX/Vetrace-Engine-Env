@@ -284,6 +284,7 @@ pub struct BlitParams {
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct HybridRtEffectParams {
     pub inv_view_proj: [[f32; 4]; 4],
+    pub view_proj: [[f32; 4]; 4],
     pub camera_pos: [f32; 4],
     pub dir_light_dir: [f32; 4],
     pub dir_light_color: [f32; 4],
@@ -294,10 +295,25 @@ pub struct HybridRtEffectParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct SsrParams {
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub view_proj: [[f32; 4]; 4],
+    pub camera_pos: [f32; 4],
+    pub tex_size: [f32; 2],
+    pub max_distance: f32,
+    pub thickness: f32,
+    pub frame_number: u32,
+    pub enabled: u32,
+    pub _pad: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct HybridCompositeParams {
     pub temporal_blend: f32,
     pub rt_gi_enabled: u32,
     pub rt_reflections_enabled: u32,
+    pub ssr_enabled: u32,
     pub rt_shadows_enabled: u32,
     pub rt_transparency_enabled: u32,
     pub atmosphere_enabled: u32,

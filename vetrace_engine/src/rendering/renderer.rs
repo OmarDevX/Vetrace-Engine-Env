@@ -369,6 +369,7 @@ pub struct RendererHybridFeatureStatus {
     pub raster_shadow_maps_active: bool,
     pub hybrid_rt_shadows_active: bool,
     pub hybrid_rt_reflections_active: bool,
+    pub ssr_reflections_active: bool,
     pub hybrid_rtgi_active: bool,
     pub ambient_occlusion_active: bool,
     pub ambient_occlusion_fallback: bool,

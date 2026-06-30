@@ -78,7 +78,7 @@ struct Params {
     min_ray_offset: f32,
 };
 
-struct RtEffectParams { inv_view_proj: mat4x4<f32>, camera_pos: vec4<f32>, dir_light_dir: vec4<f32>, dir_light_color: vec4<f32>, enabled: u32, mode: u32, _pad: vec2<u32> };
+struct RtEffectParams { inv_view_proj: mat4x4<f32>, view_proj: mat4x4<f32>, camera_pos: vec4<f32>, dir_light_dir: vec4<f32>, dir_light_color: vec4<f32>, enabled: u32, mode: u32, _pad: vec2<u32> };
 
 @group(0) @binding(0) var depth_tex: texture_2d<f32>;
 @group(0) @binding(1) var normal_tex: texture_2d<f32>;
@@ -94,6 +94,7 @@ struct RtEffectParams { inv_view_proj: mat4x4<f32>, camera_pos: vec4<f32>, dir_l
 @group(0) @binding(11) var<storage, read> bvh_nodes: array<BvhNode>;
 @group(0) @binding(12) var<storage, read> tri_bvh_nodes: array<TriBvhNode>;
 @group(0) @binding(13) var<storage, read> materials: array<MaterialParams>;
+@group(0) @binding(14) var ssr_tex: texture_2d<f32>;
 
 fn reconstruct_world(pixel: vec2<i32>, dims: vec2<u32>, depth: f32) -> vec3<f32> {
     let uv = (vec2<f32>(pixel) + vec2<f32>(0.5)) / vec2<f32>(dims);
@@ -169,11 +170,9 @@ fn unpack_normal(pixel: vec2<i32>) -> vec3<f32> {
 }
 
 fn project_to_uv(world: vec3<f32>) -> vec2<f32> {
-    // This experimental shader is not wired to receive a view-projection matrix yet.
-    // Keep the shader valid by using a conservative centered projection placeholder
-    // instead of the unsupported inverse() intrinsic on inv_view_proj.
-    let view_dir = normalize(world - rt_params.camera_pos.xyz);
-    return clamp(view_dir.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(1.0));
+    let clip = rt_params.view_proj * vec4<f32>(world, 1.0);
+    let ndc = clip.xyz / max(clip.w, 1.0e-6);
+    return ndc.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
 }
 
 fn probe_reflection(albedo: vec3<f32>, n: vec3<f32>, v: vec3<f32>, roughness: f32) -> vec3<f32> {
@@ -278,7 +277,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
-    let ssr = screen_space_reflection(pixel, dims, world, n, v, roughness);
+    let standalone_ssr = textureLoad(ssr_tex, pixel, 0);
+    let local_ssr = screen_space_reflection(pixel, dims, world, n, v, roughness);
+    let ssr = select(local_ssr, standalone_ssr, standalone_ssr.a > local_ssr.a);
     let ssr_color = ssr.rgb * fresnel;
     if (ssr.a > 0.55) {
         textureStore(effect_out, pixel, vec4<f32>(mix(probe * fresnel, ssr_color, ssr.a), ssr.a));
@@ -286,7 +287,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     let important_object = object_id != 0u;
-    let insufficient_fallback = ssr.a < 0.25;
+    let insufficient_fallback = ssr.a < 0.55;
     let smooth_enough = roughness < ROUGH_RT_ALLOWED;
     let mid_roughness_blend = roughness >= ROUGH_RT_ALLOWED && roughness <= ROUGH_PROBE_ONLY;
     let rt_allowed = params.raytraced_reflections_enabled != 0u && params.reflection_max_distance > T_EPS && smooth_enough && important_object && insufficient_fallback && rt_resolution_lane(pixel, roughness);

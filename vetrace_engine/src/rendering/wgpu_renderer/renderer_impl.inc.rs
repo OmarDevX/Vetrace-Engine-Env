@@ -829,6 +829,10 @@ impl WgpuRenderer {
             create_hybrid_effect_texture("hybrid_rt_reflection_radiance");
         let (hybrid_rt_reflection_history_texture, hybrid_rt_reflection_history_view) =
             create_hybrid_effect_texture("hybrid_rt_reflection_history");
+        let (ssr_color_texture, ssr_color_view) =
+            create_hybrid_effect_texture("ssr_reflection_radiance");
+        let (ssr_history_texture, ssr_history_view) =
+            create_hybrid_effect_texture("ssr_reflection_history");
         let (hybrid_rt_gi_texture, hybrid_rt_gi_view) =
             create_hybrid_effect_texture("hybrid_rt_gi_radiance");
         let (hybrid_rt_transparency_texture, hybrid_rt_transparency_view) =
@@ -857,6 +861,12 @@ impl WgpuRenderer {
         let hybrid_composite_params_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("hybrid_composite_params"),
             size: std::mem::size_of::<HybridCompositeParams>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let ssr_params_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("ssr_params"),
+            size: std::mem::size_of::<SsrParams>() as u64,
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1372,6 +1382,16 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry {
+                        binding: 45,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -1576,8 +1596,22 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                 ],
             });
+        let ssr_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("ssr_bgl"),
+            entries: &[
+                BindGroupLayoutEntry { binding: 0, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 1, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 2, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 3, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 4, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 5, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Uint }, count: None },
+                BindGroupLayoutEntry { binding: 6, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::Rgba16Float, view_dimension: TextureViewDimension::D2 }, count: None },
+                BindGroupLayoutEntry { binding: 7, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
+            ],
+        });
         let rtao_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("rtao_bgl"),
             entries: &[
@@ -1867,6 +1901,7 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
+                    BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
                 ],
             });
         let ambient_occlusion_bind_group_layout =
@@ -1930,6 +1965,11 @@ impl WgpuRenderer {
             bind_group_layouts: &[&hybrid_rt_effect_bind_group_layout],
             push_constant_ranges: &[],
         });
+        let ssr_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("ssr_pl"),
+            bind_group_layouts: &[&ssr_bind_group_layout],
+            push_constant_ranges: &[],
+        });
         let rtao_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("rtao_pl"),
             bind_group_layouts: &[&rtao_bind_group_layout],
@@ -1970,6 +2010,11 @@ impl WgpuRenderer {
                 "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_shadows.comp.wgsl"
             ),
             &hybrid_rt_pipeline_layout,
+        );
+        let ssr_pipeline = make_hybrid_pipeline(
+            "ssr_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ssr.comp.wgsl"),
+            &ssr_pipeline_layout,
         );
         let hybrid_rt_reflection_pipeline = make_hybrid_pipeline(
             "hybrid_rt_reflections_pipeline",
@@ -2717,6 +2762,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 44,
                     resource: BindingResource::TextureView(&ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 45,
+                    resource: BindingResource::TextureView(&ssr_color_view),
                 },
             ],
         });
@@ -3972,6 +4021,7 @@ impl WgpuRenderer {
                         binding: 13,
                         resource: material_buffer.as_entire_binding(),
                     },
+                    BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&ssr_color_view) },
                 ],
             })
         };
@@ -4041,6 +4091,20 @@ impl WgpuRenderer {
             make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &hybrid_rt_shadow_view);
         let hybrid_rt_reflection_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_reflection_bg", &hybrid_rt_reflection_view);
+        let ssr_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("ssr_bg"),
+            layout: &ssr_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&dv) },
+                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&gbuf_normal_view) },
+                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&gbuf_albedo_view) },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&color_view) },
+                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&ssr_history_view) },
+                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&gbuf_material_view) },
+                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&ssr_color_view) },
+                BindGroupEntry { binding: 7, resource: ssr_params_buffer.as_entire_binding() },
+            ],
+        });
         let hybrid_rt_gi_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_gi_bg", &hybrid_rt_gi_view);
         let hybrid_rt_transparency_bind_group =
@@ -4105,6 +4169,7 @@ impl WgpuRenderer {
                     binding: 13,
                     resource: BindingResource::TextureView(&ambient_occlusion_view),
                 },
+                BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&ssr_color_view) },
             ],
         });
         let ambient_occlusion_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -4279,6 +4344,10 @@ impl WgpuRenderer {
             hybrid_rt_reflection_view,
             hybrid_rt_reflection_history_texture,
             hybrid_rt_reflection_history_view,
+            ssr_color_texture,
+            ssr_color_view,
+            ssr_history_texture,
+            ssr_history_view,
             hybrid_rt_gi_texture,
             hybrid_rt_gi_view,
             hybrid_rt_transparency_texture,
@@ -4289,10 +4358,13 @@ impl WgpuRenderer {
             ambient_occlusion_history_view,
             hybrid_rt_params_buffer,
             hybrid_composite_params_buffer,
+            ssr_params_buffer,
             ambient_occlusion_params_buffer,
             hybrid_rt_effect_bind_group_layout,
             hybrid_rt_shadow_bind_group,
             hybrid_rt_reflection_bind_group,
+            ssr_bind_group_layout,
+            ssr_bind_group,
             hybrid_rt_gi_bind_group,
             hybrid_rt_transparency_bind_group,
             hybrid_composite_bind_group_layout,
@@ -4303,6 +4375,7 @@ impl WgpuRenderer {
             rtao_bind_group,
             hybrid_rt_shadow_pipeline,
             hybrid_rt_reflection_pipeline,
+            ssr_pipeline,
             hybrid_rt_gi_pipeline,
             hybrid_rt_transparency_pipeline,
             hybrid_compose_pipeline,
@@ -4656,6 +4729,10 @@ impl WgpuRenderer {
         self.hybrid_rt_reflection_view = hybrid_rt_reflection_view;
         self.hybrid_rt_reflection_history_texture = hybrid_rt_reflection_history_texture;
         self.hybrid_rt_reflection_history_view = hybrid_rt_reflection_history_view;
+        self.ssr_color_texture = ssr_color_texture;
+        self.ssr_color_view = ssr_color_view;
+        self.ssr_history_texture = ssr_history_texture;
+        self.ssr_history_view = ssr_history_view;
         self.hybrid_rt_gi_texture = hybrid_rt_gi_texture;
         self.hybrid_rt_gi_view = hybrid_rt_gi_view;
         self.hybrid_rt_transparency_texture = hybrid_rt_transparency_texture;
@@ -4988,6 +5065,10 @@ impl WgpuRenderer {
                     binding: 44,
                     resource: BindingResource::TextureView(&self.ambient_occlusion_view),
                 },
+                BindGroupEntry {
+                    binding: 45,
+                    resource: BindingResource::TextureView(&self.ssr_color_view),
+                },
             ],
         });
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
@@ -5051,6 +5132,7 @@ impl WgpuRenderer {
                         binding: 13,
                         resource: self.material_buffer.as_entire_binding(),
                     },
+                    BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
                 ],
             })
         };
@@ -5058,6 +5140,20 @@ impl WgpuRenderer {
             make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &self.hybrid_rt_shadow_view);
         self.hybrid_rt_reflection_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_reflection_bg", &self.hybrid_rt_reflection_view);
+        self.ssr_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("ssr_bg"),
+            layout: &self.ssr_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.depth_view) },
+                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&self.gbuf_normal_view) },
+                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.gbuf_albedo_view) },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.color_view) },
+                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.ssr_history_view) },
+                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.gbuf_material_view) },
+                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.ssr_color_view) },
+                BindGroupEntry { binding: 7, resource: self.ssr_params_buffer.as_entire_binding() },
+            ],
+        });
         self.hybrid_rt_gi_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_gi_bg", &self.hybrid_rt_gi_view);
         self.hybrid_rt_transparency_bind_group = make_hybrid_rt_bind_group(
@@ -5186,6 +5282,7 @@ impl WgpuRenderer {
                     binding: 13,
                     resource: BindingResource::TextureView(&self.ambient_occlusion_view),
                 },
+                BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
             ],
         });
         self.ambient_occlusion_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -5927,6 +6024,7 @@ impl WgpuRenderer {
                         binding: 13,
                         resource: self.material_buffer.as_entire_binding(),
                     },
+                    BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
                 ],
             })
         };
@@ -5934,6 +6032,20 @@ impl WgpuRenderer {
             make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &self.hybrid_rt_shadow_view);
         self.hybrid_rt_reflection_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_reflection_bg", &self.hybrid_rt_reflection_view);
+        self.ssr_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("ssr_bg"),
+            layout: &self.ssr_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.depth_view) },
+                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&self.gbuf_normal_view) },
+                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.gbuf_albedo_view) },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.color_view) },
+                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.ssr_history_view) },
+                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.gbuf_material_view) },
+                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.ssr_color_view) },
+                BindGroupEntry { binding: 7, resource: self.ssr_params_buffer.as_entire_binding() },
+            ],
+        });
         self.hybrid_rt_gi_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_gi_bg", &self.hybrid_rt_gi_view);
         self.hybrid_rt_transparency_bind_group = make_hybrid_rt_bind_group(
@@ -6380,6 +6492,11 @@ impl WgpuRenderer {
                 crate::rendering::renderer::ShadowMethod::Raytraced
                     | crate::rendering::renderer::ShadowMethod::RasterPlusRtContact
             );
+            feature_status.ssr_reflections_active = matches!(
+                policy.reflections,
+                crate::rendering::renderer::ReflectionMethod::SSR
+                    | crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
+            ) && self.ssr_pipeline.is_some();
             feature_status.hybrid_rt_reflections_active = matches!(
                 policy.reflections,
                 crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
@@ -7190,6 +7307,7 @@ impl WgpuRenderer {
         if effective_renderer_mode.uses_decomposed_rt_effects() {
             let rt_params = HybridRtEffectParams {
                 inv_view_proj: params.inv_view_proj,
+                view_proj: current_vp.to_cols_array_2d(),
                 camera_pos: [
                     params.camera_pos[0],
                     params.camera_pos[1],
@@ -7221,6 +7339,7 @@ impl WgpuRenderer {
                 temporal_blend: 0.10,
                 rt_gi_enabled: u32::from(feature_status.hybrid_rtgi_active),
                 rt_reflections_enabled: u32::from(feature_status.hybrid_rt_reflections_active),
+                ssr_enabled: u32::from(feature_status.ssr_reflections_active),
                 rt_shadows_enabled: u32::from(feature_status.hybrid_rt_shadows_active),
                 rt_transparency_enabled: u32::from(matches!(
                     policy.transparency,
@@ -7325,6 +7444,29 @@ impl WgpuRenderer {
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
+            if feature_status.ssr_reflections_active {
+                let ssr_params = SsrParams {
+                    inv_view_proj: params.inv_view_proj,
+                    view_proj: current_vp.to_cols_array_2d(),
+                    camera_pos: [params.camera_pos[0], params.camera_pos[1], params.camera_pos[2], 0.0],
+                    tex_size: [self.width as f32, self.height as f32],
+                    max_distance: params.reflection_max_distance.max(0.01),
+                    thickness: 0.35,
+                    frame_number: self.frame_number.max(0) as u32,
+                    enabled: 1,
+                    _pad: [0, 0],
+                };
+                self.queue.write_buffer(&self.ssr_params_buffer, 0, bytemuck::bytes_of(&ssr_params));
+                if let Some(pipeline) = &self.ssr_pipeline {
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("ssr_reflections"),
+                        timestamp_writes: None,
+                    });
+                    cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.ssr_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                }
+            }
             if feature_status.hybrid_rt_reflections_active {
                 if let Some(pipeline) = &self.hybrid_rt_reflection_pipeline {
                     let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
@@ -7381,6 +7523,15 @@ impl WgpuRenderer {
                     cpass.set_bind_group(0, &self.hybrid_composite_bind_group, &[]);
                     cpass.dispatch_workgroups(x, y, 1);
                 }
+            }
+            // History ownership: SSR owns only ssr_reflection_history; RT reflections own only
+            // hybrid_rt_reflection_history. No pass copies into another reflection history.
+            if feature_status.ssr_reflections_active {
+                encoder.copy_texture_to_texture(
+                    ImageCopyTexture { texture: &self.ssr_color_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+                    ImageCopyTexture { texture: &self.ssr_history_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+                    Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+                );
             }
             if feature_status.hybrid_rt_reflections_active {
                 encoder.copy_texture_to_texture(

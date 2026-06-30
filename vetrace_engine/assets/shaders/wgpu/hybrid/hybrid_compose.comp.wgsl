@@ -98,6 +98,7 @@ fn decode_gbuffer_material(material: vec4<u32>) -> GBufferMaterial {
 @group(0) @binding(42) var raster_shadow_sampler: sampler_comparison;
 @group(0) @binding(43) var gi_buffer: texture_2d<f32>;
 @group(0) @binding(44) var ambient_occlusion_tex: texture_2d<f32>;
+@group(0) @binding(45) var ssr_reflection_tex: texture_2d<f32>;
 
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -147,8 +148,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let sky_irradiance = params.skycolor.rgb * max(0.03, 1.0 - params.sky_occlusion) * (0.12 + 0.08 * roughness);
     let ambient = pbr_ambient_diffuse(albedo, (sky_irradiance + gi) * ao, metallic);
     let fresnel = pbr_reflection_fresnel(albedo, n, view_dir, metallic);
+    let ssr = textureLoad(ssr_reflection_tex, px, 0);
+    let ssr_conf = clamp(ssr.a, 0.0, 1.0) * (1.0 - roughness * 0.65);
     let reflection_probe = mix(params.skycolor.rgb * fresnel, albedo * params.skycolor.rgb * 0.18, roughness) * select(0.35, 1.0, params.raytraced_reflections_enabled != 0u);
-    let lit = emissive + direct + ambient + reflection_probe;
+    let reflection_source = mix(reflection_probe, ssr.rgb * fresnel, ssr_conf);
+    let lit = emissive + direct + ambient + reflection_source;
     textureStore(color_tex, px, vec4<f32>(lit, 1.0));
 }
 
