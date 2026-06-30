@@ -26,6 +26,12 @@ pub const GI_MODE_PATH_TRACED_PREVIEW: u32 = 5;
 // Back-compat aliases for older call sites.
 pub const GI_MODE_SDF: u32 = GI_MODE_SDFGI;
 pub const GI_MODE_PATH: u32 = GI_MODE_PATH_TRACED_PREVIEW;
+// GI resolve shader ABI constants; these intentionally match GiMethod::{Off, BakedLightmap, LightProbes, SDFGI, RTGIOneBounce}.
+pub const GI_RESOLVE_METHOD_OFF: u32 = GI_MODE_OFF;
+pub const GI_RESOLVE_METHOD_BAKED_LIGHTMAP: u32 = GI_MODE_BAKED_LIGHTMAP;
+pub const GI_RESOLVE_METHOD_LIGHT_PROBES: u32 = GI_MODE_LIGHT_PROBES;
+pub const GI_RESOLVE_METHOD_SDFGI: u32 = GI_MODE_SDFGI;
+pub const GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE: u32 = GI_MODE_RTGI_ONE_BOUNCE;
 pub const AO_METHOD_OFF: u32 = 0;
 pub const AO_METHOD_SSAO: u32 = 1;
 pub const AO_METHOD_GTAO: u32 = 2;
@@ -44,6 +50,23 @@ pub struct GiParams {
     pub debug_mode: u32,
     pub mode: u32,
     pub _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct GiResolveParams {
+    pub selected_method: u32,
+    pub frame_number: u32,
+    pub debug_flags: u32,
+    pub _pad0: u32,
+    pub temporal_blend: f32,
+    pub baked_blend: f32,
+    pub probe_blend: f32,
+    pub sdfgi_blend: f32,
+    pub rtgi_blend: f32,
+    pub _pad1: [f32; 3],
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub prev_view_proj: [[f32; 4]; 4],
 }
 
 #[repr(C)]
