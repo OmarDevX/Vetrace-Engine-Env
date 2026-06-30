@@ -72,7 +72,19 @@ struct Params {
     min_ray_offset: f32,
 };
 
-struct RtEffectParams { inv_view_proj: mat4x4<f32>, camera_pos: vec4<f32>, dir_light_dir: vec4<f32>, dir_light_color: vec4<f32>, enabled: u32, mode: u32, _pad: vec2<u32> };
+struct RtEffectParams {
+    inv_view_proj: mat4x4<f32>,
+    view_proj: mat4x4<f32>,
+    camera_pos: vec4<f32>,
+    dir_light_dir: vec4<f32>,
+    dir_light_color: vec4<f32>,
+    enabled: u32,
+    mode: u32,
+    gi_mode: u32,
+    rtao_sample_count: u32,
+    rtao_radius_bits: u32,
+    _pad_rt: u32,
+};
 
 @group(0) @binding(0) var depth_tex: texture_2d<f32>;
 @group(0) @binding(1) var normal_tex: texture_2d<f32>;
@@ -159,20 +171,89 @@ fn intersect_triangle(ro: vec3<f32>, rd: vec3<f32>, tri: Triangle, tmax: f32) ->
     return t > T_EPS && t < tmax;
 }
 
-fn trace_occluder(ro: vec3<f32>, rd: vec3<f32>, tmax: f32) -> bool {
-    let object_steps = min(u32(max(params.num_objects, 0)), max(params.max_traversal_steps, 1u));
-    for (var oi: u32 = 0u; oi < object_steps; oi = oi + 1u) {
-        let o = objects[oi];
-        if (o.is_mesh != 0u) {
-            let tri_steps = min(o.triangle_count, max(params.max_traversal_steps, 1u));
-            for (var ti: u32 = 0u; ti < tri_steps; ti = ti + 1u) {
-                if (intersect_triangle(ro, rd, triangles[o.triangle_start_idx + ti], tmax)) { return true; }
-            }
-        } else if (o.is_cube != 0u) {
-            if (intersect_aabb(ro, rd, o.position - o.size * o.scale, o.position + o.size * o.scale, tmax)) { return true; }
-        } else if (intersect_sphere(ro, rd, o, tmax)) { return true; }
+
+fn in_bounds_tlas(i: u32) -> bool { return i < params.total_bvh_nodes; }
+fn in_bounds_tri_node(i: u32) -> bool { return i < params.total_tri_bvh_nodes; }
+fn in_bounds_tri(i: u32) -> bool { return i < params.total_triangles; }
+
+fn trace_mesh_occluder(ro: vec3<f32>, rd: vec3<f32>, obj: Object, tmax: f32) -> bool {
+    if (obj.tri_bvh_count == 0u || obj.tri_bvh_start >= params.total_tri_bvh_nodes) { return false; }
+    var steps = 0u;
+    var stack: array<i32, 128>;
+    var sp: i32 = 0;
+    stack[sp] = i32(obj.tri_bvh_start); sp = sp + 1;
+    loop {
+        if (sp == 0) { break; }
+        steps = steps + 1u;
+        if (steps > max(params.max_traversal_steps, 1u)) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tri_node(ni)) { continue; }
+        let node = tri_bvh_nodes[ni];
+        if (!intersect_aabb(ro, rd, node.bmin.xyz, node.bmax.xyz, tmax)) { continue; }
+        let c0 = node.child_tri.x;
+        let c1 = node.child_tri.y;
+        if (c0 < 0 && c1 < 0) {
+            let ti = u32(node.child_tri.z);
+            if (in_bounds_tri(ti) && intersect_triangle(ro, rd, triangles[ti], tmax)) { return true; }
+        } else {
+            if (c0 >= 0 && sp < 128) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 128) { stack[sp] = c1; sp = sp + 1; }
+        }
     }
     return false;
+}
+
+fn trace_occluder(ro: vec3<f32>, rd: vec3<f32>, tmax: f32) -> bool {
+    if (params.total_bvh_nodes == 0u) { return false; }
+    var steps = 0u;
+    var stack: array<i32, 128>;
+    var sp: i32 = 0;
+    stack[sp] = 0; sp = sp + 1;
+    loop {
+        if (sp == 0) { break; }
+        steps = steps + 1u;
+        if (steps > max(params.max_traversal_steps, 1u)) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tlas(ni)) { continue; }
+        let node = bvh_nodes[ni];
+        if (!intersect_aabb(ro, rd, node.bmin.xyz, node.bmax.xyz, tmax)) { continue; }
+        let c0 = node.child_object.x;
+        let c1 = node.child_object.y;
+        if (c0 < 0 && c1 < 0) {
+            for (var lane = 0u; lane < 2u; lane = lane + 1u) {
+                let oi = select(node.child_object.z, node.child_object.w, lane == 1u);
+                if (oi < 0 || u32(oi) >= u32(max(params.num_objects, 0))) { continue; }
+                let o = objects[u32(oi)];
+                if (o.is_shaded == 0u) { continue; }
+                if (o.is_mesh != 0u) {
+                    if (trace_mesh_occluder(ro, rd, o, tmax)) { return true; }
+                } else if (o.is_cube != 0u) {
+                    let half_extent = max(o.size * o.scale * 0.5, vec3<f32>(0.0001));
+                    if (intersect_aabb(ro, rd, o.position - half_extent, o.position + half_extent, tmax)) { return true; }
+                } else if (intersect_sphere(ro, rd, o, tmax)) { return true; }
+            }
+        } else {
+            if (c0 >= 0 && sp < 128) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 128) { stack[sp] = c1; sp = sp + 1; }
+        }
+    }
+    return false;
+}
+
+fn ao_estimate(px: vec2<i32>, dims: vec2<u32>, sample_count: u32, radius: f32, seed_base: u32) -> f32 {
+    let depth = textureLoad(depth_tex, px, 0).x;
+    if (depth >= 0.9999) { return 1.0; }
+    let n = unpack_normal(px);
+    let p = reconstruct_world(px, dims, depth) + n * max(params.min_ray_offset, T_EPS);
+    var visible = 0.0;
+    for (var s: u32 = 0u; s < sample_count; s = s + 1u) {
+        let u1 = hash11(seed_base + s * 2u + 17u);
+        let u2 = hash11(seed_base + s * 2u + 53u);
+        visible = visible + select(1.0, 0.0, trace_occluder(p, cosine_hemisphere(u1, u2, n), radius));
+    }
+    return clamp(visible / f32(max(sample_count, 1u)), 0.0, 1.0);
 }
 
 @compute @workgroup_size(8, 8, 1)
@@ -185,17 +266,28 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         textureStore(ao_out, px, vec4<f32>(1.0, 0.0, 0.0, 1.0));
         return;
     }
-    let n = unpack_normal(px);
-    let p = reconstruct_world(px, dims, depth) + n * max(params.min_ray_offset, T_EPS);
-    let radius = max(0.05, min(params.gi_max_distance, 2.0));
-    let samples = select(4u, select(6u, 8u, params.max_traversal_steps > 64u), params.max_traversal_steps > 32u);
-    var visible = 0.0;
+    let radius = max(0.05, min(bitcast<f32>(rt_params.rtao_radius_bits), params.gi_max_distance));
+    let samples = clamp(rt_params.rtao_sample_count, 1u, 16u);
     let seed = id.x * 1973u + id.y * 9277u + u32(max(params.frame_number, 0)) * 26699u;
-    for (var s: u32 = 0u; s < samples; s = s + 1u) {
-        let u1 = hash11(seed + s * 2u + 17u);
-        let u2 = hash11(seed + s * 2u + 53u);
-        let rd = cosine_hemisphere(u1, u2, n);
-        visible = visible + select(1.0, 0.0, trace_occluder(p, rd, radius));
+    var ao = ao_estimate(px, dims, samples, radius, seed);
+    let n0 = unpack_normal(px);
+    let d0 = depth;
+    var weight_sum = 1.0;
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        var tap = vec2<i32>(0, 1);
+        if (i == 0u) { tap = vec2<i32>(1, 0); }
+        if (i == 1u) { tap = vec2<i32>(-1, 0); }
+        if (i == 2u) { tap = vec2<i32>(0, 1); }
+        if (i == 3u) { tap = vec2<i32>(0, -1); }
+        let q = clamp(px + tap, vec2<i32>(0), vec2<i32>(i32(dims.x) - 1, i32(dims.y) - 1));
+        let dq = textureLoad(depth_tex, q, 0).x;
+        let nq = unpack_normal(q);
+        let w = exp(-abs(dq - d0) * 64.0) * max(dot(n0, nq), 0.0);
+        if (w > 0.15) {
+            let qs = max(samples / 2u, 1u);
+            ao = ao + ao_estimate(q, dims, qs, radius, seed + i * 101u + 409u) * w;
+            weight_sum = weight_sum + w;
+        }
     }
-    textureStore(ao_out, px, vec4<f32>(clamp(visible / f32(samples), 0.0, 1.0), 0.0, 0.0, 1.0));
+    textureStore(ao_out, px, vec4<f32>(clamp(ao / weight_sum, 0.0, 1.0), 0.0, 0.0, 1.0));
 }

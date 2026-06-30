@@ -66,6 +66,13 @@ struct Params {
     inv_view_proj: mat4x4<f32>, prev_view_proj: mat4x4<f32>,
     dir_light_dir: vec4<f32>, dir_light_color: vec4<f32>, sky_occlusion: f32,
     total_triangles: u32, total_bvh_nodes: u32, total_tri_bvh_nodes: u32,
+    dof_aperture: f32, dof_focus_dist: f32, dof_enable: u32, _pad_dof: u32,
+    atmosphere: u32, atmo_count: u32, cloud_count: u32, atmosphere_mode: u32,
+    atmosphere_sun_controls: vec4<f32>,
+    cloud_history_weight: f32, cloud_sample_count: u32, cloud_temporal_quality: u32, cloud_shadow_mode: u32,
+    renderer_mode: u32, rt_debug_view: u32, rt_debug_counters: u32, max_traversal_steps: u32,
+    max_transparent_surfaces: u32, shadow_max_distance: f32, reflection_max_distance: f32, gi_max_distance: f32,
+    min_ray_offset: f32,
 };
 
 struct RtEffectParams {
@@ -76,10 +83,13 @@ struct RtEffectParams {
     dir_light_color: vec4<f32>,
     enabled: u32,
     mode: u32,
-    _pad: vec2<u32>,
+    gi_mode: u32,
+    rtao_sample_count: u32,
+    rtao_radius_bits: u32,
+    _pad_rt: u32,
 };
 
-struct Hit { t: f32, material_index: u32, normal: vec3<f32>, hit: u32 };
+struct Hit { t: f32, material_index: u32, normal: vec3<f32>, hit: u32, pos: vec3<f32> };
 
 @group(0) @binding(0) var depth_tex: texture_2d<f32>;
 @group(0) @binding(1) var normal_tex: texture_2d<f32>;
@@ -139,28 +149,81 @@ fn intersect_triangle(ro: vec3<f32>, rd: vec3<f32>, tri: Triangle) -> vec4<f32> 
     if (v < 0.0 || u + v > 1.0) { return vec4<f32>(INF_T, 0.0, 0.0, 0.0); }
     let t = dot(tri.e2, q) * inv_det; return vec4<f32>(select(INF_T, t, t > T_EPS), u, v, 0.0);
 }
-fn trace_scene(ro: vec3<f32>, rd: vec3<f32>, max_objects: u32, max_tris_per_mesh: u32) -> Hit {
-    var best = Hit(INF_T, 0u, vec3<f32>(0.0, 1.0, 0.0), 0u);
-    let count = min(u32(max(params.num_objects, 0)), max_objects);
-    for (var i = 0u; i < count; i = i + 1u) {
-        let obj = objects[i]; if (obj.is_shaded == 0u) { continue; }
-        if (obj.is_mesh != 0u && obj.triangle_count > 0u) {
-            let tri_end = min(obj.triangle_start_idx + min(obj.triangle_count, max_tris_per_mesh), params.total_triangles);
-            for (var ti = obj.triangle_start_idx; ti < tri_end; ti = ti + 1u) {
-                let res = intersect_triangle(ro, rd, triangles[ti]);
+fn in_bounds_tlas(i: u32) -> bool { return i < params.total_bvh_nodes; }
+fn in_bounds_tri_node(i: u32) -> bool { return i < params.total_tri_bvh_nodes; }
+fn in_bounds_tri(i: u32) -> bool { return i < params.total_triangles; }
+
+fn trace_mesh(ro: vec3<f32>, rd: vec3<f32>, obj: Object, best_t: f32) -> Hit {
+    var best = Hit(best_t, obj.material_index, vec3<f32>(0.0, 1.0, 0.0), 0u, vec3<f32>(0.0));
+    if (obj.tri_bvh_count == 0u || obj.tri_bvh_start >= params.total_tri_bvh_nodes) { return best; }
+    var steps = 0u;
+    var stack: array<i32, 128>; var sp: i32 = 0;
+    stack[sp] = i32(obj.tri_bvh_start); sp = sp + 1;
+    loop {
+        if (sp == 0) { break; }
+        steps = steps + 1u;
+        if (steps > max(params.max_traversal_steps, 1u)) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tri_node(ni)) { continue; }
+        let node = tri_bvh_nodes[ni];
+        if (intersect_aabb(ro, rd, node.bmin.xyz, node.bmax.xyz) >= best.t) { continue; }
+        let c0 = node.child_tri.x; let c1 = node.child_tri.y;
+        if (c0 < 0 && c1 < 0) {
+            let ti = u32(node.child_tri.z);
+            if (in_bounds_tri(ti)) {
+                let tri = triangles[ti];
+                let res = intersect_triangle(ro, rd, tri);
                 if (res.x < best.t) {
-                    let tri = triangles[ti]; let w = 1.0 - res.y - res.z;
-                    best = Hit(res.x, select(obj.material_index, tri.material_index, tri.material_index != 0u), normalize(tri.n0 * w + tri.n1 * res.y + tri.n2 * res.z), 1u);
+                    let w = 1.0 - res.y - res.z;
+                    best = Hit(res.x, select(obj.material_index, tri.material_index, tri.material_index != 0u), normalize(tri.n0 * w + tri.n1 * res.y + tri.n2 * res.z), 1u, ro + rd * res.x);
                 }
             }
         } else {
-            let half_extent = max(obj.size * obj.scale * 0.5, vec3<f32>(0.0001));
-            let t = select(intersect_sphere(ro, rd, obj), intersect_aabb(ro, rd, obj.position - half_extent, obj.position + half_extent), obj.is_cube != 0u);
-            if (t < best.t) {
-                let hp = ro + rd * t;
-                let gn = select(normalize(hp - obj.position), normalize((hp - obj.position) / half_extent), obj.is_cube != 0u);
-                best = Hit(t, obj.material_index, gn, 1u);
+            if (c0 >= 0 && sp < 128) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 128) { stack[sp] = c1; sp = sp + 1; }
+        }
+    }
+    return best;
+}
+
+fn trace_scene(ro: vec3<f32>, rd: vec3<f32>, _max_objects: u32, _max_tris_per_mesh: u32) -> Hit {
+    var best = Hit(min(params.gi_max_distance, INF_T), 0u, vec3<f32>(0.0, 1.0, 0.0), 0u, vec3<f32>(0.0));
+    if (params.total_bvh_nodes == 0u) { return best; }
+    var steps = 0u;
+    var stack: array<i32, 128>; var sp: i32 = 0;
+    stack[sp] = 0; sp = sp + 1;
+    loop {
+        if (sp == 0) { break; }
+        steps = steps + 1u;
+        if (steps > max(params.max_traversal_steps, 1u)) { break; }
+        sp = sp - 1;
+        let ni = u32(stack[sp]);
+        if (!in_bounds_tlas(ni)) { continue; }
+        let node = bvh_nodes[ni];
+        if (intersect_aabb(ro, rd, node.bmin.xyz, node.bmax.xyz) >= best.t) { continue; }
+        let c0 = node.child_object.x; let c1 = node.child_object.y;
+        if (c0 < 0 && c1 < 0) {
+            for (var lane = 0u; lane < 2u; lane = lane + 1u) {
+                let oi = select(node.child_object.z, node.child_object.w, lane == 1u);
+                if (oi < 0 || u32(oi) >= u32(max(params.num_objects, 0))) { continue; }
+                let obj = objects[u32(oi)]; if (obj.is_shaded == 0u) { continue; }
+                if (obj.is_mesh != 0u) {
+                    let mh = trace_mesh(ro, rd, obj, best.t);
+                    if (mh.hit != 0u && mh.t < best.t) { best = mh; }
+                } else {
+                    let half_extent = max(obj.size * obj.scale * 0.5, vec3<f32>(0.0001));
+                    let t = select(intersect_sphere(ro, rd, obj), intersect_aabb(ro, rd, obj.position - half_extent, obj.position + half_extent), obj.is_cube != 0u);
+                    if (t < best.t) {
+                        let hp = ro + rd * t;
+                        let gn = select(normalize(hp - obj.position), normalize((hp - obj.position) / half_extent), obj.is_cube != 0u);
+                        best = Hit(t, obj.material_index, gn, 1u, hp);
+                    }
+                }
             }
+        } else {
+            if (c0 >= 0 && sp < 128) { stack[sp] = c0; sp = sp + 1; }
+            if (c1 >= 0 && sp < 128) { stack[sp] = c1; sp = sp + 1; }
         }
     }
     return best;
@@ -176,7 +239,18 @@ fn sky_radiance(rd: vec3<f32>) -> vec3<f32> {
 }
 fn material_radiance(hit: Hit, hit_pos: vec3<f32>, max_objects: u32) -> vec3<f32> {
     let mat = materials[hit.material_index];
-    let albedo = mat.baseColorFactor.rgb;
+    var albedo = mat.baseColorFactor.rgb;
+    let clip = rt_params.view_proj * vec4<f32>(hit_pos, 1.0);
+    if (mat.baseColorTex != 0u && clip.w > 0.0) {
+        let ndc = clip.xyz / clip.w;
+        let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
+        let dims = textureDimensions(albedo_tex);
+        if (all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0))) {
+            let spx = vec2<i32>(clamp(uv * vec2<f32>(dims), vec2<f32>(0.0), vec2<f32>(dims - vec2<u32>(1u))));
+            let sd = textureLoad(depth_tex, spx, 0).x;
+            if (abs(sd - ndc.z) < 0.01) { albedo = textureLoad(albedo_tex, spx, 0).rgb; }
+        }
+    }
     let emissive = mat.emissiveFactor * mat.emissiveStrength;
     let l = normalize(-params.dir_light_dir.xyz);
     let ndotl = max(dot(hit.normal, l), 0.0);
@@ -191,7 +265,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(depth_tex);
     if (id.x >= dims.x || id.y >= dims.y) { return; }
     let pixel = vec2<i32>(id.xy);
-    if (rt_params.enabled == 0u || rt_params.mode != GI_MODE_RTGI_ONE_BOUNCE) { write_miss(pixel); return; }
+    if (rt_params.enabled == 0u || rt_params.gi_mode != GI_MODE_RTGI_ONE_BOUNCE) { write_miss(pixel); return; }
     let depth = textureLoad(depth_tex, pixel, 0).x;
     if (depth >= 0.9999) { write_miss(pixel); return; }
     let n = unpack_normal(pixel);
@@ -205,10 +279,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var sum = vec3<f32>(0.0);
     for (var s = 0u; s < rays; s = s + 1u) {
         let rd = cosine_dir(n, id.xy, s);
-        let hit = trace_scene(world + n * T_EPS, rd, max_objects, max_tris);
+        let hit = trace_scene(world + n * max(params.min_ray_offset, T_EPS), rd, max_objects, max_tris);
         var incoming = sky_radiance(rd);
         if (hit.hit != 0u) {
-            incoming = material_radiance(hit, world + n * T_EPS + rd * hit.t, max_objects);
+            incoming = material_radiance(hit, hit.pos, max_objects);
         }
         sum = sum + incoming;
     }

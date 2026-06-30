@@ -313,7 +313,10 @@ pub struct HybridRtEffectParams {
     pub dir_light_color: [f32; 4],
     pub enabled: u32,
     pub mode: u32,
-    pub _pad: [u32; 2],
+    pub gi_mode: u32,
+    pub rtao_sample_count: u32,
+    pub rtao_radius_bits: u32,
+    pub _pad: u32,
 }
 
 #[repr(C)]
