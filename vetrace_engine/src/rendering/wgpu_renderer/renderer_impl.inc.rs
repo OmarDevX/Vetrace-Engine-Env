@@ -4407,7 +4407,7 @@ impl WgpuRenderer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&gbuf_albedo_view),
+                    resource: BindingResource::TextureView(&color_view),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -5587,7 +5587,7 @@ impl WgpuRenderer {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                    resource: BindingResource::TextureView(&self.color_view),
                 },
                 BindGroupEntry {
                     binding: 1,
