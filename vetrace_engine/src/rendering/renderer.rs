@@ -448,6 +448,12 @@ pub struct RendererHybridFeatureStatus {
     pub ambient_occlusion_fallback_reason: RendererFallbackReason,
     pub gi_fallback_reason: RendererFallbackReason,
     pub transparency_fallback_reason: RendererFallbackReason,
+    pub color_texture_contributes: bool,
+    pub ambient_occlusion_texture_contributes: bool,
+    pub ssr_color_texture_contributes: bool,
+    pub gi_buffer_texture_contributes: bool,
+    pub screen_texture_contributes: bool,
+    pub final_source_texture: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

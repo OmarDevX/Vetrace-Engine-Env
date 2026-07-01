@@ -7985,7 +7985,7 @@ impl WgpuRenderer {
                 )),
                 atmosphere_enabled: 0,
                 clouds_enabled: if effective_cloud_count > 0 { 1 } else { 0 },
-                _pad: 0,
+                debug_view: params.rt_debug_view,
             };
             self.queue.write_buffer(
                 &self.hybrid_composite_params_buffer,
@@ -8807,6 +8807,30 @@ impl WgpuRenderer {
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::Maintain::Poll);
         stats.total_frame_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
+        if feature_status.requested_ambient_occlusion_method != feature_status.active_ambient_occlusion_method
+            && feature_status.ambient_occlusion_fallback_reason == crate::rendering::renderer::RendererFallbackReason::None
+        {
+            feature_status.ambient_occlusion_fallback_reason =
+                pipeline_reason(self.ambient_occlusion_pipeline.is_some() || self.rtao_pipeline.is_some());
+        }
+        if feature_status.requested_gi_method != feature_status.active_gi_method
+            && feature_status.gi_fallback_reason == crate::rendering::renderer::RendererFallbackReason::None
+        {
+            feature_status.gi_fallback_reason = pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
+        }
+        feature_status.color_texture_contributes = final_compositor_wrote_screen || !uses_rt_primary;
+        feature_status.ambient_occlusion_texture_contributes = feature_status.ambient_occlusion_active;
+        feature_status.ssr_color_texture_contributes = feature_status.ssr_reflections_active;
+        feature_status.gi_buffer_texture_contributes = !matches!(
+            feature_status.active_gi_method,
+            crate::rendering::renderer::GiMethod::Off
+        );
+        feature_status.screen_texture_contributes = final_compositor_wrote_screen || uses_rt_primary;
+        feature_status.final_source_texture = if final_compositor_wrote_screen || uses_rt_primary {
+            "screen_texture"
+        } else {
+            "color_texture"
+        };
         stats.feature_status = feature_status;
         stats.profiler_timestamps_supported = self.profiler_query_set.is_some();
         stats.profiler_status = if stats.profiler_timestamps_supported {
@@ -8900,6 +8924,14 @@ impl WgpuRenderer {
             let label = reason.hud_label();
             if label.is_empty() { String::new() } else { format!(" [{label}]") }
         }
+        fn contribution_label(active: bool, reason: crate::rendering::renderer::RendererFallbackReason) -> String {
+            if active {
+                "active".to_string()
+            } else {
+                let suffix = fallback_suffix(reason);
+                if suffix.is_empty() { "fallback".to_string() } else { format!("fallback{}", suffix) }
+            }
+        }
         let s = self.profiler_stats();
         egui::Window::new("Renderer Profiler")
             .default_pos(egui::pos2(12.0, 12.0))
@@ -8953,6 +8985,37 @@ impl WgpuRenderer {
                 ui.label(format!(
                     "Clouds/fog/atmosphere: {:.2} ms",
                     s.clouds_fog_atmosphere_ms
+                ));
+                ui.separator();
+                ui.label(format!(
+                    "Effect inputs: AO={} | SSR/reflections={} | GI={} | shadows={}",
+                    contribution_label(
+                        s.feature_status.ambient_occlusion_texture_contributes,
+                        s.feature_status.ambient_occlusion_fallback_reason
+                    ),
+                    contribution_label(
+                        s.feature_status.ssr_color_texture_contributes
+                            || s.feature_status.hybrid_rt_reflections_active,
+                        s.feature_status.reflection_fallback_reason
+                    ),
+                    contribution_label(
+                        s.feature_status.gi_buffer_texture_contributes,
+                        s.feature_status.gi_fallback_reason
+                    ),
+                    contribution_label(
+                        s.feature_status.raster_shadow_maps_active
+                            || s.feature_status.hybrid_rt_shadows_active,
+                        s.feature_status.shadow_fallback_reason
+                    )
+                ));
+                ui.label(format!(
+                    "Final source: {} (color_texture: {}, ambient_occlusion_texture: {}, ssr_color_texture: {}, gi_buffer_texture: {}, screen_texture: {})",
+                    s.feature_status.final_source_texture,
+                    s.feature_status.color_texture_contributes,
+                    s.feature_status.ambient_occlusion_texture_contributes,
+                    s.feature_status.ssr_color_texture_contributes,
+                    s.feature_status.gi_buffer_texture_contributes,
+                    s.feature_status.screen_texture_contributes
                 ));
                 ui.separator();
                 ui.label(format!("Total frame: {:.2} ms", s.total_frame_ms));

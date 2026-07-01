@@ -2851,6 +2851,7 @@ impl Inspectable for PostProcessing {
                     3 => "BVH Node Visits",
                     4 => "Shadow Ray Cost",
                     5 => "Reflection Ray Cost",
+                    12 => "Final Inputs",
                     _ => "Off",
                 })
                 .show_ui(ui, |ui| {
@@ -2860,6 +2861,7 @@ impl Inspectable for PostProcessing {
                     ui.selectable_value(&mut self.rt_debug_view, 3, "BVH Node Visits");
                     ui.selectable_value(&mut self.rt_debug_view, 4, "Shadow Ray Cost");
                     ui.selectable_value(&mut self.rt_debug_view, 5, "Reflection Ray Cost");
+                    ui.selectable_value(&mut self.rt_debug_view, 12, "Final Inputs (color/AO/SSR/GI)");
                 });
             ui.checkbox(&mut self.rt_debug_counters, "Collect RT Debug Counters");
             ui.label("Shadow Max Distance");

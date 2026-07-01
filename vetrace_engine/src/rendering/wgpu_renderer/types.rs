@@ -379,7 +379,7 @@ pub struct HybridCompositeParams {
     pub rt_transparency_enabled: u32,
     pub atmosphere_enabled: u32,
     pub clouds_enabled: u32,
-    pub _pad: u32,
+    pub debug_view: u32,
 }
 
 #[repr(C)]
