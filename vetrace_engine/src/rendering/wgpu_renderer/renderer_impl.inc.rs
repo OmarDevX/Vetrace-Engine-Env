@@ -7713,28 +7713,30 @@ impl WgpuRenderer {
                         },
                     ],
                 });
-                let shadow_bg = self.device.create_bind_group(&BindGroupDescriptor {
-                    label: Some("pbr_shadow_bg"),
-                    layout: &self.pbr_shadow_bind_group_layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: uni_buf.as_entire_binding(),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
-                        },
-                        BindGroupEntry {
-                            binding: 4,
-                            resource: joint_buf.as_entire_binding(),
-                        },
-                    ],
-                });
+                if inst.casts_raster_shadow {
+                    let shadow_bg = self.device.create_bind_group(&BindGroupDescriptor {
+                        label: Some("pbr_shadow_bg"),
+                        layout: &self.pbr_shadow_bind_group_layout,
+                        entries: &[
+                            BindGroupEntry {
+                                binding: 0,
+                                resource: uni_buf.as_entire_binding(),
+                            },
+                            BindGroupEntry {
+                                binding: 1,
+                                resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
+                            },
+                            BindGroupEntry {
+                                binding: 4,
+                                resource: joint_buf.as_entire_binding(),
+                            },
+                        ],
+                    });
+                    shadow_bind_groups.push((shadow_bg, inst.mesh.clone()));
+                }
                 bind_groups.push((bg, inst.mesh.clone()));
-                shadow_bind_groups.push((shadow_bg, inst.mesh.clone()));
             }
-            {
+            if !shadow_bind_groups.is_empty() {
                 let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
                     label: Some("pbr_shadow"),
                     color_attachments: &[],

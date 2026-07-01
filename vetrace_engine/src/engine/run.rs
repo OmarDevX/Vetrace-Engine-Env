@@ -759,12 +759,18 @@ impl Engine {
                     } else {
                         None
                     };
+                    let casts_raster_shadow = self
+                        .world
+                        .get::<ObjectRef>(e)
+                        .and_then(|obj_ref| self.scene.objects.get(obj_ref.id as usize))
+                        .map_or(true, |obj| obj.casts_raster_shadow);
                     pbr_meshes.push(PbrRenderData {
                         mesh: mesh.clone(),
                         material: mat.clone(),
                         mvp,
                         model: model.to_cols_array_2d(),
                         joint_mats,
+                        casts_raster_shadow,
                     });
                 }
 
