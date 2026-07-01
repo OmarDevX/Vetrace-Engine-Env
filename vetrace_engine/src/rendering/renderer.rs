@@ -258,7 +258,9 @@ impl RendererPolicy {
             ShadowMethod::Off
         } else {
             match primary_visibility {
-                PrimaryVisibilityMethod::PathTraced | PrimaryVisibilityMethod::Raytraced => ShadowMethod::Raytraced,
+                PrimaryVisibilityMethod::PathTraced | PrimaryVisibilityMethod::Raytraced => {
+                    ShadowMethod::Raytraced
+                }
                 _ if mode == RendererMode::HybridEffects
                     && params.raytraced_shadows_enabled != 0
                     && hardware.rt_shadows
@@ -286,27 +288,21 @@ impl RendererPolicy {
             {
                 ReflectionMethod::SsrThenRtFallback
             }
-            _ if mode == RendererMode::HybridEffects
-                && params.raytraced_reflections_enabled != 0
-                && hardware.rt_reflections
-                && !raster_only
-                && high_budget =>
-            {
-                ReflectionMethod::Raytraced
-            }
+            // High/Ultra should not jump to full per-pixel RT reflections for the
+            // whole frame: that made the raster/hybrid profiles much slower than
+            // the older monolithic raytrace path while producing only small visual
+            // differences. Keep SSR as the default and reserve RT as a fallback for
+            // materials that explicitly need accurate reflections.
             _ => ReflectionMethod::SSR,
         };
 
         let ambient_occlusion = match primary_visibility {
             PrimaryVisibilityMethod::PathTraced => AmbientOcclusionMethod::Off,
-            PrimaryVisibilityMethod::Raytraced if hardware.rt_ao && high_budget => AmbientOcclusionMethod::RTAO,
-            _ if mode == RendererMode::HybridEffects
-                && high_budget
-                && hardware.rt_ao
-                && !raster_only =>
-            {
+            PrimaryVisibilityMethod::Raytraced if hardware.rt_ao && high_budget => {
                 AmbientOcclusionMethod::RTAO
             }
+            // RTAO is too expensive as a profile-wide default; GTAO is the stable
+            // high-quality hybrid default and avoids the large High/Ultra FPS cliff.
             _ if low_budget => AmbientOcclusionMethod::SSAO,
             _ => AmbientOcclusionMethod::GTAO,
         };
@@ -316,7 +312,9 @@ impl RendererPolicy {
         } else {
             match primary_visibility {
                 PrimaryVisibilityMethod::PathTraced => GiMethod::PathTraced,
-                PrimaryVisibilityMethod::Raytraced if hardware.rt_gi && !low_budget => GiMethod::RTGIOneBounce,
+                PrimaryVisibilityMethod::Raytraced if hardware.rt_gi && !low_budget => {
+                    GiMethod::RTGIOneBounce
+                }
                 PrimaryVisibilityMethod::Raytraced => GiMethod::LightProbes,
                 _ if emissive_static => GiMethod::BakedLightmap,
                 _ => match params.gi_mode {
@@ -349,9 +347,11 @@ impl RendererPolicy {
 
         let transparency = match primary_visibility {
             PrimaryVisibilityMethod::PathTraced => TransparencyMethod::PathTraced,
-            PrimaryVisibilityMethod::Raytraced if hardware.rt_transparency && transparent_expensive && !low_budget => {
+            PrimaryVisibilityMethod::Raytraced
+                if hardware.rt_transparency && transparent_expensive && !low_budget =>
+            {
                 TransparencyMethod::Raytraced
-            },
+            }
             _ if mode == RendererMode::HybridEffects
                 && params.raytraced_transparency_enabled != 0
                 && hardware.rt_transparency

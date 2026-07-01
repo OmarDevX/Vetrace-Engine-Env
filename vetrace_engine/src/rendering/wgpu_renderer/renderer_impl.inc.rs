@@ -6847,7 +6847,7 @@ impl WgpuRenderer {
             self.ensure_cinematic_pipeline()
         } else {
             if self.active_compute_pipeline_kind != MainComputePipelineKind::HybridCompose
-                && self.hybrid_compose_pipeline.is_some()
+                && self.hybrid_composite_pipeline.is_some()
                 && !self.safe_shader_mode
             {
                 render_log(&format!(
@@ -6861,7 +6861,7 @@ impl WgpuRenderer {
             MainComputePipelineKind::CinematicPathTrace
         } else if !wants_cinematic_pipeline
             && !self.safe_shader_mode
-            && self.hybrid_compose_pipeline.is_some()
+            && self.hybrid_composite_pipeline.is_some()
         {
             MainComputePipelineKind::HybridCompose
         } else {
