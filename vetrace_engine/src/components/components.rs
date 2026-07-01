@@ -2850,7 +2850,7 @@ impl Inspectable for PostProcessing {
                     2 => "Overdraw/Triangle Density",
                     3 => "BVH Node Visits",
                     4 => "Shadow Ray Cost",
-                    5 => "Reflection Ray Cost",
+                    5 => "AO Visibility",
                     6 => "SSR Confidence",
                     7 => "SSR Color",
                     8 => "RT Reflection Color",
@@ -2866,7 +2866,7 @@ impl Inspectable for PostProcessing {
                     ui.selectable_value(&mut self.rt_debug_view, 2, "Overdraw/Triangle Density");
                     ui.selectable_value(&mut self.rt_debug_view, 3, "BVH Node Visits");
                     ui.selectable_value(&mut self.rt_debug_view, 4, "Shadow Ray Cost");
-                    ui.selectable_value(&mut self.rt_debug_view, 5, "Reflection Ray Cost");
+                    ui.selectable_value(&mut self.rt_debug_view, 5, "AO Visibility");
                     ui.selectable_value(&mut self.rt_debug_view, 6, "SSR Confidence");
                     ui.selectable_value(&mut self.rt_debug_view, 7, "SSR Color");
                     ui.selectable_value(&mut self.rt_debug_view, 8, "RT Reflection Color");
