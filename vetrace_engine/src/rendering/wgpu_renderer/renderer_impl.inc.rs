@@ -7409,6 +7409,25 @@ impl WgpuRenderer {
                 timestamp_writes: None,
             });
         }
+        {
+            // Clear the raster shadow map exactly once per frame before any pass can
+            // sample it. This prevents stale shadow depths from previous frames when
+            // the current frame has no primitive or PBR shadow casters.
+            let _raster_shadow_clear = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("raster_shadow_clear"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &self.raster_shadow_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+        }
         let mut cube_instances = Vec::new();
         let mut sphere_instances = Vec::new();
         let mut shadow_cube_instances = Vec::new();
@@ -7491,7 +7510,7 @@ impl WgpuRenderer {
                     depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                         view: &self.raster_shadow_view,
                         depth_ops: Some(Operations {
-                            load: LoadOp::Clear(1.0),
+                            load: LoadOp::Load,
                             store: StoreOp::Store,
                         }),
                         stencil_ops: None,
