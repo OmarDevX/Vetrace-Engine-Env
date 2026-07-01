@@ -423,6 +423,7 @@ pub struct PbrRenderData {
     pub mvp: [[f32; 4]; 4],
     pub model: [[f32; 4]; 4],
     pub joint_mats: Option<Vec<[[f32; 4]; 4]>>,
+    pub casts_raster_shadow: bool,
 }
 
 #[cfg(test)]
