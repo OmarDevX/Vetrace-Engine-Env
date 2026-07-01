@@ -32,6 +32,8 @@ pub const GI_RESOLVE_METHOD_BAKED_LIGHTMAP: u32 = GI_MODE_BAKED_LIGHTMAP;
 pub const GI_RESOLVE_METHOD_LIGHT_PROBES: u32 = GI_MODE_LIGHT_PROBES;
 pub const GI_RESOLVE_METHOD_SDFGI: u32 = GI_MODE_SDFGI;
 pub const GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE: u32 = GI_MODE_RTGI_ONE_BOUNCE;
+/// Low-strength sky irradiance fallback used when GI is requested but authored cache data is absent.
+pub const GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK: u32 = 6;
 pub const AO_METHOD_OFF: u32 = 0;
 pub const AO_METHOD_SSAO: u32 = 1;
 pub const AO_METHOD_GTAO: u32 = 2;
@@ -68,13 +70,15 @@ pub struct GiResolveParams {
     pub gi_resource_flags: u32,
     // Pad to the next 16-byte boundary before the vec4 fields required by WGSL uniforms.
     pub _pad1: [u32; 5],
+    /// xyz = fallback sky irradiance color, w = fallback strength.
+    pub fallback_irradiance: [f32; 4],
     pub sdfgi_origin: [f32; 4],
     pub sdfgi_extent_voxel: [f32; 4],
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
 }
 
-const _: [(); 224] = [(); std::mem::size_of::<GiResolveParams>()];
+const _: [(); 240] = [(); std::mem::size_of::<GiResolveParams>()];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]

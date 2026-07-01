@@ -151,6 +151,7 @@ pub enum GiMethod {
     SDFGI,
     RTGIOneBounce,
     PathTraced,
+    SkyIrradianceFallback,
 }
 
 impl Default for GiMethod {
@@ -394,6 +395,7 @@ pub enum RendererFallbackReason {
     MissingLightmaps,
     MissingProbes,
     ProfileBudgetDowngrade,
+    MissingAuthoredGiData,
 }
 
 impl Default for RendererFallbackReason {
@@ -413,6 +415,7 @@ impl RendererFallbackReason {
             Self::MissingLightmaps => "missing lightmaps",
             Self::MissingProbes => "missing probes",
             Self::ProfileBudgetDowngrade => "profile-budget downgrade",
+            Self::MissingAuthoredGiData => "sky irradiance fallback (missing authored GI)",
         }
     }
 }
