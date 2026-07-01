@@ -1,0 +1,44 @@
+[package]
+name = "vetrace_editor"
+version = "0.1.0"
+edition = "2021"
+description = "Editor plugin for Vetrace Engine"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/OmarDevX/VetraceEngine"
+keywords = ["gamedev", "editor", "gui", "egui"]
+categories = ["game-development", "gui"]
+
+[dependencies]
+# Core engine dependency
+vetrace_engine = { path = "../vetrace_engine" }
+
+# UI framework
+egui = "0.28"
+egui-wgpu = { version = "0.28", optional = true }
+epi = { version = "0.17", optional = true }
+
+# File dialogs and system integration
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
+# Use dynamic Wayland loading so Linux builds do not require libwayland development files.
+wayland-backend = { version = "0.3", features = ["dlopen"] }
+
+# Transform gizmos
+transform-gizmo-egui = "0.3"
+
+# Utility crates
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+enumset = "1.1.7"
+glam = { version = "0.24", features = ["mint","serde"] }
+sdl2 = { version = "0.38", features = ["raw-window-handle"] }
+mint = "0.5"
+
+[features]
+default = ["wgpu"]
+wgpu = ["egui-wgpu"]
+epi = ["dep:epi"]
+
+[dev-dependencies]
+# For examples and testing
+pollster = "0.3"
