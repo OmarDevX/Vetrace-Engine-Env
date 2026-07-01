@@ -100,7 +100,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 history_ok = hd < 0.9999 && h_depth_error < ssr.thickness * 2.0 && dot(hn, n) > 0.82;
                 history = textureLoad(history_tex, hp, 0).rgb;
             }
-            let history_blend = select(0.0, ssr.temporal_blend, history_ok);
+            let history_blend = select(0.0, min(ssr.temporal_blend, 0.25), history_ok);
             hit_color = mix(current, history, history_blend) * mix(vec3<f32>(1.0), albedo.rgb, roughness * 0.35);
             confidence = clamp(normal_ok * fade * (1.0 - roughness * 0.65), 0.0, 1.0);
             if (confidence < ssr.confidence_threshold) { confidence = 0.0; }

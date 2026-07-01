@@ -106,7 +106,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     if (params.temporal_enabled != 0u) {
         let history = textureLoad(ao_history, px, 0).r;
-        ao = mix(ao, history, 0.85);
+        ao = mix(ao, history, 0.55);
     }
     textureStore(ao_out, px, vec4<f32>(ao, 0.0, 0.0, 1.0));
 }
