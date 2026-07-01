@@ -1,4 +1,5 @@
 // Production-active decomposed hybrid effects compositor.
+// Binding 0 is the lit raster color_texture, not raw G-buffer albedo.
 @group(0) @binding(0) var raster_direct_tex: texture_2d<f32>;
 @group(0) @binding(1) var out_tex: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(43) var resolved_gi_buffer: texture_2d<f32>;
