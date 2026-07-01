@@ -2303,7 +2303,6 @@ impl WgpuRenderer {
             ),
             &hybrid_composite_pipeline_layout,
         );
-        let hybrid_compose_pipeline = hybrid_composite_pipeline.or(hybrid_compose_pipeline);
 
         boot_log(
             "WgpuRenderer::new: after bootstrap cloud_shadow_pipeline; before atmosphere shader modules",
@@ -4681,6 +4680,7 @@ impl WgpuRenderer {
             hybrid_rt_gi_pipeline,
             hybrid_rt_transparency_pipeline,
             hybrid_compose_pipeline,
+            hybrid_composite_pipeline,
             ambient_occlusion_pipeline,
             rtao_pipeline,
             hybrid_compose_pipeline_error,
@@ -6779,6 +6779,7 @@ impl WgpuRenderer {
             == crate::rendering::renderer::PrimaryVisibilityMethod::Raytraced;
         let uses_rt_primary = uses_path_traced_primary || uses_raytraced_primary;
         let uses_hybrid_effects = effective_renderer_mode.uses_decomposed_rt_effects();
+        let mut final_compositor_wrote_screen = false;
         let mut dispatch_sdfgi = false;
         let mut dispatch_hybrid_rtgi = false;
         effective_gi_mode = match policy.gi {
@@ -8164,8 +8165,14 @@ impl WgpuRenderer {
                 }
                 if let Some(pipeline) = &self.hybrid_compose_pipeline {
                     cpass.set_pipeline(pipeline);
+                    cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+                    cpass.dispatch_workgroups(x, y, 1);
+                }
+                if let Some(pipeline) = &self.hybrid_composite_pipeline {
+                    cpass.set_pipeline(pipeline);
                     cpass.set_bind_group(0, &self.hybrid_composite_bind_group, &[]);
                     cpass.dispatch_workgroups(x, y, 1);
+                    final_compositor_wrote_screen = true;
                 }
             }
             // History ownership: SSR owns only ssr_reflection_history; RT reflections own only
@@ -8271,12 +8278,12 @@ impl WgpuRenderer {
                 cpass.dispatch_workgroups(x, y, 1);
             }
         }
-        if !uses_rt_primary && !uses_hybrid_effects {
+        if !uses_rt_primary && !final_compositor_wrote_screen {
             // The lightweight bootstrap compute path writes into `color_texture`, while
             // the existing postprocess blit samples `screen_texture`. Mirror bootstrap
             // output before postprocessing so raster fallback modes do not present a
-            // stale black screen. Decomposed hybrid effects write their composite output
-            // directly into `screen_texture`, and path-traced modes keep using
+            // stale black screen. Decomposed hybrid effects skip this only after their
+            // final compositor writes directly into `screen_texture`, and path-traced modes keep using
             // rt_denoise to populate `screen_texture`.
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {

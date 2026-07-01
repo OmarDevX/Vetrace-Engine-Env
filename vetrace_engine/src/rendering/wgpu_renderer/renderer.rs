@@ -220,6 +220,7 @@ pub struct WgpuRenderer {
     hybrid_rt_gi_pipeline: Option<ComputePipeline>,
     hybrid_rt_transparency_pipeline: Option<ComputePipeline>,
     hybrid_compose_pipeline: Option<ComputePipeline>,
+    hybrid_composite_pipeline: Option<ComputePipeline>,
     ambient_occlusion_pipeline: Option<ComputePipeline>,
     rtao_pipeline: Option<ComputePipeline>,
     hybrid_compose_pipeline_error: Option<String>,
