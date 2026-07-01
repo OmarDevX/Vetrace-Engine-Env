@@ -23,7 +23,7 @@ struct CompositeParams {
     rt_transparency_enabled: u32,
     atmosphere_enabled: u32,
     clouds_enabled: u32,
-    _pad: u32,
+    debug_view: u32,
 };
 @group(0) @binding(4) var<uniform> comp_params: CompositeParams;
 
@@ -40,6 +40,21 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     // GI resolve owns method selection and RTGI temporal/spatial filtering; composite only consumes gi_buffer.
     let resolved_gi = textureLoad(resolved_gi_buffer, gi_uv, 0).rgb;
     let ao = clamp(textureLoad(ambient_occlusion_tex, pixel, 0).r, 0.0, 1.0);
+    if (comp_params.debug_view == 12u) {
+        let ssr_dbg = textureLoad(ssr_reflection_radiance, pixel, 0);
+        let right_half = id.x >= dims.x / 2u;
+        let bottom_half = id.y >= dims.y / 2u;
+        if (!right_half && !bottom_half) {
+            textureStore(out_tex, pixel, vec4<f32>(base, 1.0));
+        } else if (right_half && !bottom_half) {
+            textureStore(out_tex, pixel, vec4<f32>(vec3<f32>(ao), 1.0));
+        } else if (!right_half && bottom_half) {
+            textureStore(out_tex, pixel, vec4<f32>(max(ssr_dbg.rgb, vec3<f32>(0.0)), 1.0));
+        } else {
+            textureStore(out_tex, pixel, vec4<f32>(max(resolved_gi, vec3<f32>(0.0)), 1.0));
+        }
+        return;
+    }
     let blended_gi = resolved_gi * ao;
     let shadow = select(1.0, textureLoad(rt_shadow_mask, pixel, 0).r, comp_params.rt_shadows_enabled != 0u);
     let mat = textureLoad(gbuf_material, pixel, 0);
