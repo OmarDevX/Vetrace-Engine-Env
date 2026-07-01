@@ -59,10 +59,23 @@ fn ssao(px: vec2<i32>, world: vec3<f32>, normal: vec3<f32>, dims: vec2<u32>) -> 
     return clamp(1.0 - occ * params.intensity / 8.0, 0.0, 1.0);
 }
 
+fn gtao_direction(d: i32) -> vec2<i32> {
+    if (d == 0) {
+        return vec2<i32>(1, 0);
+    }
+    if (d == 1) {
+        return vec2<i32>(0, 1);
+    }
+    if (d == 2) {
+        return vec2<i32>(1, 1);
+    }
+    return vec2<i32>(1, -1);
+}
+
 fn gtao(px: vec2<i32>, world: vec3<f32>, normal: vec3<f32>, dims: vec2<u32>) -> f32 {
     var horizon = 0.0;
     for (var d = 0; d < 4; d = d + 1) {
-        let dir = array<vec2<i32>, 4>(vec2<i32>(1, 0), vec2<i32>(0, 1), vec2<i32>(1, 1), vec2<i32>(1, -1))[d];
+        let dir = gtao_direction(d);
         var dir_occ = 0.0;
         for (var s = 1; s <= 4; s = s + 1) {
             dir_occ = max(dir_occ, sample_occlusion(px, world, normal, dir * i32(s * 2), dims));

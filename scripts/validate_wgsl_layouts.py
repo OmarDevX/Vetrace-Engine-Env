@@ -145,6 +145,17 @@ def assert_gbuffer_contract() -> None:
         raise AssertionError(f"hybrid_compose.comp.wgsl still has pass-specific material channel assumptions: {found}")
 
 
+def assert_no_runtime_indexed_inline_arrays() -> None:
+    pattern = re.compile(r"array<[^\n]+>\([^\n]+\)\[[A-Za-z_]\w*\]")
+    for shader in (ROOT / "vetrace_engine/assets/shaders/wgpu").rglob("*.wgsl"):
+        path = shader.relative_to(ROOT).as_posix()
+        source = shader.read_text()
+        match = pattern.search(source)
+        if match:
+            raise AssertionError(
+                f"{path} uses an inline array indexed by a runtime value: {match.group(0)}"
+            )
+
 def shader_bindings(source: str) -> set[tuple[int, int]]:
     return {
         (int(group), int(binding))
@@ -193,6 +204,7 @@ def main() -> int:
     assert_shader_params_prefixes()
     assert_material_stride_contract()
     assert_gbuffer_contract()
+    assert_no_runtime_indexed_inline_arrays()
     assert_hybrid_compose_compute_layout_matches_shader()
     print("WGSL layout validation passed")
     return 0
