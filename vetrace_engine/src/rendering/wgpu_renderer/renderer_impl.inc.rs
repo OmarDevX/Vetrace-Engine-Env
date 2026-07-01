@@ -320,6 +320,7 @@ fn create_cloud_temporal_texture(
         format,
         usage: TextureUsages::TEXTURE_BINDING
             | TextureUsages::STORAGE_BINDING
+            | TextureUsages::RENDER_ATTACHMENT
             | TextureUsages::COPY_SRC
             | TextureUsages::COPY_DST,
         view_formats: &[],
