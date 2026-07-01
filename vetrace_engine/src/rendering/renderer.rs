@@ -238,6 +238,10 @@ impl RendererPolicy {
             RendererMode::RasterGame | RendererMode::HybridEffects => {
                 PrimaryVisibilityMethod::Raster
             }
+            RendererMode::FullRaytracing if hardware.path_tracing && !raster_only => {
+                PrimaryVisibilityMethod::Raytraced
+            }
+            RendererMode::FullRaytracing => PrimaryVisibilityMethod::Raster,
             RendererMode::PathTracePreview if hardware.path_tracing && !raster_only => {
                 PrimaryVisibilityMethod::PathTraced
             }
@@ -253,7 +257,7 @@ impl RendererPolicy {
             ShadowMethod::Off
         } else {
             match primary_visibility {
-                PrimaryVisibilityMethod::PathTraced => ShadowMethod::Raytraced,
+                PrimaryVisibilityMethod::PathTraced | PrimaryVisibilityMethod::Raytraced => ShadowMethod::Raytraced,
                 _ if mode == RendererMode::HybridEffects
                     && params.raytraced_shadows_enabled != 0
                     && hardware.rt_shadows
@@ -269,6 +273,7 @@ impl RendererPolicy {
 
         let reflections = match primary_visibility {
             PrimaryVisibilityMethod::PathTraced => ReflectionMethod::PathTraced,
+            PrimaryVisibilityMethod::Raytraced => ReflectionMethod::Raytraced,
             _ if can_use_probe && !needs_accurate_reflection && low_budget => {
                 ReflectionMethod::Probe
             }
@@ -293,6 +298,7 @@ impl RendererPolicy {
 
         let ambient_occlusion = match primary_visibility {
             PrimaryVisibilityMethod::PathTraced => AmbientOcclusionMethod::Off,
+            PrimaryVisibilityMethod::Raytraced if hardware.rt_ao && high_budget => AmbientOcclusionMethod::RTAO,
             _ if mode == RendererMode::HybridEffects
                 && high_budget
                 && hardware.rt_ao
@@ -309,6 +315,8 @@ impl RendererPolicy {
         } else {
             match primary_visibility {
                 PrimaryVisibilityMethod::PathTraced => GiMethod::PathTraced,
+                PrimaryVisibilityMethod::Raytraced if hardware.rt_gi && !low_budget => GiMethod::RTGIOneBounce,
+                PrimaryVisibilityMethod::Raytraced => GiMethod::LightProbes,
                 _ if emissive_static => GiMethod::BakedLightmap,
                 _ => match params.gi_mode {
                     0 => GiMethod::Off,
@@ -340,6 +348,9 @@ impl RendererPolicy {
 
         let transparency = match primary_visibility {
             PrimaryVisibilityMethod::PathTraced => TransparencyMethod::PathTraced,
+            PrimaryVisibilityMethod::Raytraced if hardware.rt_transparency && transparent_expensive && !low_budget => {
+                TransparencyMethod::Raytraced
+            },
             _ if mode == RendererMode::HybridEffects
                 && params.raytraced_transparency_enabled != 0
                 && hardware.rt_transparency
@@ -458,6 +469,7 @@ pub enum RendererMode {
     HybridEffects = 1,
     PathTracePreview = 2,
     CinematicPathTrace = 3,
+    FullRaytracing = 4,
 }
 
 impl Default for RendererMode {
@@ -469,6 +481,14 @@ impl Default for RendererMode {
 impl RendererMode {
     pub fn uses_path_traced_primary_visibility(self) -> bool {
         matches!(self, Self::PathTracePreview | Self::CinematicPathTrace)
+    }
+
+    pub fn uses_raytraced_primary_visibility(self) -> bool {
+        matches!(self, Self::FullRaytracing)
+    }
+
+    pub fn uses_rt_primary_visibility(self) -> bool {
+        self.uses_path_traced_primary_visibility() || self.uses_raytraced_primary_visibility()
     }
 
     pub fn uses_decomposed_rt_effects(self) -> bool {

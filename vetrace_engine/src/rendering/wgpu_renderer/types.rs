@@ -624,7 +624,7 @@ mod layout_tests {
         let rt = concat!(
             include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
             "\n",
-            include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl")
+            include_str!("../../../assets/shaders/wgpu/hybrid/rt_ao.comp.wgsl")
         );
         let gi = include_str!("../../../assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl");
         assert!(
@@ -663,7 +663,7 @@ mod layout_tests {
             concat!(
                 include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
                 "\n",
-                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl")
+                include_str!("../../../assets/shaders/wgpu/hybrid/rt_ao.comp.wgsl")
             ),
         ),
         (
@@ -671,7 +671,7 @@ mod layout_tests {
             concat!(
                 include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
                 "\n",
-                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl")
+                include_str!("../../../assets/shaders/wgpu/hybrid/rt_gi.comp.wgsl")
             ),
         ),
         (
@@ -679,7 +679,7 @@ mod layout_tests {
             concat!(
                 include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
                 "\n",
-                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_reflections.comp.wgsl")
+                include_str!("../../../assets/shaders/wgpu/hybrid/rt_reflections.comp.wgsl")
             ),
         ),
         (
