@@ -1,436 +1,458 @@
 # Renderer feature completion tasks
 
-This document turns the current renderer-policy vocabulary into implementation tasks for the features that are either partially implemented or policy-only today. Each task includes the Rust integration points and shader work required to make the feature real instead of merely selectable.
+This document tracks the remaining work needed to turn the current renderer into
+an Unreal-style selectable pipeline stack:
 
-## Current gap summary
+- **RasterGame**: raster primary visibility with cheap raster/screen-space
+  solutions.
+- **HybridEffects**: raster primary visibility plus selectively enabled RT
+  effects when requested, material-relevant, supported, and within budget.
+- **Full raytracing**: raytraced primary visibility for real-time use, distinct
+  from progressive/path-traced preview.
+- **PathTracePreview / CinematicPathTrace**: path-traced primary visibility for
+  preview, validation, screenshots, and cinematic output.
+
+The task list intentionally combines short follow-ups into larger work packages
+so changes land as coherent renderer milestones instead of isolated one-off
+branches. Before implementing any task below, check `RENDERER_PARITY.md`,
+`SHADER_ARCHITECTURE.md`, and `EFFECT_FALLBACKS.md` to avoid duplicating shader
+logic or creating another compositor path.
+
+## Current remaining gap summary
 
 | Area | Current state | Completion target |
 | --- | --- | --- |
-| AO / SSAO / GTAO / RTAO | Policy enums exist, but no dedicated AO render target, shader, pipeline, dispatch, or compositor input exists. | Add AO textures, pipelines, shaders, policy-gated dispatch, denoise/composite integration, and profiler status. |
-| SSR | SSR logic exists in shader code, but it is not exposed as a dedicated renderer pass with a named feature target and history ownership. | Promote SSR to an explicit screen-space reflection pass used before RT fallback. |
-| GI | SDFGI and one-bounce RTGI are wired, but GI still mixes real paths with placeholders/simple approximations. | Finish a common GI buffer contract for baked/probe/SDFGI/RTGI/path-traced GI and expose consistent policy dispatch. |
-| Feature status | Policy methods are reported, but not every method corresponds to a dispatched pass yet. | Only report methods as active when their concrete pass ran, and separately report requested policy methods. |
+| Cascaded / scalable raster shadows | Single raster shadow-map support is wired and `ShadowMethod::CascadedShadowMap` exists, but no true cascade atlas/splits/matrix array path is documented. | Implement CSM as a real raster shadow method or downgrade policy/status to single-map until CSM exists. |
+| Full raytracing primary visibility | `PrimaryVisibilityMethod::Raytraced` exists, but `RendererMode` has no full-raytracing variant and policy currently routes non-raster primary visibility to path tracing. | Add a real-time full-raytracing mode/preset that is separate from path tracing and hybrid raster-primary. |
+| Hybrid RT shader production ownership | Hybrid RT shadows/reflections/GI/transparency/RTAO are wired, but several production-used shaders still live under `experimental/hybrid_effects`. | Extract shared WGSL helpers and move production split shaders into `assets/shaders/wgpu/hybrid/`. |
+| Deferred/raster feature contract | G-buffer, PBR compose, SSR, AO, raster shadows, and GI resolve are present, but the authoritative channel/history/ownership contract is spread across code and docs. | Document and enforce one G-buffer/resolve/history contract for raster and hybrid passes. |
+| GI and lighting parity | SDFGI, GI resolve, RTGI, lightmap/probe fallbacks, and path-traced GI exist as separate paths with differing quality/ownership. | Finish one GI contract that cleanly maps baked/probe/SDFGI/RTGI/path-traced GI into policy and debug views. |
+| Transparency parity | Hybrid RT transparency is wired, while raster alpha/weighted/screen-space transparency and path-traced transparency are policy-selected but not unified. | Finish a unified transparency ladder and compositor contract across raster, hybrid, full RT, and path tracing. |
+| Debug/profiling truth | Requested/active status exists, but new methods such as future CSM/full RT need truthful pass-level activation, fallback reasons, and timings. | Keep HUD/profiler/debug overlays accurate for every requested vs active method. |
 
-## Task 1: Add AO renderer resources and policy-gated dispatch
+## Task 1: Finish scalable raster shadowing and policy truth
 
-### Rust ownership
+### Goal
 
-Primary files:
+Make raster shadows a complete cheap baseline for `RasterGame` and the fallback
+layer for `HybridEffects`.
 
+### Current anchors
+
+- `ShadowMethod::{RasterShadowMap, CascadedShadowMap, Raytraced, RasterPlusRtContact}` exists in `renderer.rs`.
+- The current WGPU renderer owns a single `raster_shadow_map` and
+  `raster_shadow_view_proj` path.
+- `RENDERER_PARITY.md` still marks shadow maps/cascades as partial because true
+  cascades were not found.
+
+### Required implementation
+
+1. Decide whether the next milestone is **single-map only** or **true CSM**:
+   - If single-map only, stop reporting `CascadedShadowMap` as active when only
+     the single map is used.
+   - If CSM, add a directional shadow atlas or array texture, cascade split
+     data, and a cascade matrix array uniform/storage buffer.
+2. Extend the raster shadow pass to render primitives and PBR meshes into all
+   active cascades.
+3. Update `hybrid_compose.comp.wgsl` to select the correct cascade by view/world
+   depth and sample the atlas/array.
+4. Keep `RasterPlusRtContact` layered as: CSM/single raster shadow first, RT
+   contact/hero shadow second.
+5. Update `RendererHybridFeatureStatus` so requested/active shadow method is
+   truthful:
+   - requested `CascadedShadowMap`, active `RasterShadowMap` if only one map is
+     available;
+   - requested `RasterPlusRtContact`, active `RasterShadowMap` if RT pipeline or
+     BVH data is unavailable.
+6. Add/update debug view for raster shadow cascade selection and shadow factor.
+7. Update `RENDERER_PARITY.md` from partial to production only after CSM or the
+   final chosen raster-shadow contract is complete.
+
+### Suggested files
+
+- `vetrace_engine/src/rendering/renderer.rs`
 - `vetrace_engine/src/rendering/wgpu_renderer/renderer.rs`
 - `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/raster_shadow.wgsl`
+- `vetrace_engine/docs/RENDERER_PARITY.md`
+
+### Acceptance criteria
+
+- `ShadowMethod::CascadedShadowMap` only reports active when real cascades are
+  used.
+- Raster and hybrid modes have stable shadow output without requiring RT.
+- Hybrid mode can layer RT contact shadows over raster shadows without replacing
+  the cheap baseline.
+- Profiler/HUD reports requested and active shadow methods separately.
+
+## Task 2: Add a real full-raytracing mode distinct from path tracing
+
+### Goal
+
+Add a real-time raytraced primary visibility mode that is neither hybrid
+raster-primary nor progressive path tracing.
+
+### Current anchors
+
+- `PrimaryVisibilityMethod::Raytraced` exists.
+- `RendererMode` currently has `RasterGame`, `HybridEffects`,
+  `PathTracePreview`, and `CinematicPathTrace` only.
+- `RendererPolicy::derive` currently maps `PathTracePreview` and
+  `CinematicPathTrace` to `PathTraced`, not `Raytraced`.
+
+### Required implementation
+
+1. Add a public mode or preset for full raytracing:
+   - Preferred public enum option: `RendererMode::FullRaytracing = 4`.
+   - Alternative compatibility option: add a preset/config field that maps to
+     `PrimaryVisibilityMethod::Raytraced` without changing serialized enum
+     values.
+2. Route full raytracing through `RendererPolicy::derive`:
+   - `primary_visibility = Raytraced`;
+   - shadows/reflections/GI/transparency default to real-time RT methods;
+   - bounces/samples are clamped for frame-rate, unlike cinematic path tracing.
+3. Add a raytraced-primary compute path:
+   - either a constrained entry point in the current pathtrace shader;
+   - or a new shader that imports shared BVH/material/lighting helpers.
+4. Keep full raytracing denoised and budgeted:
+   - low sample counts;
+   - adaptive quality caps;
+   - RT denoise/history;
+   - no long progressive accumulation requirement.
+5. Make path tracing remain the high-quality/progressive mode:
+   - `PathTracePreview` and `CinematicPathTrace` keep path-traced primary
+     visibility;
+   - full raytracing should not silently become path tracing.
+6. Update profiler/debug UI:
+   - requested primary `Raytraced`, active primary `Raytraced` when ready;
+   - fallback to raster or path-traced primary must include a fallback reason.
+7. Update docs:
+   - `RENDERER_PARITY.md`;
+   - `SHADER_ARCHITECTURE.md`;
+   - any user-facing renderer preset/config docs.
+
+### Suggested files
+
+- `vetrace_engine/src/rendering/renderer.rs`
+- `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl`
+- shared WGSL helpers under `vetrace_engine/assets/shaders/wgpu/hybrid/`
+- `vetrace_engine/docs/RENDERER_PARITY.md`
+- `vetrace_engine/docs/SHADER_ARCHITECTURE.md`
+
+### Acceptance criteria
+
+- Engine users can choose a real-time full-raytracing mode separate from path
+  tracing.
+- `PrimaryVisibilityMethod::Raytraced` is actually selected and dispatched.
+- Full raytracing can be disabled/fallbacked independently from path tracing.
+- HUD/profiler distinguishes raster, hybrid, full RT, and path-traced primary
+  visibility.
+
+## Task 3: Promote production hybrid RT shaders out of experimental
+
+### Goal
+
+Make shader ownership match runtime ownership: production-dispatched shaders
+should not permanently live in the experimental tree.
+
+### Current anchors
+
+The WGPU renderer dispatches split hybrid effect pipelines for shadows,
+reflections, GI, transparency, and RTAO, while several of those WGSL files still
+live under `assets/shaders/wgpu/experimental/hybrid_effects/`.
+
+### Required implementation
+
+1. Extract or finalize shared WGSL helpers for:
+   - `Params` / shader ABI structs;
+   - G-buffer decode;
+   - material decode/evaluation;
+   - PBR lighting;
+   - BVH / triangle BVH traversal;
+   - shadow ray helpers;
+   - reflection ray helpers;
+   - GI ray helpers;
+   - transparent/refraction helpers.
+2. Replace ad-hoc copied code in split passes with shared includes/concats or a
+   small shader-generation path.
+3. Move production split shaders into `assets/shaders/wgpu/hybrid/`:
+   - `rt_shadows.comp.wgsl`;
+   - `rt_reflections.comp.wgsl`;
+   - `rt_gi.comp.wgsl`;
+   - `rt_transparency.comp.wgsl`;
+   - `rt_ao.comp.wgsl` if kept as production RTAO;
+   - `hybrid_effects_composite.comp.wgsl` or merge into the active compositor.
+4. Leave only true prototypes in `experimental/hybrid_effects/`.
+5. Update all `include_str!` paths in Rust.
+6. Update shader comments and docs so production/experimental status is clear.
+7. Run WGSL layout/syntax validation after moving paths.
+
+### Suggested files
+
+- `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/*`
+- `vetrace_engine/assets/shaders/wgpu/experimental/hybrid_effects/*`
+- `vetrace_engine/docs/SHADER_ARCHITECTURE.md`
+- `vetrace_engine/docs/RENDERER_PARITY.md`
+- `scripts/validate_wgsl_layouts.py`
+- `scripts/validate_wgsl_syntax.py`
+
+### Acceptance criteria
+
+- No shader dispatched in normal renderer modes is mislabeled as experimental
+  unless the docs explicitly mark it as temporary.
+- Split passes share traversal/material/PBR helper code with the monolithic path
+  where practical.
+- No duplicate monolithic pathtrace shader is introduced.
+- `RENDERER_PARITY.md` and `SHADER_ARCHITECTURE.md` agree on production shader
+  ownership.
+
+## Task 4: Finish the raster/deferred feature contract
+
+### Goal
+
+Make G-buffer, AO, SSR, raster shadows, GI resolve, and hybrid composition use a
+single documented contract.
+
+### Current anchors
+
+- Primitive and PBR mesh raster passes write G-buffer data.
+- `hybrid_compose.comp.wgsl` consumes G-buffer data, raster shadows, GI, AO/SSR
+  inputs, and PBR helpers.
+- SSR and AO now have dedicated textures/passes.
+- GI resolve exists, but quality and ownership differ by GI method.
+
+### Required implementation
+
+1. Document the exact G-buffer layout:
+   - `gbuf_albedo` channels and alpha/object-valid meaning;
+   - `gbuf_normal` encoding;
+   - `gbuf_material` packed channels;
+   - depth texture conventions;
+   - motion/history ownership if applicable.
+2. Ensure primitive and mesh raster paths encode the same material fields.
+3. Make each post-raster feature declare ownership of its output/history:
+   - AO output/history;
+   - SSR color/history;
+   - RT reflection output/history;
+   - GI output/history;
+   - transparency output/history if needed.
+4. Make `hybrid_compose.comp.wgsl` consume stable feature inputs rather than
+   reaching into method-specific details.
+5. Add debug views for:
+   - albedo;
+   - normals;
+   - material roughness/metallic/emissive;
+   - depth;
+   - AO;
+   - SSR confidence;
+   - raster shadow factor;
+   - GI buffer;
+   - final composite feature contribution.
+6. Add comments in the shader files that write/read the contract.
+7. Update validation scripts if a static layout check can catch drift.
+
+### Suggested files
+
+- `vetrace_engine/assets/shaders/wgpu/hybrid/primitive_gbuffer.wgsl`
+- `vetrace_engine/shaders/simple_pbr.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/ssr.comp.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl`
+- `vetrace_engine/docs/RENDERER_PARITY.md`
+
+### Acceptance criteria
+
+- Primitive and mesh raster objects produce compatible G-buffer data.
+- Compositor inputs are method-agnostic where possible.
+- Debug views reveal whether visual bugs come from G-buffer, AO, SSR, GI,
+  shadow, or composite stages.
+- No pass silently overwrites another pass's history buffer.
+
+## Task 5: Complete GI parity across baked, probes, SDFGI, RTGI, and path tracing
+
+### Goal
+
+Make all GI methods resolve through one understandable policy and buffer model,
+while preserving path tracing as the high-quality ground-truth path.
+
+### Current anchors
+
+- GI policy methods exist.
+- Raster modes can use baked/probe/SDFGI.
+- Hybrid can use RTGI one-bounce.
+- Path-traced modes promote to path-traced GI.
+- `RENDERER_PARITY.md` still marks RTGI and temporal accumulation as partial.
+
+### Required implementation
+
+1. Finalize `gi_buffer` ownership:
+   - `Off` writes black/neutral indirect;
+   - `BakedLightmap` resolves authored lightmap data;
+   - `LightProbes` resolves probe/ambient data;
+   - `SDFGI` resolves SDFGI radiance;
+   - `RTGIOneBounce` resolves RTGI output and history;
+   - `PathTraced` bypasses raster GI buffer and uses path-traced radiance.
+2. Ensure the compositor only needs the resolved GI buffer in raster/hybrid
+   primary modes.
+3. Add or finish GI debug views for each method and final resolved GI.
+4. Make profile clamping visible:
+   - requested `RTGIOneBounce`, active `LightProbes` under `Low` or
+     `Indoor60FPS`;
+   - requested `PathTraced`, active fallback if path tracing unavailable.
+5. Ensure RTGI does not duplicate pathtrace GI logic; share traversal/material
+   helpers where practical.
+6. Define temporal ownership:
+   - which pass owns RTGI history;
+   - which pass owns SDFGI cache invalidation;
+   - when history resets on camera/scene changes.
+7. Update docs after the final GI contract is stable.
+
+### Suggested files
+
+- `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
 - `vetrace_engine/src/rendering/wgpu_renderer/types.rs`
-
-### Required Rust changes
-
-Add AO targets to `WgpuRenderer`:
-
-```rust
-// renderer.rs
-ambient_occlusion_texture: Texture,
-ambient_occlusion_view: TextureView,
-ambient_occlusion_history_texture: Texture,
-ambient_occlusion_history_view: TextureView,
-ambient_occlusion_pipeline: Option<ComputePipeline>,
-ambient_occlusion_bind_group_layout: BindGroupLayout,
-ambient_occlusion_bind_group: BindGroup,
-ambient_occlusion_params_buffer: Buffer,
-```
-
-Add an AO params ABI:
-
-```rust
-// types.rs
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, PartialEq)]
-pub struct AmbientOcclusionParams {
-    pub inv_view_proj: [[f32; 4]; 4],
-    pub proj: [[f32; 4]; 4],
-    pub camera_pos: [f32; 4],
-    pub radius: f32,
-    pub intensity: f32,
-    pub temporal_blend: f32,
-    pub method: u32,
-    pub frame_number: u32,
-    pub sample_count: u32,
-    pub _pad: [u32; 2],
-}
-
-pub const AO_METHOD_OFF: u32 = 0;
-pub const AO_METHOD_SSAO: u32 = 1;
-pub const AO_METHOD_GTAO: u32 = 2;
-pub const AO_METHOD_RTAO: u32 = 3;
-```
-
-Map policy to shader ABI once per frame:
-
-```rust
-fn ao_method_to_abi(method: AmbientOcclusionMethod) -> u32 {
-    match method {
-        AmbientOcclusionMethod::Off => AO_METHOD_OFF,
-        AmbientOcclusionMethod::SSAO => AO_METHOD_SSAO,
-        AmbientOcclusionMethod::GTAO => AO_METHOD_GTAO,
-        AmbientOcclusionMethod::RTAO => AO_METHOD_RTAO,
-    }
-}
-```
-
-Dispatch only when the policy-selected AO method has a concrete shader path:
-
-```rust
-let ao_method = ao_method_to_abi(policy.ambient_occlusion);
-let ao_active = !self.is_2d && ao_method != AO_METHOD_OFF;
-if ao_active {
-    let ao_params = AmbientOcclusionParams {
-        inv_view_proj: params.inv_view_proj,
-        proj: current_vp.to_cols_array_2d(),
-        camera_pos: [params.camera_pos[0], params.camera_pos[1], params.camera_pos[2], 0.0],
-        radius: match policy.ambient_occlusion {
-            AmbientOcclusionMethod::SSAO => 0.75,
-            AmbientOcclusionMethod::GTAO => 1.5,
-            AmbientOcclusionMethod::RTAO => params.gi_max_distance.min(4.0),
-            AmbientOcclusionMethod::Off => 0.0,
-        },
-        intensity: 1.0,
-        temporal_blend: self.post_fx_uniforms.gi_temporal_blend.clamp(0.0, 0.98),
-        method: ao_method,
-        frame_number: self.frame_number.max(0) as u32,
-        sample_count: if self.adaptive_quality < 0.67 { 6 } else if self.adaptive_quality < 0.9 { 10 } else { 16 },
-        _pad: [0; 2],
-    };
-    self.queue.write_buffer(&self.ambient_occlusion_params_buffer, 0, bytemuck::bytes_of(&ao_params));
-
-    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
-        label: Some("ambient_occlusion"),
-        timestamp_writes: None,
-    });
-    if let Some(pipeline) = &self.ambient_occlusion_pipeline {
-        cpass.set_pipeline(pipeline);
-        cpass.set_bind_group(0, &self.ambient_occlusion_bind_group, &[]);
-        cpass.dispatch_workgroups((self.width + 7) / 8, (self.height + 7) / 8, 1);
-    }
-}
-feature_status.ambient_occlusion_method = if ao_active {
-    policy.ambient_occlusion
-} else {
-    AmbientOcclusionMethod::Off
-};
-```
-
-### Required WGSL shader
-
-Create `vetrace_engine/assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl`:
-
-```wgsl
-struct AmbientOcclusionParams {
-    inv_view_proj: mat4x4<f32>,
-    proj: mat4x4<f32>,
-    camera_pos: vec4<f32>,
-    radius: f32,
-    intensity: f32,
-    temporal_blend: f32,
-    method: u32,
-    frame_number: u32,
-    sample_count: u32,
-    _pad: vec2<u32>,
-};
-
-const AO_METHOD_OFF: u32 = 0u;
-const AO_METHOD_SSAO: u32 = 1u;
-const AO_METHOD_GTAO: u32 = 2u;
-const AO_METHOD_RTAO: u32 = 3u;
-
-@group(0) @binding(0) var depth_tex: texture_2d<f32>;
-@group(0) @binding(1) var normal_tex: texture_2d<f32>;
-@group(0) @binding(2) var ao_history_tex: texture_2d<f32>;
-@group(0) @binding(3) var ao_out: texture_storage_2d<r16float, write>;
-@group(0) @binding(4) var<uniform> ao_params: AmbientOcclusionParams;
-
-fn hash12(p: vec2<u32>) -> f32 {
-    var x = p.x * 1664525u + p.y * 1013904223u + ao_params.frame_number * 747796405u;
-    x = ((x >> 16u) ^ x) * 2246822519u;
-    x = ((x >> 13u) ^ x) * 3266489917u;
-    x = (x >> 16u) ^ x;
-    return f32(x & 0x00ffffffu) / f32(0x01000000u);
-}
-
-fn reconstruct_world(pixel: vec2<i32>, dims: vec2<u32>, depth: f32) -> vec3<f32> {
-    let uv = (vec2<f32>(pixel) + vec2<f32>(0.5)) / vec2<f32>(dims);
-    var clip = vec4<f32>(uv * 2.0 - vec2<f32>(1.0), depth, 1.0);
-    var world = ao_params.inv_view_proj * clip;
-    world = world / world.w;
-    return world.xyz;
-}
-
-fn ssao(pixel: vec2<i32>, dims: vec2<u32>, world: vec3<f32>, normal: vec3<f32>) -> f32 {
-    var occ = 0.0;
-    let samples = max(ao_params.sample_count, 1u);
-    let base_angle = hash12(vec2<u32>(pixel)) * 6.2831853;
-    for (var i = 0u; i < samples; i = i + 1u) {
-        let fi = f32(i) + 0.5;
-        let r = sqrt(fi / f32(samples)) * ao_params.radius;
-        let a = base_angle + fi * 2.3999632;
-        let offset = vec2<f32>(cos(a), sin(a)) * r * 24.0;
-        let sp = pixel + vec2<i32>(offset);
-        if (any(sp < vec2<i32>(0)) || any(sp >= vec2<i32>(dims))) { continue; }
-        let sd = textureLoad(depth_tex, sp, 0).x;
-        if (sd >= 0.9999) { continue; }
-        let sw = reconstruct_world(sp, dims, sd);
-        let v = sw - world;
-        let dist = length(v);
-        let facing = max(dot(normalize(v), normal), 0.0);
-        let range = smoothstep(ao_params.radius, 0.0, dist);
-        occ = occ + (1.0 - facing) * range;
-    }
-    return clamp(1.0 - (occ / f32(samples)) * ao_params.intensity, 0.0, 1.0);
-}
-
-fn gtao(pixel: vec2<i32>, dims: vec2<u32>, world: vec3<f32>, normal: vec3<f32>) -> f32 {
-    var horizon_occ = 0.0;
-    let directions = max(ao_params.sample_count / 2u, 4u);
-    let base_angle = hash12(vec2<u32>(pixel)) * 6.2831853;
-    for (var d = 0u; d < directions; d = d + 1u) {
-        let a = base_angle + (f32(d) / f32(directions)) * 6.2831853;
-        let dir = vec2<f32>(cos(a), sin(a));
-        var max_horizon = 0.0;
-        for (var s = 1u; s <= 4u; s = s + 1u) {
-            let sp = pixel + vec2<i32>(dir * f32(s) * 8.0);
-            if (any(sp < vec2<i32>(0)) || any(sp >= vec2<i32>(dims))) { continue; }
-            let sd = textureLoad(depth_tex, sp, 0).x;
-            if (sd >= 0.9999) { continue; }
-            let sw = reconstruct_world(sp, dims, sd);
-            let v = sw - world;
-            let dist = max(length(v), 1e-4);
-            let horizon = max(dot(normalize(v), normal), 0.0) * smoothstep(ao_params.radius, 0.0, dist);
-            max_horizon = max(max_horizon, horizon);
-        }
-        horizon_occ = horizon_occ + max_horizon;
-    }
-    return clamp(1.0 - (horizon_occ / f32(directions)) * ao_params.intensity, 0.0, 1.0);
-}
-
-@compute @workgroup_size(8, 8, 1)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    let dims = textureDimensions(depth_tex);
-    if (id.x >= dims.x || id.y >= dims.y) { return; }
-    let pixel = vec2<i32>(id.xy);
-    if (ao_params.method == AO_METHOD_OFF) {
-        textureStore(ao_out, pixel, vec4<f32>(1.0, 0.0, 0.0, 0.0));
-        return;
-    }
-    let depth = textureLoad(depth_tex, pixel, 0).x;
-    if (depth >= 0.9999) {
-        textureStore(ao_out, pixel, vec4<f32>(1.0, 0.0, 0.0, 0.0));
-        return;
-    }
-    let world = reconstruct_world(pixel, dims, depth);
-    let normal = normalize(textureLoad(normal_tex, pixel, 0).xyz * 2.0 - vec3<f32>(1.0));
-    var ao = select(ssao(pixel, dims, world, normal), gtao(pixel, dims, world, normal), ao_params.method == AO_METHOD_GTAO);
-    if (ao_params.method == AO_METHOD_RTAO) {
-        // Until a true BVH-backed RTAO kernel is added, fall back to GTAO but keep the ABI distinct.
-        ao = gtao(pixel, dims, world, normal);
-    }
-    let history = textureLoad(ao_history_tex, pixel, 0).x;
-    ao = mix(ao, history, clamp(ao_params.temporal_blend, 0.0, 0.98));
-    textureStore(ao_out, pixel, vec4<f32>(ao, 0.0, 0.0, 0.0));
-}
-```
+- `vetrace_engine/assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/sdfgi_*.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl`
+- `vetrace_engine/docs/SHADER_ARCHITECTURE.md`
+- `vetrace_engine/docs/RENDERER_PARITY.md`
 
 ### Acceptance criteria
 
-- `RendererPolicy` selecting SSAO/GTAO/RTAO causes an AO dispatch.
-- The compositor multiplies indirect/ambient lighting by the AO texture.
-- `RendererHybridFeatureStatus` distinguishes requested AO method from active AO method if the pipeline is unavailable.
-- A debug view can display AO as grayscale.
+- Requested/active GI method is always truthful.
+- Raster, hybrid, full RT, and path-traced GI choices are clear in the HUD.
+- Final compose sees one resolved GI contract in raster/hybrid modes.
+- Path-traced GI remains separate and does not require raster GI buffers.
 
-## Task 2: Promote SSR to a dedicated feature pass
+## Task 6: Unify transparency and translucency across renderer modes
 
-### Rust ownership
+### Goal
 
-Primary files:
+Finish the transparency ladder so raster, hybrid, full raytracing, and path
+tracing all have clear behavior.
 
-- `renderer.rs`
-- `renderer_impl.inc.rs`
-- `types.rs`
+### Current anchors
 
-### Required Rust changes
+- `TransparencyMethod::{RasterAlpha, WeightedOIT, ScreenSpaceRefraction,
+  Raytraced, PathTraced}` exists.
+- Hybrid RT transparency is wired through a split effect pipeline.
+- `RENDERER_PARITY.md` still marks transparency/translucency as partial.
 
-Add SSR targets and history:
+### Required implementation
 
-```rust
-ssr_texture: Texture,
-ssr_view: TextureView,
-ssr_history_texture: Texture,
-ssr_history_view: TextureView,
-ssr_pipeline: Option<ComputePipeline>,
-ssr_bind_group_layout: BindGroupLayout,
-ssr_bind_group: BindGroup,
-ssr_params_buffer: Buffer,
-```
+1. Define material properties/tags that select transparency behavior:
+   - ordinary alpha blend;
+   - weighted OIT;
+   - screen-space refraction;
+   - RT refraction/transparency;
+   - path-traced transparency.
+2. Implement or verify the cheap raster transparency path:
+   - sorted alpha or weighted blended OIT;
+   - predictable interaction with depth/G-buffer;
+   - no accidental RT requirement.
+3. Implement or verify screen-space refraction fallback for expensive transparent
+   materials when RT is unavailable or too costly.
+4. Make hybrid RT transparency run only when requested and material-relevant.
+5. Add full raytracing and path-traced transparency behavior after full RT mode
+   lands.
+6. Update compositor ownership:
+   - transparent radiance input;
+   - opacity/transmittance convention;
+   - history ownership if temporal filtering is used.
+7. Expose requested/active transparency method in debug/HUD with fallback reason.
 
-Dispatch before RT reflections:
+### Suggested files
 
-```rust
-let ssr_active = matches!(
-    policy.reflections,
-    ReflectionMethod::SSR | ReflectionMethod::SsrThenRtFallback
-);
-if ssr_active {
-    // write params, dispatch ssr_pipeline, copy ssr_texture -> ssr_history_texture after composite
-}
-feature_status.reflection_method = if ssr_active {
-    policy.reflections
-} else if feature_status.hybrid_rt_reflections_active {
-    ReflectionMethod::Raytraced
-} else {
-    ReflectionMethod::Probe
-};
-```
-
-### Required WGSL shader
-
-Create `vetrace_engine/assets/shaders/wgpu/hybrid/ssr.comp.wgsl` by extracting the existing SSR walk from `pathtrace.comp.wgsl` / `rt_reflections.comp.wgsl` into a standalone compute pass that writes `rgba16float` color plus confidence in alpha:
-
-```wgsl
-@group(0) @binding(0) var depth_tex: texture_2d<f32>;
-@group(0) @binding(1) var normal_tex: texture_2d<f32>;
-@group(0) @binding(2) var albedo_tex: texture_2d<f32>;
-@group(0) @binding(3) var color_history_tex: texture_2d<f32>;
-@group(0) @binding(4) var ssr_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(5) var<uniform> ssr_params: SsrParams;
-
-struct SsrParams {
-    inv_view_proj: mat4x4<f32>,
-    camera_pos: vec4<f32>,
-    camera_front: vec4<f32>,
-    camera_right: vec4<f32>,
-    camera_up: vec4<f32>,
-    max_distance: f32,
-    thickness: f32,
-    stride_px: f32,
-    max_steps: u32,
-};
-
-// Use the same reconstruct/project/depth-thickness checks as rt_reflections.comp.wgsl.
-```
+- `vetrace_engine/src/rendering/renderer.rs`
+- `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
+- `vetrace_engine/assets/shaders/wgpu/experimental/hybrid_effects/rt_transparency.comp.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/experimental/hybrid_effects/composite.comp.wgsl`
+- `vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl`
+- material/component files that expose transparency flags or fallback tags
+- `vetrace_engine/docs/EFFECT_FALLBACKS.md`
+- `vetrace_engine/docs/RENDERER_PARITY.md`
 
 ### Acceptance criteria
 
-- Raster and hybrid modes can use SSR without enabling RT reflection dispatch.
-- Hybrid high can run SSR first and RT only for low-confidence/important pixels.
-- Reflection history ownership is documented and only one pass writes each history texture.
+- Raster-only materials never trigger RT transparency.
+- Expensive transparent materials can use RT only in capable hybrid/full RT
+  modes.
+- Screen-space/raster fallback is visible in requested-vs-active status.
+- Transparency docs match actual renderer behavior.
 
-## Task 3: Finish RTAO as a BVH-backed AO path
+## Task 7: Keep profiler, debug overlays, and docs truthful
 
-### Required Rust changes
+### Goal
 
-Reuse the hybrid RT bind group shape or create an AO-specific bind group including:
+Every renderer feature should expose what was requested, what actually ran, why
+it fell back, and whether the reported timing is real.
 
-- depth texture,
-- normal texture,
-- object buffer,
-- triangle buffer,
-- BVH buffers,
-- material buffer,
-- AO params,
-- AO output texture.
+### Current anchors
 
-Dispatch only when:
+- `RendererHybridFeatureStatus` tracks requested/active methods and fallback
+  reasons.
+- The profiler HUD displays requested vs active primary/shadow/reflection/AO/GI
+  and transparency methods.
+- GPU timestamp query reporting exists for several passes.
 
-```rust
-matches!(policy.ambient_occlusion, AmbientOcclusionMethod::RTAO)
-    && hardware.rt_shadows
-    && self.hybrid_rt_shadow_pipeline.is_some()
-```
+### Required implementation
 
-### Required WGSL shader
+1. Extend status when new methods are added:
+   - CSM active vs single-map fallback;
+   - full RT primary requested/active;
+   - weighted OIT/screen-space refraction requested/active;
+   - production shader ownership/fallback state if safe shader mode disables a
+     pass.
+2. Add pass-specific timing where practical:
+   - AO;
+   - SSR;
+   - raster shadow map/CSM separately from main raster G-buffer;
+   - transparency;
+   - GI resolve separate from RTGI producer.
+3. Keep inactive pass timings at `0.0` instead of estimated values.
+4. Add debug overlays for fallback decisions documented in `EFFECT_FALLBACKS.md`.
+5. Update docs in the same change as behavior changes:
+   - `RENDERER_PARITY.md` status row;
+   - `SHADER_ARCHITECTURE.md` active shader map;
+   - this task file, removing completed items.
+6. Add validation/checklist notes for WGSL layout/syntax tests.
 
-Create `vetrace_engine/assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl`:
+### Suggested files
 
-```wgsl
-// Trace short hemisphere rays against the existing object/TLAS and triangle/BLAS buffers.
-// Output single-channel visibility in R16Float.
-// Start with 1-4 rays/pixel, blue-noise rotated, temporally accumulated by the AO pass.
-```
-
-### Acceptance criteria
-
-- RTAO no longer aliases to GTAO.
-- RTAO respects `max_traversal_steps`, `min_ray_offset`, and adaptive quality.
-- Low/Indoor profiles never dispatch RTAO.
-
-## Task 4: Complete the GI buffer contract
-
-### Required Rust changes
-
-Make `gi_buffer_texture` the single compositor input for all non-path-traced GI methods:
-
-```rust
-match policy.gi {
-    GiMethod::Off => clear_gi_buffer_to_black(),
-    GiMethod::BakedLightmap | GiMethod::LightProbes => dispatch_probe_gi_or_upload_baked(),
-    GiMethod::SDFGI => dispatch_sdfgi_then_resolve_to_gi_buffer(),
-    GiMethod::RTGIOneBounce => dispatch_hybrid_rtgi_then_resolve_to_gi_buffer(),
-    GiMethod::PathTraced => skip_gi_buffer_for_pathtrace_primary(),
-}
-```
-
-### Required WGSL shader
-
-Create `vetrace_engine/assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl`:
-
-```wgsl
-@group(0) @binding(0) var depth_tex: texture_2d<f32>;
-@group(0) @binding(1) var normal_tex: texture_2d<f32>;
-@group(0) @binding(2) var sdfgi_tex: texture_3d<f32>;
-@group(0) @binding(3) var rtgi_tex: texture_2d<f32>;
-@group(0) @binding(4) var lightmap_tex: texture_2d<f32>;
-@group(0) @binding(5) var gi_out: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(6) var<uniform> gi_params: GiResolveParams;
-
-// Resolve the selected GI method to a common RGB irradiance buffer.
-```
+- `vetrace_engine/src/rendering/renderer.rs`
+- `vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs`
+- `vetrace_engine/docs/EFFECT_FALLBACKS.md`
+- `vetrace_engine/docs/RENDERER_PARITY.md`
+- `vetrace_engine/docs/SHADER_ARCHITECTURE.md`
+- `scripts/validate_wgsl_layouts.py`
+- `scripts/validate_wgsl_syntax.py`
 
 ### Acceptance criteria
 
-- `hybrid_compose.comp.wgsl` only samples `gi_buffer` and does not care which GI method produced it.
-- Baked/probe/SDFGI/RTGI debug views all show the same output convention.
-- RTGI temporal accumulation is owned by GI resolve, not the compositor.
-
-## Task 5: Make feature status truthful
-
-### Required Rust changes
-
-Split requested policy from active execution:
-
-```rust
-pub struct RendererHybridFeatureStatus {
-    pub requested_primary_visibility_method: PrimaryVisibilityMethod,
-    pub active_primary_visibility_method: PrimaryVisibilityMethod,
-    pub requested_shadow_method: ShadowMethod,
-    pub active_shadow_method: ShadowMethod,
-    pub requested_reflection_method: ReflectionMethod,
-    pub active_reflection_method: ReflectionMethod,
-    pub requested_ambient_occlusion_method: AmbientOcclusionMethod,
-    pub active_ambient_occlusion_method: AmbientOcclusionMethod,
-    pub requested_gi_method: GiMethod,
-    pub active_gi_method: GiMethod,
-    pub requested_transparency_method: TransparencyMethod,
-    pub active_transparency_method: TransparencyMethod,
-    // legacy booleans stay until HUD/users migrate
-}
-```
-
-### Acceptance criteria
-
-- If policy requests RTAO but the RTAO pipeline is missing, requested is `RTAO` and active is `GTAO` or `Off`.
-- If cinematic pathtrace pipeline fails to compile, requested primary is `PathTraced` and active primary is the fallback actually used.
-- HUD displays requested and active methods side-by-side.
+- HUD never implies a feature is active just because it was requested.
+- Fallback reasons are actionable: missing pipeline, missing hardware, safe
+  shader mode, missing BVH/acceleration data, missing lightmaps/probes, or
+  profile-budget downgrade.
+- Docs do not claim AO/SSR/RT features are missing after they are wired, and do
+  not claim CSM/full RT are production until they actually are.
 
 ## Recommended implementation order
 
-1. **AO target + SSAO/GTAO shader** because AO is currently policy-only.
-2. **SSR standalone pass** because SSR code already exists and mostly needs ownership/pipeline cleanup.
-3. **GI resolve buffer contract** because it will simplify compositor and debug behavior.
-4. **RTAO** because it needs BVH traversal reuse and denoising.
-5. **Truthful requested/active status split** after all concrete fallbacks exist.
+1. **Task 1: scalable raster shadows / truthful CSM status** because cheap
+   raster and hybrid fallback quality depends on shadows.
+2. **Task 4: raster/deferred feature contract** because it stabilizes G-buffer,
+   AO, SSR, GI, and compositor inputs before more modes are added.
+3. **Task 5: GI parity** because GI currently spans the most paths and history
+   ownership rules.
+4. **Task 6: transparency parity** because it needs the same policy/fallback
+   model as reflections but affects sorting/composition.
+5. **Task 2: full raytracing mode** once shared helpers and feature contracts are
+   stable enough to avoid another monolithic fork.
+6. **Task 3: production shader ownership cleanup** after shared helpers are
+   ready and split shaders no longer duplicate pathtrace logic.
+7. **Task 7: profiler/debug/docs truth pass** at the end of each milestone and
+   again before marking parity rows production.
