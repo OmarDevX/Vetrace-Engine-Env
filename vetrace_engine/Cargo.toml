@@ -53,7 +53,7 @@ version = "0.17"
 optional = true
 
 [features]
-default = ["sdl2_bundled", "use_epi", "wgpu"]
+default = ["sdl2_use-pkgconfig", "use_epi", "wgpu"]
 # Audio output is opt-in because Kira uses cpal/ALSA on Linux, which requires
 # OS audio development packages that are unnecessary for renderer-only checks.
 audio = ["kira"]
