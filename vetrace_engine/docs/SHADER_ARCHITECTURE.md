@@ -1,6 +1,6 @@
 # WGPU shader architecture
 
-The renderer now uses a mixed architecture: monolithic path tracing remains the production path for primary-visibility path tracing, while `RendererMode::HybridEffects` uses decomposed raster G-buffer plus split RT effect compute passes and a compositor.
+The renderer now uses a mixed architecture: monolithic path tracing remains the production path for primary-visibility path tracing and the constrained real-time `RendererMode::FullRaytracing` primary path, while `RendererMode::HybridEffects` uses decomposed raster G-buffer plus split RT effect compute passes and a compositor.
 
 For feature-by-feature implementation status and future parity guidance, see `RENDERER_PARITY.md`.
 
@@ -9,8 +9,8 @@ For feature-by-feature implementation status and future parity guidance, see `RE
 | Mode / pass | Rust loader | Active shader(s) | Status |
 | --- | --- | --- | --- |
 | Raster game / bootstrap compute | `WgpuRenderer::new` builds the bootstrap compute pipeline and dispatches it for non-decomposed raster fallback. | `assets/shaders/wgpu/hybrid/bootstrap.comp.wgsl`, `assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl` | Active production fallback/lightweight compute path. |
-| Hybrid effects split RT passes | `WgpuRenderer::new` allocates effect targets, completed bind layouts/groups, and pipelines; `render()` dispatches them when `RendererMode::uses_decomposed_rt_effects()` is true. | `assets/shaders/wgpu/experimental/hybrid_effects/rt_shadows.comp.wgsl`, `rt_reflections.comp.wgsl`, `rt_gi.comp.wgsl`, `rt_transparency.comp.wgsl`, `composite.comp.wgsl` | Active production for `RendererMode::HybridEffects`; still located in the experimental tree until the shared WGSL helper extraction is complete. |
-| Cinematic/pathtrace mode | Same compute pipeline as game/hybrid mode; `RendererMode::CinematicPathTrace` changes uniforms/sample behavior rather than selecting a second WGSL file | `assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl` | Active production. |
+| Hybrid effects split RT passes | `WgpuRenderer::new` allocates effect targets, completed bind layouts/groups, and pipelines; `render()` dispatches them when `RendererMode::uses_decomposed_rt_effects()` is true. | `assets/shaders/wgpu/hybrid/rt_shadows.comp.wgsl`, `rt_reflections.comp.wgsl`, `rt_gi.comp.wgsl`, `rt_transparency.comp.wgsl`, `rt_ao.comp.wgsl`, `hybrid_effects_composite.comp.wgsl` | Active production for `RendererMode::HybridEffects`; production-dispatched split RT shaders now live in the hybrid shader tree while helper extraction continues incrementally. |
+| Full raytracing and cinematic/pathtrace modes | `RendererMode::FullRaytracing` selects raytraced primary visibility with real-time caps and denoise; `PathTracePreview`/`CinematicPathTrace` keep path-traced primary visibility. | `assets/shaders/wgpu/hybrid/pathtrace.comp.wgsl` | Active production monolithic RT primary shader. |
 | Raster/PBR mesh pass | `WgpuRenderer::new` creates the PBR render pipeline | `shaders/simple_pbr.wgsl` | Active production raster shader. This is the active raster contract, not `raster.frag.wgsl`. |
 | Raytrace denoise | `WgpuRenderer::new` creates `rt_denoise_pipeline`; `render()` dispatches `rt_denoise` after raytrace | `assets/shaders/wgpu/hybrid/rt_denoise.comp.wgsl` | Active production. |
 | Generic post denoise / temporal resolve | `WgpuRenderer::new` creates `denoise_pipeline`; `render()` dispatches `denoise` | `assets/shaders/wgpu/hybrid/denoise.comp.wgsl` | Active production. |
@@ -26,7 +26,7 @@ The following shaders remain experimental/future references in
 - `raytrace.comp.wgsl` — stale duplicate of the monolithic compute path kept only as a reference.
 - `raster.vert.wgsl`, `raster.frag.wgsl` — future/deferred GBuffer prototype; `simple_pbr.wgsl` is the active raster shader.
 
-The split RT effect shaders are production-wired from this directory and should move to `assets/shaders/wgpu/hybrid/` after their shared traversal/material helpers are factored out of the monolithic pathtrace shader.
+Production-dispatched split RT effect shaders have been promoted to `assets/shaders/wgpu/hybrid/`. The experimental directory keeps only the older raster/raytrace prototypes; new production wiring should use the hybrid tree.
 
 ## Duplication policy
 
@@ -34,7 +34,7 @@ The split RT effect shaders are production-wired from this directory and should 
 
 ## Production GI mode matrix
 
-The GI selector is intentionally routed like an Unreal-style production renderer: raster modes keep a cheap baseline indirect solution, hybrid mode can add bounded ray-traced effects, and full path-traced GI is reserved for path-traced primary visibility.
+The GI selector is intentionally routed like an Unreal-style production renderer: raster modes keep a cheap baseline indirect solution, hybrid mode can add bounded ray-traced effects, full path-traced GI is reserved for path-traced primary visibility, and `FullRaytracing` uses bounded real-time RTGI/probe fallback instead of progressive path-traced GI.
 
 | GI mode constant | RasterGame behavior | HybridEffects behavior | Path-traced primary behavior | Profile clamps |
 | --- | --- | --- | --- | --- |

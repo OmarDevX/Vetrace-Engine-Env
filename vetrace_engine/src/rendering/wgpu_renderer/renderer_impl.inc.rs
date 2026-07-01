@@ -2227,7 +2227,7 @@ impl WgpuRenderer {
         let hybrid_rt_shadow_pipeline = make_hybrid_pipeline(
             "hybrid_rt_shadows_pipeline",
             include_str!(
-                "../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_shadows.comp.wgsl"
+                "../../../assets/shaders/wgpu/hybrid/rt_shadows.comp.wgsl"
             ),
             &hybrid_rt_pipeline_layout,
         );
@@ -2241,7 +2241,7 @@ impl WgpuRenderer {
             concat!(
                 include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
                 "\n",
-                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_reflections.comp.wgsl")
+                include_str!("../../../assets/shaders/wgpu/hybrid/rt_reflections.comp.wgsl")
             ),
             &hybrid_rt_pipeline_layout,
         );
@@ -2250,11 +2250,11 @@ impl WgpuRenderer {
             concat!(
                 include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
                 "\n",
-                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_gi.comp.wgsl")
+                include_str!("../../../assets/shaders/wgpu/hybrid/rt_gi.comp.wgsl")
             ),
             &hybrid_rt_pipeline_layout,
         );
-        let hybrid_rt_transparency_pipeline = make_hybrid_pipeline("hybrid_rt_transparency_pipeline", include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_transparency.comp.wgsl"), &hybrid_rt_pipeline_layout);
+        let hybrid_rt_transparency_pipeline = make_hybrid_pipeline("hybrid_rt_transparency_pipeline", include_str!("../../../assets/shaders/wgpu/hybrid/rt_transparency.comp.wgsl"), &hybrid_rt_pipeline_layout);
         let ambient_occlusion_pipeline = make_hybrid_pipeline(
             "ambient_occlusion_pipeline",
             include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl"),
@@ -2265,14 +2265,14 @@ impl WgpuRenderer {
             concat!(
                 include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
                 "\n",
-                include_str!("../../../assets/shaders/wgpu/experimental/hybrid_effects/rt_ao.comp.wgsl")
+                include_str!("../../../assets/shaders/wgpu/hybrid/rt_ao.comp.wgsl")
             ),
             &rtao_pipeline_layout,
         );
         let hybrid_composite_pipeline = make_hybrid_pipeline(
             "hybrid_composite_pipeline",
             include_str!(
-                "../../../assets/shaders/wgpu/experimental/hybrid_effects/composite.comp.wgsl"
+                "../../../assets/shaders/wgpu/hybrid/hybrid_effects_composite.comp.wgsl"
             ),
             &hybrid_composite_pipeline_layout,
         );
@@ -6747,6 +6747,9 @@ impl WgpuRenderer {
         // GI constants only as shader ABI values derived from the policy decision.
         let uses_path_traced_primary = policy.primary_visibility
             == crate::rendering::renderer::PrimaryVisibilityMethod::PathTraced;
+        let uses_raytraced_primary = policy.primary_visibility
+            == crate::rendering::renderer::PrimaryVisibilityMethod::Raytraced;
+        let uses_rt_primary = uses_path_traced_primary || uses_raytraced_primary;
         let uses_hybrid_effects = effective_renderer_mode.uses_decomposed_rt_effects();
         let mut dispatch_sdfgi = false;
         let mut dispatch_hybrid_rtgi = false;
@@ -6788,7 +6791,7 @@ impl WgpuRenderer {
             dispatch_hybrid_rtgi = false;
         }
 
-        let wants_cinematic_pipeline = uses_path_traced_primary && !self.safe_shader_mode;
+        let wants_cinematic_pipeline = uses_rt_primary && !self.safe_shader_mode;
         let cinematic_pipeline_ready = if wants_cinematic_pipeline {
             if self.active_compute_pipeline_kind != MainComputePipelineKind::CinematicPathTrace {
                 render_log("Renderer mode changed to CinematicPathTrace/PathTracePreview");
@@ -6855,6 +6858,8 @@ impl WgpuRenderer {
             requested_primary_visibility_method: policy.primary_visibility,
             active_primary_visibility_method: if cinematic_pipeline_ready && uses_path_traced_primary {
                 crate::rendering::renderer::PrimaryVisibilityMethod::PathTraced
+            } else if cinematic_pipeline_ready && uses_raytraced_primary {
+                crate::rendering::renderer::PrimaryVisibilityMethod::Raytraced
             } else {
                 crate::rendering::renderer::PrimaryVisibilityMethod::Raster
             },
@@ -6971,14 +6976,20 @@ impl WgpuRenderer {
                 | crate::rendering::renderer::ShadowMethod::RasterPlusRtContact
         );
         feature_status.active_shadow_method = if feature_status.hybrid_rt_shadows_active {
-            policy.shadows
-        } else if feature_status.raster_shadow_maps_active {
             match policy.shadows {
-                crate::rendering::renderer::ShadowMethod::CascadedShadowMap => {
-                    crate::rendering::renderer::ShadowMethod::CascadedShadowMap
+                crate::rendering::renderer::ShadowMethod::RasterPlusRtContact => {
+                    crate::rendering::renderer::ShadowMethod::RasterPlusRtContact
+                }
+                crate::rendering::renderer::ShadowMethod::Raytraced => {
+                    crate::rendering::renderer::ShadowMethod::Raytraced
                 }
                 _ => crate::rendering::renderer::ShadowMethod::RasterShadowMap,
             }
+        } else if feature_status.raster_shadow_maps_active {
+            // Only a single raster shadow map is allocated today. Keep requested CSM visible
+            // through requested_shadow_method, but report the active method truthfully until
+            // a real cascade atlas/matrix-array path exists.
+            crate::rendering::renderer::ShadowMethod::RasterShadowMap
         } else {
             crate::rendering::renderer::ShadowMethod::Off
         };
@@ -7346,7 +7357,7 @@ impl WgpuRenderer {
         let mut sphere_instances = Vec::new();
         let mut shadow_cube_instances = Vec::new();
         let mut shadow_sphere_instances = Vec::new();
-        if !self.is_2d && !effective_renderer_mode.uses_path_traced_primary_visibility() {
+        if !self.is_2d && !effective_renderer_mode.uses_rt_primary_visibility() {
             for (idx, obj) in self.prev_objects.iter().enumerate() {
                 if obj.is_mesh != 0 || obj.is_shaded == 0 {
                     continue;
@@ -8232,7 +8243,7 @@ impl WgpuRenderer {
                 cpass.dispatch_workgroups(x, y, 1);
             }
         }
-        if !uses_path_traced_primary && !uses_hybrid_effects {
+        if !uses_rt_primary && !uses_hybrid_effects {
             // The lightweight bootstrap compute path writes into `color_texture`, while
             // the existing postprocess blit samples `screen_texture`. Mirror bootstrap
             // output before postprocessing so raster fallback modes do not present a
@@ -8297,7 +8308,7 @@ impl WgpuRenderer {
                 depth_or_array_layers: 1,
             },
         );
-        if !self.is_2d && effective_renderer_mode.uses_path_traced_primary_visibility() {
+        if !self.is_2d && effective_renderer_mode.uses_rt_primary_visibility() {
             let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("rt_denoise"),
                 timestamp_writes: None,
@@ -8306,7 +8317,7 @@ impl WgpuRenderer {
             cpass.set_bind_group(0, &self.rt_denoise_bind_group, &[]);
             cpass.dispatch_workgroups((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
-        if !self.is_2d && effective_renderer_mode.uses_path_traced_primary_visibility() {
+        if !self.is_2d && effective_renderer_mode.uses_rt_primary_visibility() {
             // Propagate the denoised frame to the color texture so subsequent
             // passes operate on filtered pixels rather than the raw noisy
             // output.
