@@ -144,10 +144,108 @@ def assert_gbuffer_contract() -> None:
     if found:
         raise AssertionError(f"hybrid_compose.comp.wgsl still has pass-specific material channel assumptions: {found}")
 
+
+def assert_no_runtime_indexed_inline_arrays() -> None:
+    pattern = re.compile(r"array<[^\n]+>\([^\n]+\)\[[A-Za-z_]\w*\]")
+    for shader in (ROOT / "vetrace_engine/assets/shaders/wgpu").rglob("*.wgsl"):
+        path = shader.relative_to(ROOT).as_posix()
+        source = shader.read_text()
+        match = pattern.search(source)
+        if match:
+            raise AssertionError(
+                f"{path} uses an inline array indexed by a runtime value: {match.group(0)}"
+            )
+
+def shader_bindings(source: str) -> set[tuple[int, int]]:
+    return {
+        (int(group), int(binding))
+        for group, binding in re.findall(
+            r"@group\((\d+)\)\s*@binding\((\d+)\)", source
+        )
+    }
+
+
+def rust_compute_bind_group_bindings() -> set[int]:
+    source = (
+        ROOT / "vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs"
+    ).read_text()
+    label = 'label: Some("compute_bgl")'
+    start = source.find(label)
+    if start < 0:
+        raise AssertionError("compute_bgl layout not found")
+    end = source.find(
+        'boot_log("WgpuRenderer::new: after compute bind group layout")', start
+    )
+    if end < 0:
+        raise AssertionError("compute_bgl layout end marker not found")
+    layout_source = source[start:end]
+    return {int(binding) for binding in re.findall(r"binding:\s*(\d+)", layout_source)}
+
+
+def rust_compute_bind_group_descriptor_bindings() -> list[set[int]]:
+    source = (
+        ROOT / "vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs"
+    ).read_text()
+    descriptors: list[set[int]] = []
+    search_from = 0
+    label = 'label: Some("compute_bg")'
+    while True:
+        start = source.find(label, search_from)
+        if start < 0:
+            break
+        entries_start = source.find("entries: &[", start)
+        if entries_start < 0:
+            raise AssertionError("compute_bg entries not found")
+        end = source.find("            ],\n        });", entries_start)
+        if end < 0:
+            raise AssertionError("compute_bg entries end marker not found")
+        descriptor_source = source[entries_start:end]
+        descriptors.append(
+            {int(binding) for binding in re.findall(r"binding:\s*(\d+)", descriptor_source)}
+        )
+        search_from = end
+    if not descriptors:
+        raise AssertionError("compute_bg descriptors not found")
+    return descriptors
+
+
+def assert_compute_bind_groups_match_layout() -> None:
+    layout_bindings = rust_compute_bind_group_bindings()
+    descriptors = rust_compute_bind_group_descriptor_bindings()
+    for index, descriptor_bindings in enumerate(descriptors, 1):
+        missing = sorted(layout_bindings - descriptor_bindings)
+        extra = sorted(descriptor_bindings - layout_bindings)
+        if missing or extra:
+            raise AssertionError(
+                f"compute_bg descriptor {index} does not match compute_bgl; "
+                f"missing={missing}, extra={extra}"
+            )
+
+def assert_hybrid_compose_compute_layout_matches_shader() -> None:
+    source = (
+        (
+            ROOT / "vetrace_engine/assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"
+        ).read_text()
+        + "\n"
+        + (
+            ROOT / "vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl"
+        ).read_text()
+    )
+    required_bindings = {binding for group, binding in shader_bindings(source) if group == 0}
+    layout_bindings = rust_compute_bind_group_bindings()
+    missing = sorted(required_bindings - layout_bindings)
+    if missing:
+        raise AssertionError(
+            f"hybrid_compose_pipeline compute_bgl is missing shader bindings: {missing}"
+        )
+
 def main() -> int:
     assert_shader_params_prefixes()
     assert_material_stride_contract()
     assert_gbuffer_contract()
+    assert_no_runtime_indexed_inline_arrays()
+    assert_compute_bind_groups_match_layout()
+    assert_hybrid_compose_compute_layout_matches_shader()
     print("WGSL layout validation passed")
     return 0
 

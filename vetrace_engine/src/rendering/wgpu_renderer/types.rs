@@ -66,12 +66,15 @@ pub struct GiResolveParams {
     pub rtgi_blend: f32,
     pub probe_count: u32,
     pub gi_resource_flags: u32,
-    pub _pad1: [u32; 2],
+    // Pad to the next 16-byte boundary before the vec4 fields required by WGSL uniforms.
+    pub _pad1: [u32; 5],
     pub sdfgi_origin: [f32; 4],
     pub sdfgi_extent_voxel: [f32; 4],
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
 }
+
+const _: [(); 224] = [(); std::mem::size_of::<GiResolveParams>()];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -335,8 +338,11 @@ pub struct HybridRtEffectParams {
     pub gi_mode: u32,
     pub rtao_sample_count: u32,
     pub rtao_radius_bits: u32,
-    pub _pad: u32,
+    // WGSL rounds uniform struct sizes up to the next 16-byte boundary.
+    pub _pad: [u32; 3],
 }
+
+const _: [(); 208] = [(); std::mem::size_of::<HybridRtEffectParams>()];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]

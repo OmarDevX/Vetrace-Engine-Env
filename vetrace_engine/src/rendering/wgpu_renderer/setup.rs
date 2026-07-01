@@ -526,6 +526,7 @@ pub fn create_textures(
         format: TextureFormat::Rgba16Float,
         usage: TextureUsages::TEXTURE_BINDING
             | TextureUsages::STORAGE_BINDING
+            | TextureUsages::RENDER_ATTACHMENT
             | TextureUsages::COPY_SRC
             | TextureUsages::COPY_DST,
         view_formats: &[],
