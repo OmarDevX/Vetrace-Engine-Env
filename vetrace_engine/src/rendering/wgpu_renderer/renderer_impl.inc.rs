@@ -7938,7 +7938,7 @@ impl WgpuRenderer {
                 gi_mode: effective_gi_mode,
                 rtao_sample_count: if self.adaptive_quality < 0.9 { 6 } else { 8 },
                 rtao_radius_bits: f32::to_bits(params.gi_max_distance.min(2.0).max(0.05)),
-                _pad: 0,
+                _pad: [0; 3],
             };
             self.queue.write_buffer(
                 &self.hybrid_rt_params_buffer,

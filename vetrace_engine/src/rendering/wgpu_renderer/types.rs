@@ -338,8 +338,11 @@ pub struct HybridRtEffectParams {
     pub gi_mode: u32,
     pub rtao_sample_count: u32,
     pub rtao_radius_bits: u32,
-    pub _pad: u32,
+    // WGSL rounds uniform struct sizes up to the next 16-byte boundary.
+    pub _pad: [u32; 3],
 }
+
+const _: [(); 208] = [(); std::mem::size_of::<HybridRtEffectParams>()];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
