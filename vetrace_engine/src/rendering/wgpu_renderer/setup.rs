@@ -526,7 +526,8 @@ pub fn create_textures(
         format: TextureFormat::Rgba16Float,
         usage: TextureUsages::TEXTURE_BINDING
             | TextureUsages::STORAGE_BINDING
-            | TextureUsages::COPY_SRC,
+            | TextureUsages::COPY_SRC
+            | TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let gi_buffer_view = gi_buffer_texture.create_view(&TextureViewDescriptor::default());
