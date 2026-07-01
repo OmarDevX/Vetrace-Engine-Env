@@ -1026,6 +1026,22 @@ impl WgpuRenderer {
                 TextureFormat::R16Float,
                 "ambient_occlusion_history",
             );
+        let gbuf_lightmap_uv_texture = device.create_texture(&TextureDescriptor {
+            label: Some("gbuf_lightmap_uv"),
+            size: Extent3d {
+                width: render_width,
+                height: render_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let gbuf_lightmap_uv_view =
+            gbuf_lightmap_uv_texture.create_view(&TextureViewDescriptor::default());
         initialize_resolve_fallback_textures(
             queue.as_ref(),
             render_width,
@@ -3007,6 +3023,10 @@ impl WgpuRenderer {
                     binding: 46,
                     resource: BindingResource::TextureView(&hybrid_rt_reflection_view),
                 },
+                BindGroupEntry {
+                    binding: 47,
+                    resource: BindingResource::TextureView(&gbuf_lightmap_uv_view),
+                },
             ],
         });
 
@@ -4362,17 +4382,6 @@ impl WgpuRenderer {
         let hybrid_rt_transparency_bind_group =
             make_hybrid_rt_bind_group("hybrid_rt_transparency_bg", &hybrid_rt_transparency_view);
 
-        let gbuf_lightmap_uv_texture = device.create_texture(&TextureDescriptor {
-            label: Some("gbuf_lightmap_uv"),
-            size: Extent3d { width: render_width, height: render_height, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba16Float,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let gbuf_lightmap_uv_view = gbuf_lightmap_uv_texture.create_view(&TextureViewDescriptor::default());
         let gi_resolve_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("gi_resolve_bg"),
             layout: &gi_resolve_bind_group_layout,
@@ -5393,6 +5402,10 @@ impl WgpuRenderer {
                     binding: 46,
                     resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view),
                 },
+                BindGroupEntry {
+                    binding: 47,
+                    resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view),
+                },
             ],
         });
         let hybrid_rt_tex_views: Vec<&TextureView> = self.material_textures.iter().map(|t| &t.0.view).collect();
@@ -6318,6 +6331,10 @@ impl WgpuRenderer {
                 BindGroupEntry {
                     binding: 46,
                     resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view),
+                },
+                BindGroupEntry {
+                    binding: 47,
+                    resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view),
                 },
             ],
         });
