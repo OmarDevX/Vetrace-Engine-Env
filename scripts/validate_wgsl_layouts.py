@@ -144,10 +144,56 @@ def assert_gbuffer_contract() -> None:
     if found:
         raise AssertionError(f"hybrid_compose.comp.wgsl still has pass-specific material channel assumptions: {found}")
 
+
+def shader_bindings(source: str) -> set[tuple[int, int]]:
+    return {
+        (int(group), int(binding))
+        for group, binding in re.findall(
+            r"@group\((\d+)\)\s*@binding\((\d+)\)", source
+        )
+    }
+
+
+def rust_compute_bind_group_bindings() -> set[int]:
+    source = (
+        ROOT / "vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs"
+    ).read_text()
+    label = 'label: Some("compute_bgl")'
+    start = source.find(label)
+    if start < 0:
+        raise AssertionError("compute_bgl layout not found")
+    end = source.find(
+        'boot_log("WgpuRenderer::new: after compute bind group layout")', start
+    )
+    if end < 0:
+        raise AssertionError("compute_bgl layout end marker not found")
+    layout_source = source[start:end]
+    return {int(binding) for binding in re.findall(r"binding:\s*(\d+)", layout_source)}
+
+
+def assert_hybrid_compose_compute_layout_matches_shader() -> None:
+    source = (
+        (
+            ROOT / "vetrace_engine/assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"
+        ).read_text()
+        + "\n"
+        + (
+            ROOT / "vetrace_engine/assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl"
+        ).read_text()
+    )
+    required_bindings = {binding for group, binding in shader_bindings(source) if group == 0}
+    layout_bindings = rust_compute_bind_group_bindings()
+    missing = sorted(required_bindings - layout_bindings)
+    if missing:
+        raise AssertionError(
+            f"hybrid_compose_pipeline compute_bgl is missing shader bindings: {missing}"
+        )
+
 def main() -> int:
     assert_shader_params_prefixes()
     assert_material_stride_contract()
     assert_gbuffer_contract()
+    assert_hybrid_compose_compute_layout_matches_shader()
     print("WGSL layout validation passed")
     return 0
 
