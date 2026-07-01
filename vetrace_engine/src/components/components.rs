@@ -2851,6 +2851,12 @@ impl Inspectable for PostProcessing {
                     3 => "BVH Node Visits",
                     4 => "Shadow Ray Cost",
                     5 => "Reflection Ray Cost",
+                    6 => "SSR Confidence",
+                    7 => "SSR Color",
+                    8 => "RT Reflection Color",
+                    9 => "GI Buffer",
+                    10 => "Final Reflection Radiance",
+                    11 => "Lightmap UV",
                     12 => "Final Inputs",
                     _ => "Off",
                 })
@@ -2861,6 +2867,12 @@ impl Inspectable for PostProcessing {
                     ui.selectable_value(&mut self.rt_debug_view, 3, "BVH Node Visits");
                     ui.selectable_value(&mut self.rt_debug_view, 4, "Shadow Ray Cost");
                     ui.selectable_value(&mut self.rt_debug_view, 5, "Reflection Ray Cost");
+                    ui.selectable_value(&mut self.rt_debug_view, 6, "SSR Confidence");
+                    ui.selectable_value(&mut self.rt_debug_view, 7, "SSR Color");
+                    ui.selectable_value(&mut self.rt_debug_view, 8, "RT Reflection Color");
+                    ui.selectable_value(&mut self.rt_debug_view, 9, "GI Buffer");
+                    ui.selectable_value(&mut self.rt_debug_view, 10, "Final Reflection Radiance");
+                    ui.selectable_value(&mut self.rt_debug_view, 11, "Lightmap UV");
                     ui.selectable_value(&mut self.rt_debug_view, 12, "Final Inputs (color/AO/SSR/GI)");
                 });
             ui.checkbox(&mut self.rt_debug_counters, "Collect RT Debug Counters");
