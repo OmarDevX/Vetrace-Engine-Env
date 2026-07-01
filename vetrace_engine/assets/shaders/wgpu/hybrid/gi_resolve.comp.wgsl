@@ -3,6 +3,7 @@ const GI_RESOLVE_METHOD_BAKED_LIGHTMAP: u32 = 1u;
 const GI_RESOLVE_METHOD_LIGHT_PROBES: u32 = 2u;
 const GI_RESOLVE_METHOD_SDFGI: u32 = 3u;
 const GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE: u32 = 4u;
+const GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK: u32 = 6u;
 
 struct GiResolveParams {
     selected_method: u32,
@@ -17,6 +18,7 @@ struct GiResolveParams {
     probe_count: u32,
     gi_resource_flags: u32,
     _pad1: vec2<u32>,
+    fallback_irradiance: vec4<f32>,
     sdfgi_origin: vec4<f32>,
     sdfgi_extent_voxel: vec4<f32>,
     inv_view_proj: mat4x4<f32>,
@@ -65,9 +67,14 @@ fn eval_probe_sh(probe_index: u32, n: vec3<f32>) -> vec3<f32> {
     return max(c0 + c1 * n.y + c2 * n.z + c3 * n.x, vec3<f32>(0.0));
 }
 
+fn resolve_sky_irradiance_fallback(n: vec3<f32>) -> vec3<f32> {
+    let horizon_wrap = 0.35 + 0.65 * clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+    return max(params.fallback_irradiance.rgb * params.fallback_irradiance.w * horizon_wrap, vec3<f32>(0.0));
+}
+
 fn resolve_light_probe(world_pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     if ((params.gi_resource_flags & GI_RESOURCE_PROBES) == 0u || params.probe_count == 0u) {
-        return vec3<f32>(0.0);
+        return resolve_sky_irradiance_fallback(n);
     }
     var sum = vec3<f32>(0.0);
     var wsum = 0.0;
@@ -163,6 +170,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         gi = resolve_sdfgi(world, n) * params.sdfgi_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE) {
         gi = load_rtgi_denoised(pixel, dims) * params.rtgi_blend;
+    } else if (params.selected_method == GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK) {
+        gi = resolve_sky_irradiance_fallback(n);
     }
 
     if (params.frame_number > 0u && params.temporal_blend > 0.0) {

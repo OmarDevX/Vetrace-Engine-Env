@@ -6783,7 +6783,7 @@ impl WgpuRenderer {
         let mut dispatch_sdfgi = false;
         let mut dispatch_hybrid_rtgi = false;
         effective_gi_mode = match policy.gi {
-            crate::rendering::renderer::GiMethod::Off => GI_MODE_OFF,
+            crate::rendering::renderer::GiMethod::Off | crate::rendering::renderer::GiMethod::SkyIrradianceFallback => GI_MODE_OFF,
             crate::rendering::renderer::GiMethod::BakedLightmap => GI_MODE_BAKED_LIGHTMAP,
             crate::rendering::renderer::GiMethod::LightProbes => GI_MODE_LIGHT_PROBES,
             crate::rendering::renderer::GiMethod::SDFGI => {
@@ -6798,6 +6798,7 @@ impl WgpuRenderer {
         };
         let mut gi_resolve_method = match policy.gi {
             crate::rendering::renderer::GiMethod::Off | crate::rendering::renderer::GiMethod::PathTraced => GI_RESOLVE_METHOD_OFF,
+            crate::rendering::renderer::GiMethod::SkyIrradianceFallback => GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK,
             crate::rendering::renderer::GiMethod::BakedLightmap => GI_RESOLVE_METHOD_BAKED_LIGHTMAP,
             crate::rendering::renderer::GiMethod::LightProbes => GI_RESOLVE_METHOD_LIGHT_PROBES,
             crate::rendering::renderer::GiMethod::SDFGI => GI_RESOLVE_METHOD_SDFGI,
@@ -6806,18 +6807,36 @@ impl WgpuRenderer {
         let baked_gi_ready = self.gi_cache.has_lightmap_atlas && self.gi_cache.has_lightmap_uvs;
         let probe_gi_ready = self.gi_cache.has_probe_data && self.gi_probe_count > 0;
         let sdfgi_ready = self.gi_cache.has_sdfgi_volume && !self.gi_cache.dirty;
+        let mut gi_uses_sky_irradiance_fallback = false;
+        let gi_requested_cache_data = matches!(
+            policy.gi,
+            crate::rendering::renderer::GiMethod::BakedLightmap
+                | crate::rendering::renderer::GiMethod::LightProbes
+                | crate::rendering::renderer::GiMethod::SDFGI
+                | crate::rendering::renderer::GiMethod::RTGIOneBounce
+        );
         if gi_resolve_method == GI_RESOLVE_METHOD_BAKED_LIGHTMAP && !baked_gi_ready {
-            gi_resolve_method = GI_RESOLVE_METHOD_OFF;
+            gi_uses_sky_irradiance_fallback = true;
+            gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
         }
         if gi_resolve_method == GI_RESOLVE_METHOD_LIGHT_PROBES && !probe_gi_ready {
-            gi_resolve_method = GI_RESOLVE_METHOD_OFF;
+            gi_uses_sky_irradiance_fallback = true;
+            gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
         }
         if gi_resolve_method == GI_RESOLVE_METHOD_SDFGI && !sdfgi_ready {
-            gi_resolve_method = GI_RESOLVE_METHOD_OFF;
+            gi_uses_sky_irradiance_fallback = true;
+            gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
+            dispatch_sdfgi = false;
         }
         if gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE && self.hybrid_rt_gi_pipeline.is_none() {
-            gi_resolve_method = GI_RESOLVE_METHOD_OFF;
+            gi_uses_sky_irradiance_fallback = true;
+            gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
             dispatch_hybrid_rtgi = false;
+        }
+        if gi_requested_cache_data && !baked_gi_ready && !probe_gi_ready && !sdfgi_ready && gi_resolve_method != GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE {
+            gi_uses_sky_irradiance_fallback = true;
+            gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
+            dispatch_sdfgi = false;
         }
 
         let wants_cinematic_pipeline = uses_rt_primary && !self.safe_shader_mode;
@@ -7036,7 +7055,9 @@ impl WgpuRenderer {
         if feature_status.requested_transparency_method != feature_status.active_transparency_method {
             feature_status.transparency_fallback_reason = pipeline_reason(self.hybrid_rt_transparency_pipeline.is_some());
         }
-        if policy.gi == crate::rendering::renderer::GiMethod::BakedLightmap && !baked_gi_ready {
+        if gi_uses_sky_irradiance_fallback {
+            feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingAuthoredGiData;
+        } else if policy.gi == crate::rendering::renderer::GiMethod::BakedLightmap && !baked_gi_ready {
             feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingLightmaps;
         } else if policy.gi == crate::rendering::renderer::GiMethod::LightProbes && !probe_gi_ready {
             feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingProbes;
@@ -7209,6 +7230,12 @@ impl WgpuRenderer {
                 | ((self.gi_cache.has_probe_data as u32) << 2)
                 | ((self.gi_cache.has_sdfgi_volume as u32) << 3),
             _pad1: [0; 5],
+            fallback_irradiance: [
+                (params.skycolor[0] * 0.18).max(0.025),
+                (params.skycolor[1] * 0.18).max(0.03),
+                (params.skycolor[2] * 0.18).max(0.04),
+                1.0,
+            ],
             sdfgi_origin: [-32.0, -32.0, -32.0, 0.0],
             sdfgi_extent_voxel: [64.0, 64.0, 64.0 / GI_SDF_RES as f32, 0.05],
             inv_view_proj: params.inv_view_proj,
@@ -8138,6 +8165,7 @@ impl WgpuRenderer {
                     GI_RESOLVE_METHOD_LIGHT_PROBES => crate::rendering::renderer::GiMethod::LightProbes,
                     GI_RESOLVE_METHOD_SDFGI => crate::rendering::renderer::GiMethod::SDFGI,
                     GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE => crate::rendering::renderer::GiMethod::RTGIOneBounce,
+                    GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK => crate::rendering::renderer::GiMethod::SkyIrradianceFallback,
                     _ => crate::rendering::renderer::GiMethod::Off,
                 };
                 feature_status.hybrid_rtgi_active = gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE;
