@@ -7207,7 +7207,7 @@ impl WgpuRenderer {
                 | ((self.gi_cache.has_lightmap_uvs as u32) << 1)
                 | ((self.gi_cache.has_probe_data as u32) << 2)
                 | ((self.gi_cache.has_sdfgi_volume as u32) << 3),
-            _pad1: [0; 2],
+            _pad1: [0; 5],
             sdfgi_origin: [-32.0, -32.0, -32.0, 0.0],
             sdfgi_extent_voxel: [64.0, 64.0, 64.0 / GI_SDF_RES as f32, 0.05],
             inv_view_proj: params.inv_view_proj,
