@@ -1,7 +1,7 @@
 use crate::math::Mat4;
 use crate::scene::object::{GpuAtmosphere, MAX_ATMOSPHERES};
 use bytemuck::{Pod, Zeroable};
-use wgpu::TextureView;
+use wgpu::{BindGroup, BindGroupLayout, Buffer, ComputePipeline, Texture, TextureView};
 
 // Higher resolution improves SDFGI quality on larger objects
 pub const GI_SDF_RES: u32 = 64;
@@ -97,6 +97,105 @@ pub struct GpuLightProbeData {
 pub struct GpuLightProbeSh {
     /// Nine RGB SH/irradiance coefficients per probe, padded to vec4 for WGSL layout.
     pub coeffs: [[f32; 4]; 9],
+}
+
+/// DDGI volume flags shared with GPU shaders.
+pub const DDGI_VOLUME_FLAG_SCROLLING: u32 = 1 << 0;
+pub const DDGI_VOLUME_FLAG_RELOCATION: u32 = 1 << 1;
+pub const DDGI_VOLUME_FLAG_CLASSIFICATION: u32 = 1 << 2;
+pub const DDGI_VOLUME_FLAG_IN_PLACE_UPDATE: u32 = 1 << 3;
+pub const DDGI_VOLUME_FLAG_DEPTH_MOMENTS: u32 = 1 << 4;
+
+/// CPU-side descriptor for an independent DDGI probe volume.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DdgiVolumeDesc {
+    pub origin: [f32; 3],
+    pub probe_counts: [u32; 3],
+    pub spacing: [f32; 3],
+    pub irradiance_texture_dimensions: [u32; 2],
+    pub distance_texture_dimensions: [u32; 2],
+    pub normal_bias: f32,
+    pub view_bias: f32,
+    pub hysteresis: f32,
+    pub max_ray_distance: f32,
+    pub rays_per_probe: u32,
+    pub update_budget: u32,
+    pub flags: u32,
+}
+
+impl Default for DdgiVolumeDesc {
+    fn default() -> Self {
+        Self {
+            origin: [0.0; 3],
+            probe_counts: [1; 3],
+            spacing: [1.0; 3],
+            irradiance_texture_dimensions: [8, 8],
+            distance_texture_dimensions: [16, 16],
+            normal_bias: 0.2,
+            view_bias: 0.8,
+            hysteresis: 0.97,
+            max_ray_distance: 100.0,
+            rays_per_probe: 144,
+            update_budget: 256,
+            flags: DDGI_VOLUME_FLAG_RELOCATION | DDGI_VOLUME_FLAG_CLASSIFICATION,
+        }
+    }
+}
+
+/// Uniform block for DDGI ray tracing and probe atlas update passes.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct DdgiTraceUpdateUniforms {
+    pub origin_update_budget: [f32; 4],
+    pub spacing_max_ray_distance: [f32; 4],
+    pub probe_counts_rays_per_probe: [u32; 4],
+    pub atlas_dimensions_flags: [u32; 4],
+    pub bias_hysteresis_frame: [f32; 4],
+    pub random_rotation: [[f32; 4]; 4],
+    pub view_proj: [[f32; 4]; 4],
+}
+
+/// Uniform block for screen-space DDGI resolve from probe atlases.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
+pub struct DdgiResolveUniforms {
+    pub origin_probe_weight: [f32; 4],
+    pub spacing_normal_view_bias: [f32; 4],
+    pub probe_counts_flags: [u32; 4],
+    pub atlas_dimensions: [u32; 4],
+    pub debug_blend_frame: [f32; 4],
+    pub inv_view_proj: [[f32; 4]; 4],
+}
+
+/// GPU resources owned by a DDGI volume. These are intentionally separate from
+/// `GpuLightProbeData`/`GpuLightProbeSh`, which remain the low-cost fallback path.
+pub struct DdgiGpuResources {
+    pub irradiance_atlas_texture: Texture,
+    pub irradiance_atlas_view: TextureView,
+    pub distance_moments_atlas_texture: Texture,
+    pub distance_moments_atlas_view: TextureView,
+    pub probe_state_texture: Option<Texture>,
+    pub probe_state_view: Option<TextureView>,
+    pub probe_state_buffer: Option<Buffer>,
+    pub probe_relocation_buffer: Buffer,
+    pub ray_output_texture: Option<Texture>,
+    pub ray_output_view: Option<TextureView>,
+    pub ray_output_buffer: Option<Buffer>,
+    pub previous_irradiance_texture: Option<Texture>,
+    pub previous_irradiance_view: Option<TextureView>,
+    pub previous_distance_moments_texture: Option<Texture>,
+    pub previous_distance_moments_view: Option<TextureView>,
+}
+
+/// Renderer-owned DDGI binding and pipeline state.
+pub struct DdgiPipelineResources {
+    pub trace_update_bind_group_layout: BindGroupLayout,
+    pub trace_update_bind_group: BindGroup,
+    pub resolve_bind_group_layout: BindGroupLayout,
+    pub resolve_bind_group: BindGroup,
+    pub trace_pipeline: Option<ComputePipeline>,
+    pub update_pipeline: Option<ComputePipeline>,
+    pub resolve_pipeline: Option<ComputePipeline>,
 }
 
 #[repr(C)]
