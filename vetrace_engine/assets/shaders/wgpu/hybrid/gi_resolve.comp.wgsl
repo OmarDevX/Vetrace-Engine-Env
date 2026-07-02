@@ -3,7 +3,8 @@ const GI_RESOLVE_METHOD_BAKED_LIGHTMAP: u32 = 1u;
 const GI_RESOLVE_METHOD_LIGHT_PROBES: u32 = 2u;
 const GI_RESOLVE_METHOD_SDFGI: u32 = 3u;
 const GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE: u32 = 4u;
-const GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK: u32 = 6u;
+const GI_RESOLVE_METHOD_DDGI: u32 = 6u;
+const GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK: u32 = 7u;
 
 struct GiResolveParams {
     selected_method: u32,
@@ -210,6 +211,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         gi = resolve_sdfgi(world, n) * params.sdfgi_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE) {
         gi = load_rtgi_denoised(pixel, dims) * params.rtgi_blend;
+    } else if (params.selected_method == GI_RESOLVE_METHOD_DDGI) {
+        gi = resolve_light_probe(world, n) * params.probe_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK) {
         gi = resolve_sky_irradiance_fallback(n);
     }

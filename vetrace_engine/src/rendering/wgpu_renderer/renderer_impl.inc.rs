@@ -7208,7 +7208,7 @@ impl WgpuRenderer {
                 effective_gi_quality = effective_gi_quality.min(2);
                 if matches!(
                     effective_gi_mode,
-                    GI_MODE_RTGI_ONE_BOUNCE | GI_MODE_PATH_TRACED_PREVIEW
+                    GI_MODE_RTGI_ONE_BOUNCE | GI_MODE_PATH_TRACED_PREVIEW | GI_MODE_DDGI
                 ) {
                     effective_gi_mode = GI_MODE_LIGHT_PROBES;
                 }
@@ -7237,6 +7237,7 @@ impl WgpuRenderer {
             rt_gi: self.hybrid_rt_gi_pipeline.is_some(),
             rt_transparency: self.hybrid_rt_transparency_pipeline.is_some(),
             rt_ao: self.rtao_pipeline.is_some(),
+            ddgi: self.gi_resolve_pipeline.is_some() && !self.safe_shader_mode,
             path_tracing: !self.safe_shader_mode,
         };
         let policy = crate::rendering::renderer::RendererPolicy::derive(
@@ -7271,6 +7272,7 @@ impl WgpuRenderer {
                 dispatch_hybrid_rtgi = true;
                 GI_MODE_RTGI_ONE_BOUNCE
             }
+            crate::rendering::renderer::GiMethod::DDGI => GI_MODE_DDGI,
             crate::rendering::renderer::GiMethod::PathTraced => GI_MODE_PATH_TRACED_PREVIEW,
         };
         let mut gi_resolve_method = match policy.gi {
@@ -7280,6 +7282,7 @@ impl WgpuRenderer {
             crate::rendering::renderer::GiMethod::LightProbes => GI_RESOLVE_METHOD_LIGHT_PROBES,
             crate::rendering::renderer::GiMethod::SDFGI => GI_RESOLVE_METHOD_SDFGI,
             crate::rendering::renderer::GiMethod::RTGIOneBounce => GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE,
+            crate::rendering::renderer::GiMethod::DDGI => GI_RESOLVE_METHOD_DDGI,
         };
         // If probe GI is requested, make it a real automatic engine feature instead of
         // requiring external test code to call upload_light_probe_gi_data(...). BakedLightmap
@@ -7288,6 +7291,7 @@ impl WgpuRenderer {
             policy.gi,
             crate::rendering::renderer::GiMethod::LightProbes
                 | crate::rendering::renderer::GiMethod::BakedLightmap
+                | crate::rendering::renderer::GiMethod::DDGI
         ) && params.gi_quality > 0
         {
             if let Err(err) = self.ensure_auto_light_probe_gi_data(params) {
@@ -7314,6 +7318,7 @@ impl WgpuRenderer {
                 | crate::rendering::renderer::GiMethod::LightProbes
                 | crate::rendering::renderer::GiMethod::SDFGI
                 | crate::rendering::renderer::GiMethod::RTGIOneBounce
+                | crate::rendering::renderer::GiMethod::DDGI
         );
         if gi_resolve_method == GI_RESOLVE_METHOD_BAKED_LIGHTMAP && !baked_gi_ready {
             if probe_gi_ready {
@@ -7340,12 +7345,17 @@ impl WgpuRenderer {
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
             dispatch_hybrid_rtgi = false;
         }
+        if gi_resolve_method == GI_RESOLVE_METHOD_DDGI && (!probe_gi_ready || self.gi_resolve_pipeline.is_none()) {
+            gi_uses_sky_irradiance_fallback = true;
+            gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
+        }
         if gi_requested_cache_data
             && !baked_gi_ready
             && !probe_gi_ready
             && !sdfgi_ready
             && !sdfgi_available_this_frame
             && gi_resolve_method != GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE
+            && gi_resolve_method != GI_RESOLVE_METHOD_DDGI
         {
             gi_uses_sky_irradiance_fallback = true;
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
@@ -8776,6 +8786,7 @@ impl WgpuRenderer {
                     GI_RESOLVE_METHOD_LIGHT_PROBES => crate::rendering::renderer::GiMethod::LightProbes,
                     GI_RESOLVE_METHOD_SDFGI => crate::rendering::renderer::GiMethod::SDFGI,
                     GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE => crate::rendering::renderer::GiMethod::RTGIOneBounce,
+                    GI_RESOLVE_METHOD_DDGI => crate::rendering::renderer::GiMethod::DDGI,
                     GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK => crate::rendering::renderer::GiMethod::SkyIrradianceFallback,
                     _ => crate::rendering::renderer::GiMethod::Off,
                 };
