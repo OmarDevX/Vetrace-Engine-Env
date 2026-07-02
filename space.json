@@ -1,0 +1,580 @@
+{
+  "nodes": [
+    {
+      "name": "Planet_0",
+      "tags": [],
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "color": [
+        0.2,
+        0.7,
+        0.3
+      ],
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "is_cube": false,
+      "components": [
+        {
+          "name": "Planet",
+          "data": {
+            "mass": 1000.0,
+            "radius": 50.0,
+            "rotation_speed": 0.10000000149011612
+          }
+        },
+        {
+          "name": "Collider",
+          "data": {
+            "is_cube": false,
+            "radius": 50.0
+          }
+        },
+        {
+          "name": "Material",
+          "data": {
+            "f0_b": 0.0,
+            "f0_g": 0.0,
+            "f0_r": 0.0,
+            "ior": 1.5,
+            "is_glass": false
+          }
+        },
+        {
+          "name": "Atmosphere",
+          "data": {
+            "absorption_beta_b": 0.0019499999471008778,
+            "absorption_beta_g": 0.04969999939203262,
+            "absorption_beta_r": 0.020400000736117363,
+            "absorption_falloff": 4.0,
+            "ambient_beta": 0.0,
+            "atmo_radius": 100.0,
+            "g": 0.699999988079071,
+            "height_absorption": 30.0,
+            "height_mie": 1.2000000476837158,
+            "height_ray": 8.0,
+            "light_steps": 8,
+            "mie_beta": 0.020999999716877937,
+            "planet_radius": 50.0,
+            "primary_steps": 16,
+            "ray_beta_b": 0.02239999920129776,
+            "ray_beta_g": 0.013000000268220901,
+            "ray_beta_r": 0.005499999970197678
+          }
+        },
+        {
+          "name": "Renderable",
+          "data": {
+            "color_b": 0.30000001192092896,
+            "color_g": 0.699999988079071,
+            "color_r": 0.20000000298023224,
+            "emission": 0.0,
+            "is_mesh": false,
+            "roughness": 1.0,
+            "triangle_count": 0,
+            "triangle_start_idx": 0
+          }
+        },
+        {
+          "name": "AngularVelocity",
+          "data": {
+            "angular_acceleration_x": 0.0,
+            "angular_acceleration_y": 0.0,
+            "angular_acceleration_z": 0.0,
+            "angular_velocity_x": 0.0,
+            "angular_velocity_y": 0.0,
+            "angular_velocity_z": 0.0
+          }
+        },
+        {
+          "name": "Shape",
+          "data": {
+            "radius": 50.0
+          }
+        },
+        {
+          "name": "Transform",
+          "data": {
+            "orientation_w": -0.20096634328365326,
+            "orientation_x": 0.0,
+            "orientation_y": 0.9795981645584106,
+            "orientation_z": 0.0,
+            "position_x": 0.0,
+            "position_y": 0.0,
+            "position_z": 0.0,
+            "size_x": 1.0,
+            "size_y": 1.0,
+            "size_z": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "Planet_150",
+      "tags": [],
+      "position": [
+        150.0,
+        50.0,
+        0.0
+      ],
+      "color": [
+        0.7,
+        0.3,
+        0.8
+      ],
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "is_cube": false,
+      "components": [
+        {
+          "name": "Planet",
+          "data": {
+            "mass": 1000.0,
+            "radius": 100.0,
+            "rotation_speed": 0.10000000149011612
+          }
+        },
+        {
+          "name": "Collider",
+          "data": {
+            "is_cube": false,
+            "radius": 30.0
+          }
+        },
+        {
+          "name": "Material",
+          "data": {
+            "f0_b": 0.0,
+            "f0_g": 0.0,
+            "f0_r": 0.0,
+            "ior": 1.5,
+            "is_glass": false
+          }
+        },
+        {
+          "name": "Renderable",
+          "data": {
+            "color_b": 0.800000011920929,
+            "color_g": 0.30000001192092896,
+            "color_r": 0.699999988079071,
+            "emission": 0.0,
+            "is_mesh": false,
+            "roughness": 1.0,
+            "triangle_count": 0,
+            "triangle_start_idx": 0
+          }
+        },
+        {
+          "name": "AngularVelocity",
+          "data": {
+            "angular_acceleration_x": 0.0,
+            "angular_acceleration_y": 0.0,
+            "angular_acceleration_z": 0.0,
+            "angular_velocity_x": 0.0,
+            "angular_velocity_y": 0.0,
+            "angular_velocity_z": 0.0
+          }
+        },
+        {
+          "name": "Shape",
+          "data": {
+            "radius": 30.0
+          }
+        },
+        {
+          "name": "Transform",
+          "data": {
+            "orientation_w": -0.20096634328365326,
+            "orientation_x": 0.0,
+            "orientation_y": 0.9795981645584106,
+            "orientation_z": 0.0,
+            "position_x": 150.0,
+            "position_y": 50.0,
+            "position_z": 0.0,
+            "size_x": 1.0,
+            "size_y": 1.0,
+            "size_z": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "Planet_-120",
+      "tags": [],
+      "position": [
+        -120.0,
+        -30.0,
+        80.0
+      ],
+      "color": [
+        0.8,
+        0.5,
+        0.2
+      ],
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "is_cube": false,
+      "components": [
+        {
+          "name": "Planet",
+          "data": {
+            "mass": 1000.0,
+            "radius": 35.0,
+            "rotation_speed": 0.10000000149011612
+          }
+        },
+        {
+          "name": "Collider",
+          "data": {
+            "is_cube": false,
+            "radius": 35.0
+          }
+        },
+        {
+          "name": "Material",
+          "data": {
+            "f0_b": 0.0,
+            "f0_g": 0.0,
+            "f0_r": 0.0,
+            "ior": 1.5,
+            "is_glass": false
+          }
+        },
+        {
+          "name": "Renderable",
+          "data": {
+            "color_b": 0.20000000298023224,
+            "color_g": 0.5,
+            "color_r": 0.800000011920929,
+            "emission": 0.0,
+            "is_mesh": false,
+            "roughness": 1.0,
+            "triangle_count": 0,
+            "triangle_start_idx": 0
+          }
+        },
+        {
+          "name": "AngularVelocity",
+          "data": {
+            "angular_acceleration_x": 0.0,
+            "angular_acceleration_y": 0.0,
+            "angular_acceleration_z": 0.0,
+            "angular_velocity_x": 0.0,
+            "angular_velocity_y": 0.0,
+            "angular_velocity_z": 0.0
+          }
+        },
+        {
+          "name": "Shape",
+          "data": {
+            "radius": 35.0
+          }
+        },
+        {
+          "name": "Transform",
+          "data": {
+            "orientation_w": -0.20096634328365326,
+            "orientation_x": 0.0,
+            "orientation_y": 0.9795981645584106,
+            "orientation_z": 0.0,
+            "position_x": -120.0,
+            "position_y": -30.0,
+            "position_z": 80.0,
+            "size_x": 1.0,
+            "size_y": 1.0,
+            "size_z": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "Player",
+      "tags": [
+        "player"
+      ],
+      "position": [
+        20.80857,
+        45.89065,
+        3.3617713
+      ],
+      "color": [
+        159.18733,
+        165.20798,
+        37.84765
+      ],
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "is_cube": false,
+      "components": [
+        {
+          "name": "Collider",
+          "data": {
+            "is_cube": false,
+            "radius": 0.5
+          }
+        },
+        {
+          "name": "Material",
+          "data": {
+            "f0_b": 0.0,
+            "f0_g": 0.0,
+            "f0_r": 0.0,
+            "ior": 1.5,
+            "is_glass": false
+          }
+        },
+        {
+          "name": "Renderable",
+          "data": {
+            "color_b": 37.84764862060547,
+            "color_g": 165.20797729492188,
+            "color_r": 159.1873321533203,
+            "emission": 0.0,
+            "is_mesh": false,
+            "roughness": 1.0,
+            "triangle_count": 0,
+            "triangle_start_idx": 0
+          }
+        },
+        {
+          "name": "AngularVelocity",
+          "data": {
+            "angular_acceleration_x": 0.0,
+            "angular_acceleration_y": 0.0,
+            "angular_acceleration_z": 0.0,
+            "angular_velocity_x": 0.0,
+            "angular_velocity_y": 0.0,
+            "angular_velocity_z": 0.0
+          }
+        },
+        {
+          "name": "Shape",
+          "data": {
+            "radius": 0.5
+          }
+        },
+        {
+          "name": "Kinematic Velocity",
+          "data": {}
+        },
+        {
+          "name": "Transform",
+          "data": {
+            "orientation_w": 0.6985067129135132,
+            "orientation_x": 0.14277474582195282,
+            "orientation_y": -0.028830427676439285,
+            "orientation_z": -0.05709942802786827,
+            "position_x": 20.808570861816406,
+            "position_y": 45.89065170288086,
+            "position_z": 3.36177134513855,
+            "size_x": 1.0,
+            "size_y": 1.0,
+            "size_z": 1.0
+          }
+        },
+        {
+          "name": "Planet Walker",
+          "data": {
+            "grounded": true,
+            "jump_cooldown": 0.0,
+            "walk_speed": 10.0
+          }
+        }
+      ]
+    },
+    {
+      "name": "Object4",
+      "tags": [],
+      "position": [
+        1.665353,
+        42.48025,
+        250.99411
+      ],
+      "color": [
+        198.04877,
+        64.09578,
+        64.09578
+      ],
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "is_cube": false,
+      "components": [
+        {
+          "name": "Collider",
+          "data": {
+            "is_cube": false,
+            "radius": 100.0
+          }
+        },
+        {
+          "name": "Material",
+          "data": {
+            "f0_b": 0.0,
+            "f0_g": 0.0,
+            "f0_r": 0.0,
+            "ior": 1.5,
+            "is_glass": false
+          }
+        },
+        {
+          "name": "Atmosphere",
+          "data": {
+            "absorption_beta_b": 0.05000000074505806,
+            "absorption_beta_g": 0.05000000074505806,
+            "absorption_beta_r": 0.0,
+            "absorption_falloff": 30.0,
+            "ambient_beta": 0.0,
+            "atmo_radius": 180.0,
+            "g": 0.75,
+            "height_absorption": 8.0,
+            "height_mie": 1.2000000476837158,
+            "height_ray": 8.0,
+            "light_steps": 1,
+            "mie_beta": 0.12999999523162842,
+            "planet_radius": 100.0,
+            "primary_steps": 16,
+            "ray_beta_b": 0.02239999920129776,
+            "ray_beta_g": 0.029999999329447746,
+            "ray_beta_r": 0.005499999970197678
+          }
+        },
+        {
+          "name": "Renderable",
+          "data": {
+            "color_b": 64.09577941894531,
+            "color_g": 64.09577941894531,
+            "color_r": 198.04876708984375,
+            "emission": 0.0,
+            "is_mesh": false,
+            "roughness": 1.0,
+            "triangle_count": 0,
+            "triangle_start_idx": 0
+          }
+        },
+        {
+          "name": "AngularVelocity",
+          "data": {
+            "angular_acceleration_x": 0.0,
+            "angular_acceleration_y": 0.0,
+            "angular_acceleration_z": 0.0,
+            "angular_velocity_x": 0.0,
+            "angular_velocity_y": 0.0,
+            "angular_velocity_z": 0.0
+          }
+        },
+        {
+          "name": "Shape",
+          "data": {
+            "radius": 100.0
+          }
+        },
+        {
+          "name": "Transform",
+          "data": {
+            "orientation_w": 1.0,
+            "orientation_x": 0.0,
+            "orientation_y": 0.0,
+            "orientation_z": 0.0,
+            "position_x": 1.6653529405593872,
+            "position_y": 42.48025131225586,
+            "position_z": 250.99411010742188,
+            "size_x": 1.0,
+            "size_y": 1.0,
+            "size_z": 1.0
+          }
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "name": "camera",
+      "tags": [],
+      "components": [
+        {
+          "name": "PostProcessing",
+          "data": {}
+        },
+        {
+          "name": "CameraAttachment",
+          "data": {
+            "fov": 1.0471975803375244,
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "offset_z": 0.0
+          }
+        },
+        {
+          "name": "FreeFlightControls",
+          "data": {
+            "acceleration": 10.0,
+            "angular_friction": 0.03999999910593033,
+            "deceleration": 2.0,
+            "friction": 0.949999988079071,
+            "pitch": -31.648853302001953,
+            "sensitivity": 0.5,
+            "speed": 5.0,
+            "yaw": 53.05665588378906
+          }
+        },
+        {
+          "name": "DirectionalLight",
+          "data": {
+            "color_b": 255.0,
+            "color_g": 130.0,
+            "color_r": 255.0,
+            "direction_x": -1.0,
+            "direction_y": 0.5,
+            "direction_z": -1.0,
+            "intensity": 1.0
+          }
+        },
+        {
+          "name": "Transform",
+          "data": {
+            "orientation_w": 0.8608056306838989,
+            "orientation_x": 0.12179452180862427,
+            "orientation_y": -0.4297133684158325,
+            "orientation_z": -0.24397985637187958,
+            "position_x": 15.757184028625488,
+            "position_y": 54.53131103515625,
+            "position_z": -9.107421875,
+            "size_x": 1.0,
+            "size_y": 1.0,
+            "size_z": 1.0
+          }
+        },
+        {
+          "name": "FreeFlight Controls",
+          "data": {
+            "acceleration": 10.0,
+            "angular_friction": 0.03999999910593033,
+            "deceleration": 2.0,
+            "friction": 0.949999988079071,
+            "pitch": -31.648853302001953,
+            "sensitivity": 0.5,
+            "speed": 5.0,
+            "yaw": 53.05665588378906
+          }
+        }
+      ]
+    }
+  ]
+}

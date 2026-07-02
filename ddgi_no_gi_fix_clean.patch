@@ -1,0 +1,49 @@
+diff --git a/vetrace_engine/src/rendering/renderer.rs b/vetrace_engine/src/rendering/renderer.rs
+--- a/vetrace_engine/src/rendering/renderer.rs
++++ b/vetrace_engine/src/rendering/renderer.rs
+@@ -343,17 +343,15 @@
+                     4 => GiMethod::LightProbes,
+                     5 if hardware.rt_gi && !raster_only && !low_budget => GiMethod::RTGIOneBounce,
+                     5 => GiMethod::SkyIrradianceFallback,
+-                    6 if matches!(
+-                        params.profile,
+-                        RendererProfile::Low | RendererProfile::Indoor60FPS
+-                    ) =>
+-                    {
+-                        GiMethod::LightProbes
+-                    }
+                     6 if matches!(mode, RendererMode::RasterGame | RendererMode::HybridEffects)
+                         && hardware.ddgi
+-                        && !low_budget =>
++                        && !raster_only =>
+                     {
++                        // DDGI is an explicit user-selected GI mode. Do not silently reroute it
++                        // to probes just because adaptive quality dropped or the current profile is
++                        // Low/Indoor60FPS; that makes the UI say DDGI while the frame contains no
++                        // DDGI contribution. The render loop still blocks DDGI in safe-shader/2D
++                        // paths where the resources cannot legally run.
+                         GiMethod::DDGI
+                     }
+                     6 => GiMethod::LightProbes,
+diff --git a/vetrace_engine/assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl b/vetrace_engine/assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl
+--- a/vetrace_engine/assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl
++++ b/vetrace_engine/assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl
+@@ -95,7 +95,17 @@
+     let direct = pbr_direct_light(PbrDirectLightInput(albedo, hit.normal, view_dir, l, params.dir_light_color.rgb * max(params.dir_light_dir.w, 0.0), mat.metallicFactor, mat.roughnessFactor, visible_to_light(hit.pos, hit.normal, l)));
+     var emissive_texel = vec3<f32>(1.0);
+     if (mat.material_flags1 != 0u) { emissive_texel = textureSampleLevel(textures[mat.material_flags1], material_sampler, hit.uv, 0.0).rgb; }
+-    return max(direct + mat.emissiveFactor * mat.emissiveStrength * emissive_texel, vec3<f32>(0.0));
++    let emissive = mat.emissiveFactor * mat.emissiveStrength * emissive_texel;
++
++    // The old DDGI trace stored only direct/emissive radiance for hit surfaces.
++    // In an enclosed GLTF scene most probe rays hit walls/floors, so if those
++    // points are not directly lit the irradiance atlas becomes nearly black even
++    // though RTGI still sees sky on its camera-facing hemisphere samples. Add a
++    // conservative sky diffuse floor so probes receive stable incident light and
++    // DDGI becomes visibly comparable to one-bounce RTGI instead of resolving to
++    // zero. This is intentionally small; direct light and emissive still dominate.
++    let sky_floor = albedo * params.skycolor.rgb * max(0.0, 1.0 - params.sky_occlusion) * (0.04 + 0.10 * clamp(hit.normal.y * 0.5 + 0.5, 0.0, 1.0));
++    return max(direct + emissive + sky_floor, vec3<f32>(0.0));
+ }
+ 
+ @compute @workgroup_size(8, 8)

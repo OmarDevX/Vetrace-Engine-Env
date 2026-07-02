@@ -1,0 +1,144 @@
+--- /mnt/data/ddgi_trace.comp.wgsl.before	2026-07-02 04:27:00.798223710 +0000
++++ vetrace_engine/assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl	2026-07-02 04:27:21.474830013 +0000
+@@ -108,11 +108,17 @@
+     }
+     let rd = normalize(spherical_fibonacci(id.x + u32(max(params.frame_number, 0)) * 17u, ddgi.rays_per_probe));
+     let origin = probe_world_position(id.y);
+-    let hit = trace_scene_limit(origin + rd * ddgi.view_bias, rd, ddgi.max_ray_distance);
++    // Probe tracing should not use the screen-space DDGI view bias. A large
++    // origin shift here skips nearby blockers and stores moments measured from
++    // the wrong point, which shows up as light leaks, black patches, and flicker
++    // in the resolve. Use only a tiny ray epsilon and compensate the stored hit
++    // distance so distance moments remain measured from the probe position.
++    let ray_bias = max(params.min_ray_offset, T_EPS);
++    let hit = trace_scene_limit(origin + rd * ray_bias, rd, max(ddgi.max_ray_distance - ray_bias, ray_bias));
+     var radiance = sky_radiance(rd);
+     var dist = ddgi.max_ray_distance;
+     if (hit.hit != 0u) {
+-        dist = hit.t;
++        dist = min(hit.t + ray_bias, ddgi.max_ray_distance);
+         radiance = surface_radiance(hit, rd);
+     }
+     textureStore(ray_radiance_out, vec2<i32>(i32(id.x), i32(id.y)), vec4<f32>(radiance, 1.0));
+--- /mnt/data/gi_resolve.comp.wgsl.before	2026-07-02 04:27:00.807332995 +0000
++++ vetrace_engine/assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl	2026-07-02 04:27:21.475579921 +0000
+@@ -180,12 +180,17 @@
+     return c.x + c.y * counts.x + c.z * counts.x * counts.y;
+ }
+ 
+-fn ddgi_atlas_coord(probe_index: u32, dir: vec3<f32>, probe_texels: vec2<u32>, atlas_dims: vec2<u32>) -> vec2<i32> {
+-    let probes_per_row = max(atlas_dims.x / max(probe_texels.x, 1u), 1u);
++fn ddgi_atlas_coord(probe_index: u32, dir: vec3<f32>, tile_texels: vec2<u32>, atlas_dims: vec2<u32>) -> vec2<i32> {
++    // tile_texels includes a 1-texel border. The resolved sample should address
++    // the inner DDGI texels; sampling the border directly folds unrelated wrap
++    // texels into the main lookup and creates blocky/glitchy probe transitions.
++    let safe_tile = max(tile_texels, vec2<u32>(3u));
++    let inner = max(safe_tile - vec2<u32>(2u), vec2<u32>(1u));
++    let probes_per_row = max(atlas_dims.x / max(safe_tile.x, 1u), 1u);
+     let tile = vec2<u32>(probe_index % probes_per_row, probe_index / probes_per_row);
+     let oct = oct_encode(normalize(dir));
+-    let texel = vec2<u32>(clamp(oct * vec2<f32>(probe_texels - vec2<u32>(1u)), vec2<f32>(0.0), vec2<f32>(probe_texels - vec2<u32>(1u))));
+-    let coord = min(tile * probe_texels + texel, atlas_dims - vec2<u32>(1u));
++    let texel = vec2<u32>(clamp(oct * vec2<f32>(inner - vec2<u32>(1u)), vec2<f32>(0.0), vec2<f32>(inner - vec2<u32>(1u))));
++    let coord = min(tile * safe_tile + texel + vec2<u32>(1u), atlas_dims - vec2<u32>(1u));
+     return vec2<i32>(i32(coord.x), i32(coord.y));
+ }
+ 
+@@ -201,7 +206,7 @@
+     let irr_texels = max(params.ddgi_atlas_layout.xy, vec2<u32>(1u));
+     let dist_texels = max(params.ddgi_atlas_layout.zw, vec2<u32>(1u));
+     let irradiance = textureLoad(ddgi_irradiance_atlas, ddgi_atlas_coord(probe_index, n, irr_texels, irr_dims), 0).rgb;
+-    let moments = textureLoad(ddgi_distance_atlas, ddgi_atlas_coord(probe_index, -dir, dist_texels, dist_dims), 0).rg;
++    let moments = textureLoad(ddgi_distance_atlas, ddgi_atlas_coord(probe_index, dir, dist_texels, dist_dims), 0).rg;
+     let mean_dist = max(moments.x, 1.0e-4);
+     let variance = max(moments.y - mean_dist * mean_dist, params.ddgi_visibility.z);
+     let cheby = variance / (variance + max(dist - mean_dist, 0.0) * max(dist - mean_dist, 0.0));
+@@ -226,8 +231,11 @@
+ 
+     let counts = max(params.ddgi_probe_counts_flags.xyz, vec3<u32>(1u));
+     let spacing = max(params.ddgi_spacing_bias.xyz, vec3<f32>(1.0e-4));
+-    let view_dir = normalize(params.inv_view_proj[3].xyz - world_pos);
+-    let biased_world = world_pos + n * max(params.ddgi_spacing_bias.w, 0.0) + view_dir * max(params.ddgi_origin_blend.w, 0.0);
++    // Do not derive camera position from inv_view_proj[3]. That column is not a
++    // stable world-space camera position for perspective matrices, so using it
++    // as a view direction makes DDGI pop or fall outside the volume. Until the
++    // resolve uniform carries camera_pos explicitly, keep resolve bias normal-only.
++    let biased_world = world_pos + n * max(params.ddgi_spacing_bias.w, 0.0);
+     let grid = (biased_world - params.ddgi_origin_blend.xyz) / spacing;
+     let inside = !(any(grid < vec3<f32>(0.0)) || any(grid > vec3<f32>(counts - vec3<u32>(1u))));
+     if (!inside) {
+@@ -252,7 +260,7 @@
+         return debug_tonemap(max(irradiance, vec3<f32>(0.0)) * 2.0);
+     }
+     if (ddgi_debug_view == DDGI_DEBUG_VIEW_DEPTH_VISIBILITY) {
+-        let moments = textureLoad(ddgi_distance_atlas, ddgi_atlas_coord(probe_index, -probe_dir, dist_texels, dist_dims), 0).rg;
++        let moments = textureLoad(ddgi_distance_atlas, ddgi_atlas_coord(probe_index, probe_dir, dist_texels, dist_dims), 0).rg;
+         let mean_dist = max(moments.x, 1.0e-4);
+         let variance = max(moments.y - mean_dist * mean_dist, params.ddgi_visibility.z);
+         let delta = max(probe_dist - mean_dist, 0.0);
+@@ -292,8 +300,11 @@
+     }
+     let counts = max(params.ddgi_probe_counts_flags.xyz, vec3<u32>(1u));
+     let spacing = max(params.ddgi_spacing_bias.xyz, vec3<f32>(1.0e-4));
+-    let view_dir = normalize(params.inv_view_proj[3].xyz - world_pos);
+-    let biased_world = world_pos + n * max(params.ddgi_spacing_bias.w, 0.0) + view_dir * max(params.ddgi_origin_blend.w, 0.0);
++    // Do not derive camera position from inv_view_proj[3]. That column is not a
++    // stable world-space camera position for perspective matrices, so using it
++    // as a view direction makes DDGI pop or fall outside the volume. Until the
++    // resolve uniform carries camera_pos explicitly, keep resolve bias normal-only.
++    let biased_world = world_pos + n * max(params.ddgi_spacing_bias.w, 0.0);
+     let grid = (biased_world - params.ddgi_origin_blend.xyz) / spacing;
+     if (any(grid < vec3<f32>(0.0)) || any(grid > vec3<f32>(counts - vec3<u32>(1u)))) {
+         return resolve_light_probe(world_pos, n);
+--- /mnt/data/renderer_impl.inc.rs.before	2026-07-02 04:27:00.814710860 +0000
++++ vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs	2026-07-02 04:27:21.478634307 +0000
+@@ -1279,6 +1279,11 @@
+                 self.queue
+                     .write_buffer(state_buf, 0, bytemuck::cast_slice(&active_states));
+             }
++            if let Some(reloc_buf) = self.ddgi_probe_relocation_buffer.as_ref() {
++                let zero_offsets = vec![[0.0_f32; 4]; total_probes as usize];
++                self.queue
++                    .write_buffer(reloc_buf, 0, bytemuck::cast_slice(&zero_offsets));
++            }
+             self.ddgi_ray_output_buffer = Some(self.device.create_buffer(&BufferDescriptor {
+                 label: Some("ddgi_ray_output_buffer"),
+                 size: desc.update_budget.max(1) as u64 * desc.rays_per_probe.max(1) as u64 * 16,
+--- /mnt/data/types.rs.before	2026-07-02 04:27:41.320890649 +0000
++++ vetrace_engine/src/rendering/wgpu_renderer/types.rs	2026-07-02 04:27:42.564540873 +0000
+@@ -1125,4 +1125,35 @@
+             assert!(trace_wgsl.contains(required), "missing WGSL DDGI field: {required}");
+         }
+     }
++
++
++    #[test]
++    fn ddgi_resolve_sampling_guards_stay_stable() {
++        let gi_resolve_wgsl = include_str!("../../../assets/shaders/wgpu/hybrid/gi_resolve.comp.wgsl");
++        assert!(
++            gi_resolve_wgsl.contains("let inner = max(safe_tile - vec2<u32>(2u), vec2<u32>(1u));"),
++            "DDGI resolve must sample inner atlas texels, not the 1-texel border"
++        );
++        assert!(
++            gi_resolve_wgsl.contains("ddgi_atlas_coord(probe_index, dir, dist_texels, dist_dims)"),
++            "DDGI visibility moments must be sampled along probe-to-surface direction"
++        );
++        assert!(
++            !gi_resolve_wgsl.contains("inv_view_proj[3].xyz - world_pos"),
++            "DDGI resolve must not treat inv_view_proj[3] as a camera position"
++        );
++    }
++
++    #[test]
++    fn ddgi_trace_does_not_use_screen_view_bias_as_ray_origin_bias() {
++        let trace_wgsl = include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl");
++        assert!(
++            trace_wgsl.contains("let ray_bias = max(params.min_ray_offset, T_EPS);"),
++            "DDGI trace rays should use a tiny ray epsilon"
++        );
++        assert!(
++            !trace_wgsl.contains("origin + rd * ddgi.view_bias"),
++            "DDGI trace must not skip near blockers with the screen-space view bias"
++        );
++    }
+ }
