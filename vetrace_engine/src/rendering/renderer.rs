@@ -482,6 +482,7 @@ pub struct RendererProfilerStats {
     pub rt_shadow_pass_ms: f32,
     pub rt_reflection_pass_ms: f32,
     pub rt_gi_pass_ms: f32,
+    pub ddgi_pass_ms: f32,
     pub denoise_ms: f32,
     pub clouds_fog_atmosphere_ms: f32,
     pub total_frame_ms: f32,

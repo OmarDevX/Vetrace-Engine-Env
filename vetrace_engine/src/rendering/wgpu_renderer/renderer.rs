@@ -12,8 +12,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::time::Instant;
-use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
+use wgpu::SurfaceTargetUnsafe;
 use wgpu::{util::DeviceExt, *};
 
 use super::setup::{create_atmosphere_lut_textures, create_textures, init_wgpu};
@@ -111,8 +111,22 @@ pub struct WgpuRenderer {
     ddgi_trace_update_bind_group: Option<BindGroup>,
     ddgi_resolve_bind_group_layout: Option<BindGroupLayout>,
     ddgi_resolve_bind_group: Option<BindGroup>,
+    ddgi_irradiance_update_bind_group_layout: Option<BindGroupLayout>,
+    ddgi_irradiance_update_bind_group: Option<BindGroup>,
+    ddgi_distance_update_bind_group_layout: Option<BindGroupLayout>,
+    ddgi_distance_update_bind_group: Option<BindGroup>,
+    ddgi_border_fixup_bind_group_layout: Option<BindGroupLayout>,
+    ddgi_border_fixup_bind_group: Option<BindGroup>,
+    ddgi_relocate_bind_group_layout: Option<BindGroupLayout>,
+    ddgi_relocate_bind_group: Option<BindGroup>,
+    ddgi_classify_bind_group_layout: Option<BindGroupLayout>,
+    ddgi_classify_bind_group: Option<BindGroup>,
     ddgi_trace_pipeline: Option<ComputePipeline>,
-    ddgi_update_pipeline: Option<ComputePipeline>,
+    ddgi_irradiance_update_pipeline: Option<ComputePipeline>,
+    ddgi_distance_update_pipeline: Option<ComputePipeline>,
+    ddgi_border_fixup_pipeline: Option<ComputePipeline>,
+    ddgi_relocate_pipeline: Option<ComputePipeline>,
+    ddgi_classify_pipeline: Option<ComputePipeline>,
     ddgi_resolve_pipeline: Option<ComputePipeline>,
     ddgi_resources_dirty: bool,
     ddgi_bind_groups_dirty: bool,
