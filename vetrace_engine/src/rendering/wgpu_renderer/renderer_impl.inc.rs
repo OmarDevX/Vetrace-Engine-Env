@@ -85,7 +85,6 @@ struct PrimitiveInstance {
     _pad: [u32; 3],
 }
 
-
 #[derive(Clone, Copy, Debug)]
 struct SsrQuality {
     max_steps: u32,
@@ -104,22 +103,52 @@ impl SsrQuality {
         let quality = adaptive_quality.clamp(0.5, 1.0);
         let mut ssr = match profile {
             crate::rendering::renderer::RendererProfile::Cinematic => Self {
-                max_steps: 160, stride: 0.14, thickness: 0.28, roughness_cutoff: 0.88, confidence_threshold: 0.032, temporal_blend: 0.12,
+                max_steps: 160,
+                stride: 0.14,
+                thickness: 0.28,
+                roughness_cutoff: 0.88,
+                confidence_threshold: 0.032,
+                temporal_blend: 0.12,
             },
             crate::rendering::renderer::RendererProfile::Ultra => Self {
-                max_steps: 128, stride: 0.18, thickness: 0.30, roughness_cutoff: 0.84, confidence_threshold: 0.040, temporal_blend: 0.11,
+                max_steps: 128,
+                stride: 0.18,
+                thickness: 0.30,
+                roughness_cutoff: 0.84,
+                confidence_threshold: 0.040,
+                temporal_blend: 0.11,
             },
             crate::rendering::renderer::RendererProfile::High => Self {
-                max_steps: 96, stride: 0.22, thickness: 0.34, roughness_cutoff: 0.76, confidence_threshold: 0.052, temporal_blend: 0.10,
+                max_steps: 96,
+                stride: 0.22,
+                thickness: 0.34,
+                roughness_cutoff: 0.76,
+                confidence_threshold: 0.052,
+                temporal_blend: 0.10,
             },
             crate::rendering::renderer::RendererProfile::Balanced => Self {
-                max_steps: 64, stride: 0.34, thickness: 0.42, roughness_cutoff: 0.68, confidence_threshold: 0.075, temporal_blend: 0.085,
+                max_steps: 64,
+                stride: 0.34,
+                thickness: 0.42,
+                roughness_cutoff: 0.68,
+                confidence_threshold: 0.075,
+                temporal_blend: 0.085,
             },
             crate::rendering::renderer::RendererProfile::Indoor60FPS => Self {
-                max_steps: 48, stride: 0.48, thickness: 0.52, roughness_cutoff: 0.58, confidence_threshold: 0.105, temporal_blend: 0.07,
+                max_steps: 48,
+                stride: 0.48,
+                thickness: 0.52,
+                roughness_cutoff: 0.58,
+                confidence_threshold: 0.105,
+                temporal_blend: 0.07,
             },
             crate::rendering::renderer::RendererProfile::Low => Self {
-                max_steps: 32, stride: 0.62, thickness: 0.60, roughness_cutoff: 0.52, confidence_threshold: 0.14, temporal_blend: 0.05,
+                max_steps: 32,
+                stride: 0.62,
+                thickness: 0.60,
+                roughness_cutoff: 0.52,
+                confidence_threshold: 0.14,
+                temporal_blend: 0.05,
             },
         };
         if quality < 0.9 {
@@ -364,20 +393,52 @@ fn create_cloud_temporal_texture(
 fn write_r16float_texture(queue: &Queue, texture: &Texture, width: u32, height: u32, value: u16) {
     let texels = vec![value; (width * height) as usize];
     queue.write_texture(
-        ImageCopyTexture { texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+        ImageCopyTexture {
+            texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
         bytemuck::cast_slice(&texels),
-        ImageDataLayout { offset: 0, bytes_per_row: Some(2 * width), rows_per_image: Some(height) },
-        Extent3d { width, height, depth_or_array_layers: 1 },
+        ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(2 * width),
+            rows_per_image: Some(height),
+        },
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
     );
 }
 
-fn write_rgba16float_texture(queue: &Queue, texture: &Texture, width: u32, height: u32, value: [u16; 4]) {
+fn write_rgba16float_texture(
+    queue: &Queue,
+    texture: &Texture,
+    width: u32,
+    height: u32,
+    value: [u16; 4],
+) {
     let texels = vec![value; (width * height) as usize];
     queue.write_texture(
-        ImageCopyTexture { texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+        ImageCopyTexture {
+            texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
         bytemuck::cast_slice(&texels),
-        ImageDataLayout { offset: 0, bytes_per_row: Some(8 * width), rows_per_image: Some(height) },
-        Extent3d { width, height, depth_or_array_layers: 1 },
+        ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(8 * width),
+            rows_per_image: Some(height),
+        },
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
     );
 }
 
@@ -396,7 +457,13 @@ fn initialize_resolve_fallback_textures(
     const F16_ZERO: u16 = 0x0000;
     const F16_ONE: u16 = 0x3c00;
     write_r16float_texture(queue, ambient_occlusion_texture, width, height, F16_ONE);
-    write_r16float_texture(queue, ambient_occlusion_history_texture, width, height, F16_ONE);
+    write_r16float_texture(
+        queue,
+        ambient_occlusion_history_texture,
+        width,
+        height,
+        F16_ONE,
+    );
     write_rgba16float_texture(queue, ssr_color_texture, width, height, [F16_ZERO; 4]);
     write_rgba16float_texture(queue, ssr_history_texture, width, height, [F16_ZERO; 4]);
     write_rgba16float_texture(queue, hybrid_rt_gi_texture, width, height, [F16_ZERO; 4]);
@@ -559,8 +626,10 @@ impl WgpuRenderer {
             self.gi_probe_capacity = count;
             self.recreate_gi_resolve_bind_group();
         } else {
-            self.queue.write_buffer(&self.gi_probe_buffer, 0, probe_bytes);
-            self.queue.write_buffer(&self.gi_probe_sh_buffer, 0, coeff_bytes);
+            self.queue
+                .write_buffer(&self.gi_probe_buffer, 0, probe_bytes);
+            self.queue
+                .write_buffer(&self.gi_probe_sh_buffer, 0, coeff_bytes);
         }
 
         self.gi_probe_count = count as u32;
@@ -584,10 +653,19 @@ impl WgpuRenderer {
         self.gi_cache.static_scene_hash.hash(&mut hasher);
         params.gi_quality.hash(&mut hasher);
         (params.profile as u32).hash(&mut hasher);
-        params.dir_light_dir.iter().for_each(|v| v.to_bits().hash(&mut hasher));
-        params.dir_light_color.iter().for_each(|v| v.to_bits().hash(&mut hasher));
+        params
+            .dir_light_dir
+            .iter()
+            .for_each(|v| v.to_bits().hash(&mut hasher));
+        params
+            .dir_light_color
+            .iter()
+            .for_each(|v| v.to_bits().hash(&mut hasher));
         params.dir_light_intensity.to_bits().hash(&mut hasher);
-        params.skycolor.iter().for_each(|v| v.to_bits().hash(&mut hasher));
+        params
+            .skycolor
+            .iter()
+            .for_each(|v| v.to_bits().hash(&mut hasher));
         params.gi_max_distance.to_bits().hash(&mut hasher);
         hasher.finish()
     }
@@ -601,15 +679,21 @@ impl WgpuRenderer {
         };
         match params.profile {
             crate::rendering::renderer::RendererProfile::Low => quality_spacing.max(5.0_f32),
-            crate::rendering::renderer::RendererProfile::Indoor60FPS => quality_spacing.max(4.0_f32),
+            crate::rendering::renderer::RendererProfile::Indoor60FPS => {
+                quality_spacing.max(4.0_f32)
+            }
             crate::rendering::renderer::RendererProfile::Ultra
-            | crate::rendering::renderer::RendererProfile::Cinematic => quality_spacing.min(2.75_f32),
+            | crate::rendering::renderer::RendererProfile::Cinematic => {
+                quality_spacing.min(2.75_f32)
+            }
             _ => quality_spacing,
         }
     }
 
     fn object_bounds(obj: &GpuObject) -> Option<(Vec3, Vec3)> {
-        if obj.is_shaded == 0 || obj.scene_flags & crate::scene::object::SCENE_FLAG_DYNAMIC_GEOMETRY != 0 {
+        if obj.is_shaded == 0
+            || obj.scene_flags & crate::scene::object::SCENE_FLAG_DYNAMIC_GEOMETRY != 0
+        {
             return None;
         }
         let center = Vec3::from_array(obj.position);
@@ -624,7 +708,9 @@ impl WgpuRenderer {
     }
 
     fn point_inside_static_object(p: Vec3, obj: &GpuObject, margin: f32) -> bool {
-        if obj.is_shaded == 0 || obj.scene_flags & crate::scene::object::SCENE_FLAG_DYNAMIC_GEOMETRY != 0 {
+        if obj.is_shaded == 0
+            || obj.scene_flags & crate::scene::object::SCENE_FLAG_DYNAMIC_GEOMETRY != 0
+        {
             return false;
         }
         let center = Vec3::from_array(obj.position);
@@ -655,7 +741,8 @@ impl WgpuRenderer {
         params: &RenderParams,
     ) -> GpuLightProbeSh {
         let sky = Vec3::from_array(params.skycolor).clamp(Vec3::ZERO, Vec3::splat(8.0));
-        let dir_color = Vec3::from_array(params.dir_light_color).clamp(Vec3::ZERO, Vec3::splat(16.0));
+        let dir_color =
+            Vec3::from_array(params.dir_light_color).clamp(Vec3::ZERO, Vec3::splat(16.0));
         let light_travel = Vec3::from_array(params.dir_light_dir).normalize_or_zero();
         let light_from = (-light_travel).normalize_or_zero();
         let dir_strength = params.dir_light_intensity.max(0.0);
@@ -684,7 +771,9 @@ impl WgpuRenderer {
             let dist2 = to_obj.length_squared().max(0.25);
             let scale = Vec3::from_array(obj.scale).abs().max(Vec3::splat(0.001));
             let object_extent = if obj.is_cube != 0 {
-                (Vec3::from_array(obj.size).abs() * scale).max_element().max(0.1)
+                (Vec3::from_array(obj.size).abs() * scale)
+                    .max_element()
+                    .max(0.1)
             } else {
                 (obj.radius * scale.max_element() * 2.0).max(0.1)
             };
@@ -766,14 +855,24 @@ impl WgpuRenderer {
         min_b = center - extent * 0.5;
         max_b = center + extent * 0.5;
 
-        let mut counts = ((max_b - min_b) / spacing).ceil().as_uvec3().max(glam::UVec3::ONE);
+        let mut counts = ((max_b - min_b) / spacing)
+            .ceil()
+            .as_uvec3()
+            .max(glam::UVec3::ONE);
         while (counts.x as usize * counts.y as usize * counts.z as usize) > MAX_AUTO_PROBES {
             spacing *= 1.25;
-            counts = ((max_b - min_b) / spacing).ceil().as_uvec3().max(glam::UVec3::ONE);
+            counts = ((max_b - min_b) / spacing)
+                .ceil()
+                .as_uvec3()
+                .max(glam::UVec3::ONE);
         }
-        counts = counts.min(glam::UVec3::new(16, 8, 16)).max(glam::UVec3::ONE);
+        counts = counts
+            .min(glam::UVec3::new(16, 8, 16))
+            .max(glam::UVec3::ONE);
 
-        let radius = (spacing * 2.35).min(params.gi_max_distance.max(spacing)).max(spacing * 1.25);
+        let radius = (spacing * 2.35)
+            .min(params.gi_max_distance.max(spacing))
+            .max(spacing * 1.25);
         let mut probes = Vec::new();
         let mut coeffs = Vec::new();
         let margin = (spacing * 0.12).min(0.25);
@@ -786,7 +885,11 @@ impl WgpuRenderer {
                     let denom = (counts - glam::UVec3::ONE).as_vec3().max(Vec3::ONE);
                     let t = glam::UVec3::new(x, y, z).as_vec3() / denom;
                     let p = min_b + (max_b - min_b) * t;
-                    if self.prev_objects.iter().any(|obj| Self::point_inside_static_object(p, obj, margin)) {
+                    if self
+                        .prev_objects
+                        .iter()
+                        .any(|obj| Self::point_inside_static_object(p, obj, margin))
+                    {
                         continue;
                     }
                     probes.push(GpuLightProbeData {
@@ -837,22 +940,86 @@ impl WgpuRenderer {
             label: Some("gi_resolve_bg"),
             layout: &self.gi_resolve_bind_group_layout,
             entries: &[
-                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.depth_view) },
-                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&self.gbuf_albedo_view) },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.gbuf_normal_view) },
-                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.lightmap_view) },
-                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.gi_radiance_view) },
-                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.hybrid_rt_gi_view) },
-                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.gi_history_view) },
-                BindGroupEntry { binding: 7, resource: BindingResource::TextureView(&self.gi_buffer_view) },
-                BindGroupEntry { binding: 8, resource: self.gi_resolve_params_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 9, resource: self.gi_probe_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 10, resource: self.gi_probe_sh_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
-                BindGroupEntry { binding: 12, resource: BindingResource::TextureView(self.ddgi_irradiance_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
-                BindGroupEntry { binding: 13, resource: BindingResource::TextureView(self.ddgi_distance_moments_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
-                BindGroupEntry { binding: 14, resource: self.ddgi_probe_state_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
-                BindGroupEntry { binding: 15, resource: self.ddgi_probe_relocation_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.depth_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.lightmap_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&self.gi_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_gi_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&self.gi_history_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&self.gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: self.gi_resolve_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: self.gi_probe_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: self.gi_probe_sh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: BindingResource::TextureView(
+                        self.ddgi_irradiance_atlas_view
+                            .as_ref()
+                            .unwrap_or(&self.gi_buffer_view),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: BindingResource::TextureView(
+                        self.ddgi_distance_moments_atlas_view
+                            .as_ref()
+                            .unwrap_or(&self.gi_buffer_view),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 14,
+                    resource: self
+                        .ddgi_probe_state_buffer
+                        .as_ref()
+                        .unwrap_or(&self.gi_probe_buffer)
+                        .as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 15,
+                    resource: self
+                        .ddgi_probe_relocation_buffer
+                        .as_ref()
+                        .unwrap_or(&self.gi_probe_buffer)
+                        .as_entire_binding(),
+                },
             ],
         });
     }
@@ -2138,22 +2305,117 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
-                    BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                    BindGroupLayoutEntry { binding: 21, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: true } }, count: std::num::NonZeroU32::new(texture_array_limit) },
-                    BindGroupLayoutEntry { binding: 22, visibility: ShaderStages::COMPUTE, ty: BindingType::Sampler(SamplerBindingType::Filtering), count: None },
+                    BindGroupLayoutEntry {
+                        binding: 14,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 21,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: true },
+                        },
+                        count: std::num::NonZeroU32::new(texture_array_limit),
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 22,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
             });
         let ssr_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("ssr_bgl"),
             entries: &[
-                BindGroupLayoutEntry { binding: 0, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 1, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 2, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 3, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 4, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 5, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Uint }, count: None },
-                BindGroupLayoutEntry { binding: 6, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::Rgba16Float, view_dimension: TextureViewDimension::D2 }, count: None },
-                BindGroupLayoutEntry { binding: 7, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Uint,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: TextureFormat::Rgba16Float,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         let rtao_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -2435,35 +2697,234 @@ impl WgpuRenderer {
                         },
                         count: None,
                     },
-                    BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                    BindGroupLayoutEntry { binding: 43, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                    BindGroupLayoutEntry { binding: 44, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                    BindGroupLayoutEntry { binding: 45, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                    BindGroupLayoutEntry { binding: 46, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                    BindGroupLayoutEntry { binding: 47, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                    BindGroupLayoutEntry {
+                        binding: 14,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 43,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 44,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 45,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 46,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 47,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
                 ],
             });
-        let gi_resolve_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("gi_resolve_bgl"),
-            entries: &[
-                BindGroupLayoutEntry { binding: 0, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 1, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 2, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 3, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 4, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D3, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 5, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 6, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 7, visibility: ShaderStages::COMPUTE, ty: BindingType::StorageTexture { access: StorageTextureAccess::WriteOnly, format: TextureFormat::Rgba16Float, view_dimension: TextureViewDimension::D2 }, count: None },
-                BindGroupLayoutEntry { binding: 8, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                BindGroupLayoutEntry { binding: 9, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                BindGroupLayoutEntry { binding: 10, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                BindGroupLayoutEntry { binding: 11, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 12, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 13, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
-                BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                BindGroupLayoutEntry { binding: 15, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-            ],
-        });
+        let gi_resolve_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("gi_resolve_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D3,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 6,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 8,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 9,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 10,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 11,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 12,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 13,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 14,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 15,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
         let ambient_occlusion_bind_group_layout =
             device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("ambient_occlusion_bgl"),
@@ -2546,6 +3007,278 @@ impl WgpuRenderer {
             bind_group_layouts: &[&gi_resolve_bind_group_layout],
             push_constant_ranges: &[],
         });
+        let ddgi_trace_update_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("ddgi_trace_update_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rg16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let ddgi_atlas_update_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("ddgi_atlas_update_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let ddgi_distance_update_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("ddgi_distance_update_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rg16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let ddgi_border_fixup_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("ddgi_border_fixup_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rgba16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::StorageTexture {
+                            access: StorageTextureAccess::WriteOnly,
+                            format: TextureFormat::Rg16Float,
+                            view_dimension: TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let ddgi_probe_update_bind_group_layout =
+            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("ddgi_probe_update_bgl"),
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: TextureViewDimension::D2,
+                            sample_type: TextureSampleType::Float { filterable: false },
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let ddgi_trace_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("ddgi_trace_pl"),
+            bind_group_layouts: &[
+                &hybrid_rt_effect_bind_group_layout,
+                &ddgi_trace_update_bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+        let ddgi_irradiance_update_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("ddgi_irradiance_update_pl"),
+                bind_group_layouts: &[&ddgi_atlas_update_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let ddgi_distance_update_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("ddgi_distance_update_pl"),
+                bind_group_layouts: &[&ddgi_distance_update_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let ddgi_border_fixup_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("ddgi_border_fixup_pl"),
+                bind_group_layouts: &[&ddgi_border_fixup_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let ddgi_probe_update_pipeline_layout =
+            device.create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: Some("ddgi_probe_update_pl"),
+                bind_group_layouts: &[&ddgi_probe_update_bind_group_layout],
+                push_constant_ranges: &[],
+            });
         let ambient_occlusion_pipeline_layout =
             device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("ambient_occlusion_pl"),
@@ -2576,9 +3309,7 @@ impl WgpuRenderer {
         );
         let hybrid_rt_shadow_pipeline = make_hybrid_pipeline(
             "hybrid_rt_shadows_pipeline",
-            include_str!(
-                "../../../assets/shaders/wgpu/hybrid/rt_shadows.comp.wgsl"
-            ),
+            include_str!("../../../assets/shaders/wgpu/hybrid/rt_shadows.comp.wgsl"),
             &hybrid_rt_pipeline_layout,
         );
         let ssr_pipeline = make_hybrid_pipeline(
@@ -2604,7 +3335,47 @@ impl WgpuRenderer {
             ),
             &hybrid_rt_pipeline_layout,
         );
-        let hybrid_rt_transparency_pipeline = make_hybrid_pipeline("hybrid_rt_transparency_pipeline", include_str!("../../../assets/shaders/wgpu/hybrid/rt_transparency.comp.wgsl"), &hybrid_rt_pipeline_layout);
+        let ddgi_trace_pipeline = make_hybrid_pipeline(
+            "ddgi_trace_pipeline",
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl")
+            ),
+            &ddgi_trace_pipeline_layout,
+        );
+        let ddgi_irradiance_update_pipeline = make_hybrid_pipeline(
+            "ddgi_irradiance_update_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_update_irradiance.comp.wgsl"),
+            &ddgi_irradiance_update_pipeline_layout,
+        );
+        let ddgi_distance_update_pipeline = make_hybrid_pipeline(
+            "ddgi_distance_update_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_update_distance.comp.wgsl"),
+            &ddgi_distance_update_pipeline_layout,
+        );
+        let ddgi_border_fixup_pipeline = make_hybrid_pipeline(
+            "ddgi_border_fixup_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_fixup_borders.comp.wgsl"),
+            &ddgi_border_fixup_pipeline_layout,
+        );
+        let ddgi_relocate_pipeline = make_hybrid_pipeline(
+            "ddgi_relocate_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_relocate.comp.wgsl"),
+            &ddgi_probe_update_pipeline_layout,
+        );
+        let ddgi_classify_pipeline = make_hybrid_pipeline(
+            "ddgi_classify_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_classify.comp.wgsl"),
+            &ddgi_probe_update_pipeline_layout,
+        );
+        let hybrid_rt_transparency_pipeline = make_hybrid_pipeline(
+            "hybrid_rt_transparency_pipeline",
+            include_str!("../../../assets/shaders/wgpu/hybrid/rt_transparency.comp.wgsl"),
+            &hybrid_rt_pipeline_layout,
+        );
         let ambient_occlusion_pipeline = make_hybrid_pipeline(
             "ambient_occlusion_pipeline",
             include_str!("../../../assets/shaders/wgpu/hybrid/ambient_occlusion.comp.wgsl"),
@@ -2621,9 +3392,7 @@ impl WgpuRenderer {
         );
         let hybrid_composite_pipeline = make_hybrid_pipeline(
             "hybrid_composite_pipeline",
-            include_str!(
-                "../../../assets/shaders/wgpu/hybrid/hybrid_effects_composite.comp.wgsl"
-            ),
+            include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_effects_composite.comp.wgsl"),
             &hybrid_composite_pipeline_layout,
         );
 
@@ -4670,9 +5439,18 @@ impl WgpuRenderer {
                         binding: 13,
                         resource: material_buffer.as_entire_binding(),
                     },
-                    BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&ssr_color_view) },
-                    BindGroupEntry { binding: 21, resource: BindingResource::TextureViewArray(&tex_views) },
-                    BindGroupEntry { binding: 22, resource: BindingResource::Sampler(&linear_sampler) },
+                    BindGroupEntry {
+                        binding: 14,
+                        resource: BindingResource::TextureView(&ssr_color_view),
+                    },
+                    BindGroupEntry {
+                        binding: 21,
+                        resource: BindingResource::TextureViewArray(&tex_views),
+                    },
+                    BindGroupEntry {
+                        binding: 22,
+                        resource: BindingResource::Sampler(&linear_sampler),
+                    },
                 ],
             })
         };
@@ -4746,14 +5524,38 @@ impl WgpuRenderer {
             label: Some("ssr_bg"),
             layout: &ssr_bind_group_layout,
             entries: &[
-                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&dv) },
-                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&gbuf_normal_view) },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&gbuf_albedo_view) },
-                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&color_view) },
-                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&ssr_history_view) },
-                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&gbuf_material_view) },
-                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&ssr_color_view) },
-                BindGroupEntry { binding: 7, resource: ssr_params_buffer.as_entire_binding() },
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&dv),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&color_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&ssr_history_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: ssr_params_buffer.as_entire_binding(),
+                },
             ],
         });
         let hybrid_rt_gi_bind_group =
@@ -4765,22 +5567,70 @@ impl WgpuRenderer {
             label: Some("gi_resolve_bg"),
             layout: &gi_resolve_bind_group_layout,
             entries: &[
-                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&dv) },
-                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&gbuf_albedo_view) },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&gbuf_normal_view) },
-                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&lightmap_view) },
-                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&gi_radiance_view) },
-                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&hybrid_rt_gi_view) },
-                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&gi_history_view) },
-                BindGroupEntry { binding: 7, resource: BindingResource::TextureView(&gi_buffer_view) },
-                BindGroupEntry { binding: 8, resource: gi_resolve_params_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 9, resource: gi_probe_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 10, resource: gi_probe_sh_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&gbuf_lightmap_uv_view) },
-                BindGroupEntry { binding: 12, resource: BindingResource::TextureView(&gi_buffer_view) },
-                BindGroupEntry { binding: 13, resource: BindingResource::TextureView(&gi_buffer_view) },
-                BindGroupEntry { binding: 14, resource: gi_probe_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 15, resource: gi_probe_buffer.as_entire_binding() },
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&dv),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&lightmap_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&gi_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&hybrid_rt_gi_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&gi_history_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: gi_resolve_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: gi_probe_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: gi_probe_sh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: BindingResource::TextureView(&gbuf_lightmap_uv_view),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: BindingResource::TextureView(&gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: BindingResource::TextureView(&gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 14,
+                    resource: gi_probe_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 15,
+                    resource: gi_probe_buffer.as_entire_binding(),
+                },
             ],
         });
         let hybrid_composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -4839,12 +5689,30 @@ impl WgpuRenderer {
                     binding: 13,
                     resource: BindingResource::TextureView(&ambient_occlusion_view),
                 },
-                BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&ssr_color_view) },
-                BindGroupEntry { binding: 43, resource: BindingResource::TextureView(&gi_buffer_view) },
-                BindGroupEntry { binding: 44, resource: BindingResource::TextureView(&ambient_occlusion_view) },
-                BindGroupEntry { binding: 45, resource: BindingResource::TextureView(&ssr_color_view) },
-                BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&hybrid_rt_reflection_view) },
-                BindGroupEntry { binding: 47, resource: BindingResource::TextureView(&gbuf_lightmap_uv_view) },
+                BindGroupEntry {
+                    binding: 14,
+                    resource: BindingResource::TextureView(&ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 43,
+                    resource: BindingResource::TextureView(&gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 44,
+                    resource: BindingResource::TextureView(&ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 45,
+                    resource: BindingResource::TextureView(&ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 46,
+                    resource: BindingResource::TextureView(&hybrid_rt_reflection_view),
+                },
+                BindGroupEntry {
+                    binding: 47,
+                    resource: BindingResource::TextureView(&gbuf_lightmap_uv_view),
+                },
             ],
         });
         let ambient_occlusion_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -4954,12 +5822,26 @@ impl WgpuRenderer {
             ddgi_previous_distance_moments_view: None,
             ddgi_trace_update_params_buffer: None,
             ddgi_resolve_params_buffer: None,
-            ddgi_trace_update_bind_group_layout: None,
+            ddgi_trace_update_bind_group_layout: Some(ddgi_trace_update_bind_group_layout),
             ddgi_trace_update_bind_group: None,
             ddgi_resolve_bind_group_layout: None,
             ddgi_resolve_bind_group: None,
-            ddgi_trace_pipeline: None,
-            ddgi_update_pipeline: None,
+            ddgi_irradiance_update_bind_group_layout: Some(ddgi_atlas_update_bind_group_layout),
+            ddgi_irradiance_update_bind_group: None,
+            ddgi_distance_update_bind_group_layout: Some(ddgi_distance_update_bind_group_layout),
+            ddgi_distance_update_bind_group: None,
+            ddgi_border_fixup_bind_group_layout: Some(ddgi_border_fixup_bind_group_layout),
+            ddgi_border_fixup_bind_group: None,
+            ddgi_relocate_bind_group_layout: Some(ddgi_probe_update_bind_group_layout.clone()),
+            ddgi_relocate_bind_group: None,
+            ddgi_classify_bind_group_layout: Some(ddgi_probe_update_bind_group_layout),
+            ddgi_classify_bind_group: None,
+            ddgi_trace_pipeline,
+            ddgi_irradiance_update_pipeline,
+            ddgi_distance_update_pipeline,
+            ddgi_border_fixup_pipeline,
+            ddgi_relocate_pipeline,
+            ddgi_classify_pipeline,
             ddgi_resolve_pipeline: None,
             ddgi_resources_dirty: true,
             ddgi_bind_groups_dirty: true,
@@ -5192,7 +6074,7 @@ impl WgpuRenderer {
                 Some(device.create_query_set(&QuerySetDescriptor {
                     label: Some("renderer_profiler_timestamps"),
                     ty: QueryType::Timestamp,
-                    count: 12,
+                    count: 14,
                 }))
             } else {
                 None
@@ -5200,7 +6082,7 @@ impl WgpuRenderer {
             profiler_query_buffer: if device.features().contains(Features::TIMESTAMP_QUERY) {
                 Some(device.create_buffer(&BufferDescriptor {
                     label: Some("renderer_profiler_timestamp_resolve"),
-                    size: 12 * std::mem::size_of::<u64>() as u64,
+                    size: 14 * std::mem::size_of::<u64>() as u64,
                     usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
                     mapped_at_creation: false,
                 }))
@@ -5210,7 +6092,7 @@ impl WgpuRenderer {
             profiler_readback_buffer: if device.features().contains(Features::TIMESTAMP_QUERY) {
                 Some(device.create_buffer(&BufferDescriptor {
                     label: Some("renderer_profiler_timestamp_readback"),
-                    size: 12 * std::mem::size_of::<u64>() as u64,
+                    size: 14 * std::mem::size_of::<u64>() as u64,
                     usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
                     mapped_at_creation: false,
                 }))
@@ -5419,7 +6301,11 @@ impl WgpuRenderer {
         self.gbuf_material_view = gbuf_material_view;
         self.gbuf_lightmap_uv_texture = self.device.create_texture(&TextureDescriptor {
             label: Some("gbuf_lightmap_uv"),
-            size: Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            size: Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -5427,7 +6313,9 @@ impl WgpuRenderer {
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        self.gbuf_lightmap_uv_view = self.gbuf_lightmap_uv_texture.create_view(&TextureViewDescriptor::default());
+        self.gbuf_lightmap_uv_view = self
+            .gbuf_lightmap_uv_texture
+            .create_view(&TextureViewDescriptor::default());
         self.gi_sdf_texture = gi_sdf_texture;
         self.gi_sdf_view = gi_sdf_view;
         self.gi_sdf_storage_view = gi_sdf_storage_view;
@@ -5838,7 +6726,8 @@ impl WgpuRenderer {
                 },
             ],
         });
-        let hybrid_rt_tex_views: Vec<&TextureView> = self.material_textures.iter().map(|t| &t.0.view).collect();
+        let hybrid_rt_tex_views: Vec<&TextureView> =
+            self.material_textures.iter().map(|t| &t.0.view).collect();
         let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
             self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some(label),
@@ -5900,9 +6789,18 @@ impl WgpuRenderer {
                         binding: 13,
                         resource: self.material_buffer.as_entire_binding(),
                     },
-                    BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
-                    BindGroupEntry { binding: 21, resource: BindingResource::TextureViewArray(&hybrid_rt_tex_views) },
-                    BindGroupEntry { binding: 22, resource: BindingResource::Sampler(&self.linear_sampler) },
+                    BindGroupEntry {
+                        binding: 14,
+                        resource: BindingResource::TextureView(&self.ssr_color_view),
+                    },
+                    BindGroupEntry {
+                        binding: 21,
+                        resource: BindingResource::TextureViewArray(&hybrid_rt_tex_views),
+                    },
+                    BindGroupEntry {
+                        binding: 22,
+                        resource: BindingResource::Sampler(&self.linear_sampler),
+                    },
                 ],
             })
         };
@@ -5914,14 +6812,38 @@ impl WgpuRenderer {
             label: Some("ssr_bg"),
             layout: &self.ssr_bind_group_layout,
             entries: &[
-                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.depth_view) },
-                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&self.gbuf_normal_view) },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.gbuf_albedo_view) },
-                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.color_view) },
-                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.ssr_history_view) },
-                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.gbuf_material_view) },
-                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.ssr_color_view) },
-                BindGroupEntry { binding: 7, resource: self.ssr_params_buffer.as_entire_binding() },
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.depth_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.color_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&self.ssr_history_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.gbuf_material_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&self.ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: self.ssr_params_buffer.as_entire_binding(),
+                },
             ],
         });
         self.hybrid_rt_gi_bind_group =
@@ -5996,22 +6918,86 @@ impl WgpuRenderer {
             label: Some("gi_resolve_bg"),
             layout: &self.gi_resolve_bind_group_layout,
             entries: &[
-                BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.depth_view) },
-                BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&self.gbuf_albedo_view) },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.gbuf_normal_view) },
-                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.lightmap_view) },
-                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.gi_radiance_view) },
-                BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.hybrid_rt_gi_view) },
-                BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.gi_history_view) },
-                BindGroupEntry { binding: 7, resource: BindingResource::TextureView(&self.gi_buffer_view) },
-                BindGroupEntry { binding: 8, resource: self.gi_resolve_params_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 9, resource: self.gi_probe_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 10, resource: self.gi_probe_sh_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
-                BindGroupEntry { binding: 12, resource: BindingResource::TextureView(self.ddgi_irradiance_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
-                BindGroupEntry { binding: 13, resource: BindingResource::TextureView(self.ddgi_distance_moments_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
-                BindGroupEntry { binding: 14, resource: self.ddgi_probe_state_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
-                BindGroupEntry { binding: 15, resource: self.ddgi_probe_relocation_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&self.depth_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&self.lightmap_view),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&self.gi_radiance_view),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_gi_view),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::TextureView(&self.gi_history_view),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&self.gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 8,
+                    resource: self.gi_resolve_params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: self.gi_probe_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 10,
+                    resource: self.gi_probe_sh_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 11,
+                    resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view),
+                },
+                BindGroupEntry {
+                    binding: 12,
+                    resource: BindingResource::TextureView(
+                        self.ddgi_irradiance_atlas_view
+                            .as_ref()
+                            .unwrap_or(&self.gi_buffer_view),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 13,
+                    resource: BindingResource::TextureView(
+                        self.ddgi_distance_moments_atlas_view
+                            .as_ref()
+                            .unwrap_or(&self.gi_buffer_view),
+                    ),
+                },
+                BindGroupEntry {
+                    binding: 14,
+                    resource: self
+                        .ddgi_probe_state_buffer
+                        .as_ref()
+                        .unwrap_or(&self.gi_probe_buffer)
+                        .as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 15,
+                    resource: self
+                        .ddgi_probe_relocation_buffer
+                        .as_ref()
+                        .unwrap_or(&self.gi_probe_buffer)
+                        .as_entire_binding(),
+                },
             ],
         });
         self.hybrid_composite_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -6070,12 +7056,30 @@ impl WgpuRenderer {
                     binding: 13,
                     resource: BindingResource::TextureView(&self.ambient_occlusion_view),
                 },
-                BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
-                BindGroupEntry { binding: 43, resource: BindingResource::TextureView(&self.gi_buffer_view) },
-                BindGroupEntry { binding: 44, resource: BindingResource::TextureView(&self.ambient_occlusion_view) },
-                BindGroupEntry { binding: 45, resource: BindingResource::TextureView(&self.ssr_color_view) },
-                BindGroupEntry { binding: 46, resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view) },
-                BindGroupEntry { binding: 47, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
+                BindGroupEntry {
+                    binding: 14,
+                    resource: BindingResource::TextureView(&self.ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 43,
+                    resource: BindingResource::TextureView(&self.gi_buffer_view),
+                },
+                BindGroupEntry {
+                    binding: 44,
+                    resource: BindingResource::TextureView(&self.ambient_occlusion_view),
+                },
+                BindGroupEntry {
+                    binding: 45,
+                    resource: BindingResource::TextureView(&self.ssr_color_view),
+                },
+                BindGroupEntry {
+                    binding: 46,
+                    resource: BindingResource::TextureView(&self.hybrid_rt_reflection_view),
+                },
+                BindGroupEntry {
+                    binding: 47,
+                    resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view),
+                },
             ],
         });
         self.ambient_occlusion_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -6364,283 +7368,289 @@ impl WgpuRenderer {
     }
 
     pub fn update_scene_data(
-            &mut self,
-            objects: &[GpuObject],
-            triangles: &[GpuTriangle],
-            bvh: &[GpuBvhNode],
-            tri_bvh: &[GpuTriBvhNode],
-            materials: &[crate::scene::object::GpuMaterial],
-            custom_materials: &[crate::scene::object::GpuCustomMaterial],
-            material_names: &[String],
-            shaders: &[(String, String)],
-            textures: &[crate::gpu::TextureHandle],
-        ) {
-            // Ensure the object buffer always has space for at least 64 entries to
-            // satisfy the shader's minimum binding size requirements.
-            const MIN_SCENE_CAPACITY: usize = 64;
-            let mut bind_groups_dirty = false;
-            let object_capacity = self
-                .object_buffer_capacity
-                .max(MIN_SCENE_CAPACITY.max(objects.len()));
-            let objects_changed = self.prev_objects.len() != objects.len()
-                || bytemuck::cast_slice::<GpuObject, u8>(&self.prev_objects)
-                    != bytemuck::cast_slice::<GpuObject, u8>(objects);
-            let object_capacity_changed = object_capacity != self.object_buffer_capacity;
-            if objects_changed || object_capacity_changed {
-                let mut obj_data = vec![GpuObject::default(); object_capacity];
-                obj_data[..objects.len()].copy_from_slice(objects);
-                let obj_bytes = bytemuck::cast_slice(&obj_data);
-                if object_capacity_changed {
-                    self.object_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-                        label: Some("objects"),
-                        contents: obj_bytes,
+        &mut self,
+        objects: &[GpuObject],
+        triangles: &[GpuTriangle],
+        bvh: &[GpuBvhNode],
+        tri_bvh: &[GpuTriBvhNode],
+        materials: &[crate::scene::object::GpuMaterial],
+        custom_materials: &[crate::scene::object::GpuCustomMaterial],
+        material_names: &[String],
+        shaders: &[(String, String)],
+        textures: &[crate::gpu::TextureHandle],
+    ) {
+        // Ensure the object buffer always has space for at least 64 entries to
+        // satisfy the shader's minimum binding size requirements.
+        const MIN_SCENE_CAPACITY: usize = 64;
+        let mut bind_groups_dirty = false;
+        let object_capacity = self
+            .object_buffer_capacity
+            .max(MIN_SCENE_CAPACITY.max(objects.len()));
+        let objects_changed = self.prev_objects.len() != objects.len()
+            || bytemuck::cast_slice::<GpuObject, u8>(&self.prev_objects)
+                != bytemuck::cast_slice::<GpuObject, u8>(objects);
+        let object_capacity_changed = object_capacity != self.object_buffer_capacity;
+        if objects_changed || object_capacity_changed {
+            let mut obj_data = vec![GpuObject::default(); object_capacity];
+            obj_data[..objects.len()].copy_from_slice(objects);
+            let obj_bytes = bytemuck::cast_slice(&obj_data);
+            if object_capacity_changed {
+                self.object_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("objects"),
+                    contents: obj_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+                self.object_buffer_capacity = object_capacity;
+                bind_groups_dirty = true;
+            } else {
+                self.queue.write_buffer(&self.object_buffer, 0, obj_bytes);
+            }
+            self.prev_objects = objects.to_vec();
+        }
+        self.update_static_gi_hash(objects, triangles, bvh, tri_bvh, materials);
+        let tri_changed = self.prev_triangles.len() != triangles.len()
+            || bytemuck::cast_slice::<GpuTriangle, u8>(&self.prev_triangles)
+                != bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
+        if tri_changed {
+            let default_tri;
+            let tri_bytes: &[u8];
+            if triangles.is_empty() {
+                default_tri = GpuTriangle::zeroed();
+                tri_bytes = bytemuck::bytes_of(&default_tri);
+            } else {
+                tri_bytes = bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
+            }
+            if triangles.len() == self.prev_triangles.len() {
+                self.queue.write_buffer(&self.triangle_buffer, 0, tri_bytes);
+            } else {
+                self.triangle_buffer =
+                    self.device.create_buffer_init(&util::BufferInitDescriptor {
+                        label: Some("triangles"),
+                        contents: tri_bytes,
                         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
                     });
-                    self.object_buffer_capacity = object_capacity;
-                    bind_groups_dirty = true;
-                } else {
-                    self.queue.write_buffer(&self.object_buffer, 0, obj_bytes);
-                }
-                self.prev_objects = objects.to_vec();
-            }
-            self.update_static_gi_hash(objects, triangles, bvh, tri_bvh, materials);
-            let tri_changed = self.prev_triangles.len() != triangles.len()
-                || bytemuck::cast_slice::<GpuTriangle, u8>(&self.prev_triangles)
-                    != bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
-            if tri_changed {
-                let default_tri;
-                let tri_bytes: &[u8];
-                if triangles.is_empty() {
-                    default_tri = GpuTriangle::zeroed();
-                    tri_bytes = bytemuck::bytes_of(&default_tri);
-                } else {
-                    tri_bytes = bytemuck::cast_slice::<GpuTriangle, u8>(triangles);
-                }
-                if triangles.len() == self.prev_triangles.len() {
-                    self.queue.write_buffer(&self.triangle_buffer, 0, tri_bytes);
-                } else {
-                    self.triangle_buffer =
-                        self.device.create_buffer_init(&util::BufferInitDescriptor {
-                            label: Some("triangles"),
-                            contents: tri_bytes,
-                            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-                        });
-                    bind_groups_dirty = true;
-                }
-                self.prev_triangles = triangles.to_vec();
-            }
-            self.triangle_count = triangles.len() as u32;
-            let bvh_changed = self.prev_bvh_nodes.len() != bvh.len()
-                || bytemuck::cast_slice::<GpuBvhNode, u8>(&self.prev_bvh_nodes)
-                    != bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
-            if bvh_changed {
-                let default_bvh;
-                let bvh_bytes: &[u8];
-                if bvh.is_empty() {
-                    default_bvh = GpuBvhNode::default();
-                    bvh_bytes = bytemuck::bytes_of(&default_bvh);
-                } else {
-                    bvh_bytes = bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
-                }
-                if bvh.len() == self.prev_bvh_nodes.len() {
-                    self.queue.write_buffer(&self.bvh_buffer, 0, bvh_bytes);
-                } else {
-                    self.bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-                        label: Some("bvh"),
-                        contents: bvh_bytes,
-                        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-                    });
-                    bind_groups_dirty = true;
-                }
-                self.prev_bvh_nodes = bvh.to_vec();
-            }
-            let tri_bvh_changed = self.prev_tri_bvh_nodes.len() != tri_bvh.len()
-                || bytemuck::cast_slice::<GpuTriBvhNode, u8>(&self.prev_tri_bvh_nodes)
-                    != bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
-            if tri_bvh_changed {
-                let default_tbvh;
-                let tbvh_bytes: &[u8];
-                if tri_bvh.is_empty() {
-                    default_tbvh = GpuTriBvhNode::default();
-                    tbvh_bytes = bytemuck::bytes_of(&default_tbvh);
-                } else {
-                    tbvh_bytes = bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
-                }
-                if tri_bvh.len() == self.prev_tri_bvh_nodes.len() {
-                    self.queue.write_buffer(&self.tri_bvh_buffer, 0, tbvh_bytes);
-                } else {
-                    self.tri_bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
-                        label: Some("tri_bvh"),
-                        contents: tbvh_bytes,
-                        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-                    });
-                    bind_groups_dirty = true;
-                }
-                self.prev_tri_bvh_nodes = tri_bvh.to_vec();
-            }
-            let tex_limit = Self::texture_array_limit(&self.device) as u32;
-            let mut clamped_mats: Vec<crate::scene::object::GpuMaterial> = materials.to_vec();
-            for m in &mut clamped_mats {
-                if m.base_color_tex >= tex_limit {
-                    m.base_color_tex = 0;
-                }
-            }
-            // Grow material buffers only when capacity changes and otherwise update in place.
-            // The previous code recreated these buffers + all dependent bind groups every
-            // scene update, which causes stutter even when RT/GI are disabled.
-            self.prev_material_fallback_tags =
-                clamped_mats.iter().fold(0, |tags, mat| tags | mat._pad2[0]);
-            let material_capacity = MIN_SCENE_CAPACITY.max(clamped_mats.len()).max(1);
-            let materials_changed = self.prev_materials.len() != clamped_mats.len()
-                || bytemuck::cast_slice::<crate::scene::object::GpuMaterial, u8>(&self.prev_materials)
-                    != bytemuck::cast_slice::<crate::scene::object::GpuMaterial, u8>(&clamped_mats)
-                || self.material_buffer_capacity < material_capacity;
-            if materials_changed {
-                let mut mat_vec = vec![
-                    crate::scene::object::GpuMaterial::default();
-                    material_capacity
-                ];
-                mat_vec[..clamped_mats.len()].copy_from_slice(&clamped_mats);
-                if ensure_storage_buffer_capacity(
-                    &self.device,
-                    &self.queue,
-                    &mut self.material_buffer,
-                    &mut self.material_buffer_capacity,
-                    "materials",
-                    material_capacity,
-                    &mat_vec,
-                    BufferUsages::STORAGE,
-                ) {
-                    bind_groups_dirty = true;
-                }
-                self.prev_materials = clamped_mats.clone();
-            }
-    
-            let custom_capacity = MIN_SCENE_CAPACITY.max(custom_materials.len()).max(1);
-            let custom_materials_changed = self.prev_custom_materials.len() != custom_materials.len()
-                || bytemuck::cast_slice::<crate::scene::object::GpuCustomMaterial, u8>(&self.prev_custom_materials)
-                    != bytemuck::cast_slice::<crate::scene::object::GpuCustomMaterial, u8>(custom_materials)
-                || self.custom_material_buffer_capacity < custom_capacity;
-            if custom_materials_changed {
-                let mut custom_vec = vec![
-                    crate::scene::object::GpuCustomMaterial::default();
-                    custom_capacity
-                ];
-                custom_vec[..custom_materials.len()].copy_from_slice(custom_materials);
-                if ensure_storage_buffer_capacity(
-                    &self.device,
-                    &self.queue,
-                    &mut self.custom_material_buffer,
-                    &mut self.custom_material_buffer_capacity,
-                    "custom_materials",
-                    custom_capacity,
-                    &custom_vec,
-                    BufferUsages::STORAGE,
-                ) {
-                    bind_groups_dirty = true;
-                }
-                self.prev_custom_materials = custom_materials.to_vec();
-            }
-    
-            const MAX_IMPORTANT_LIGHTS: usize = 256;
-            let camera_pos = Vec3::new(
-                self.prev_cam_pos[0],
-                self.prev_cam_pos[1],
-                self.prev_cam_pos[2],
-            );
-            let camera_front = Vec3::new(
-                self.prev_cam_front[0],
-                self.prev_cam_front[1],
-                self.prev_cam_front[2],
-            );
-            let mut lights: Vec<(u32, f32)> = Vec::new();
-            for (i, obj) in objects.iter().enumerate() {
-                let mi = obj.material_index as usize;
-                if mi < materials.len() && materials[mi].emissive_strength > 0.0 {
-                    let mat = materials[mi];
-                    let light_pos = Vec3::from_array(obj.position);
-                    let to_light = light_pos - camera_pos;
-                    let dist2 = to_light.length_squared().max(1.0);
-                    let color_intensity = mat
-                        .base_color_factor
-                        .iter()
-                        .take(3)
-                        .copied()
-                        .fold(0.0_f32, f32::max)
-                        * mat.emissive_strength;
-                    let radius =
-                        (obj.radius * obj.scale.iter().copied().fold(0.0_f32, f32::max)).max(0.25);
-                    let distance_score = 1.0 / dist2;
-                    let screen_influence = (radius / dist2.sqrt()).clamp(0.0, 1.0);
-                    let view_relevance = if camera_front.length_squared() > 0.0 {
-                        let facing = camera_front.normalize().dot(to_light.normalize_or_zero());
-                        (facing * 0.5 + 0.5).clamp(0.1, 1.0)
-                    } else {
-                        1.0
-                    };
-                    let visibility_relevance =
-                        obj.shadow_importance
-                            .max(if obj.casts_raytraced_shadow != 0 {
-                                1.0
-                            } else {
-                                0.35
-                            });
-                    let score = color_intensity
-                        * (0.25 + distance_score * 64.0)
-                        * (0.25 + screen_influence)
-                        * view_relevance
-                        * visibility_relevance;
-                    lights.push((i as u32, score));
-                }
-            }
-            lights.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            lights.truncate(MAX_IMPORTANT_LIGHTS);
-            let lights: Vec<u32> = lights.into_iter().map(|(idx, _)| idx).collect();
-            let light_header = LightListHeader {
-                count: lights.len() as u32,
-            };
-            self.queue.write_buffer(&self.light_header_buffer, 0, bytemuck::bytes_of(&light_header));
-            if self.prev_light_indices != lights {
-                let light_data: Vec<u32> = if lights.is_empty() { vec![0] } else { lights.clone() };
-                if ensure_storage_buffer_capacity(
-                    &self.device,
-                    &self.queue,
-                    &mut self.light_index_buffer,
-                    &mut self.light_index_buffer_capacity,
-                    "light_indices",
-                    1,
-                    &light_data,
-                    BufferUsages::STORAGE,
-                ) {
-                    bind_groups_dirty = true;
-                }
-                self.prev_light_indices = lights;
-            }
-    
-            self.triangle_count = triangles.len() as u32;
-            self.bvh_node_count = bvh.len() as u32;
-            self.tri_bvh_node_count = tri_bvh.len() as u32;
-            self.material_count = clamped_mats.len() as u32;
-            self.custom_material_count = custom_materials.len() as u32;
-    
-            let texture_count = textures.len().min((tex_limit - 1) as usize) + 1;
-            if self.prev_texture_count != texture_count {
-                self.material_textures = Vec::with_capacity(tex_limit as usize);
-                self.material_textures.push(self.white_texture.clone());
-                self.material_textures
-                    .extend(textures.iter().take((tex_limit - 1) as usize).cloned());
-                if self.material_textures.len() < tex_limit as usize {
-                    self.material_textures
-                        .resize(tex_limit as usize, self.white_texture.clone());
-                }
-                self.prev_texture_count = texture_count;
                 bind_groups_dirty = true;
             }
-    
-            if bind_groups_dirty {
-                let tex_views: Vec<&TextureView> =
-                    self.material_textures.iter().map(|t| &t.0.view).collect();
-                self.compute_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+            self.prev_triangles = triangles.to_vec();
+        }
+        self.triangle_count = triangles.len() as u32;
+        let bvh_changed = self.prev_bvh_nodes.len() != bvh.len()
+            || bytemuck::cast_slice::<GpuBvhNode, u8>(&self.prev_bvh_nodes)
+                != bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
+        if bvh_changed {
+            let default_bvh;
+            let bvh_bytes: &[u8];
+            if bvh.is_empty() {
+                default_bvh = GpuBvhNode::default();
+                bvh_bytes = bytemuck::bytes_of(&default_bvh);
+            } else {
+                bvh_bytes = bytemuck::cast_slice::<GpuBvhNode, u8>(bvh);
+            }
+            if bvh.len() == self.prev_bvh_nodes.len() {
+                self.queue.write_buffer(&self.bvh_buffer, 0, bvh_bytes);
+            } else {
+                self.bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("bvh"),
+                    contents: bvh_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+                bind_groups_dirty = true;
+            }
+            self.prev_bvh_nodes = bvh.to_vec();
+        }
+        let tri_bvh_changed = self.prev_tri_bvh_nodes.len() != tri_bvh.len()
+            || bytemuck::cast_slice::<GpuTriBvhNode, u8>(&self.prev_tri_bvh_nodes)
+                != bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
+        if tri_bvh_changed {
+            let default_tbvh;
+            let tbvh_bytes: &[u8];
+            if tri_bvh.is_empty() {
+                default_tbvh = GpuTriBvhNode::default();
+                tbvh_bytes = bytemuck::bytes_of(&default_tbvh);
+            } else {
+                tbvh_bytes = bytemuck::cast_slice::<GpuTriBvhNode, u8>(tri_bvh);
+            }
+            if tri_bvh.len() == self.prev_tri_bvh_nodes.len() {
+                self.queue.write_buffer(&self.tri_bvh_buffer, 0, tbvh_bytes);
+            } else {
+                self.tri_bvh_buffer = self.device.create_buffer_init(&util::BufferInitDescriptor {
+                    label: Some("tri_bvh"),
+                    contents: tbvh_bytes,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                });
+                bind_groups_dirty = true;
+            }
+            self.prev_tri_bvh_nodes = tri_bvh.to_vec();
+        }
+        let tex_limit = Self::texture_array_limit(&self.device) as u32;
+        let mut clamped_mats: Vec<crate::scene::object::GpuMaterial> = materials.to_vec();
+        for m in &mut clamped_mats {
+            if m.base_color_tex >= tex_limit {
+                m.base_color_tex = 0;
+            }
+        }
+        // Grow material buffers only when capacity changes and otherwise update in place.
+        // The previous code recreated these buffers + all dependent bind groups every
+        // scene update, which causes stutter even when RT/GI are disabled.
+        self.prev_material_fallback_tags =
+            clamped_mats.iter().fold(0, |tags, mat| tags | mat._pad2[0]);
+        let material_capacity = MIN_SCENE_CAPACITY.max(clamped_mats.len()).max(1);
+        let materials_changed = self.prev_materials.len() != clamped_mats.len()
+            || bytemuck::cast_slice::<crate::scene::object::GpuMaterial, u8>(&self.prev_materials)
+                != bytemuck::cast_slice::<crate::scene::object::GpuMaterial, u8>(&clamped_mats)
+            || self.material_buffer_capacity < material_capacity;
+        if materials_changed {
+            let mut mat_vec = vec![crate::scene::object::GpuMaterial::default(); material_capacity];
+            mat_vec[..clamped_mats.len()].copy_from_slice(&clamped_mats);
+            if ensure_storage_buffer_capacity(
+                &self.device,
+                &self.queue,
+                &mut self.material_buffer,
+                &mut self.material_buffer_capacity,
+                "materials",
+                material_capacity,
+                &mat_vec,
+                BufferUsages::STORAGE,
+            ) {
+                bind_groups_dirty = true;
+            }
+            self.prev_materials = clamped_mats.clone();
+        }
+
+        let custom_capacity = MIN_SCENE_CAPACITY.max(custom_materials.len()).max(1);
+        let custom_materials_changed = self.prev_custom_materials.len() != custom_materials.len()
+            || bytemuck::cast_slice::<crate::scene::object::GpuCustomMaterial, u8>(
+                &self.prev_custom_materials,
+            ) != bytemuck::cast_slice::<crate::scene::object::GpuCustomMaterial, u8>(
+                custom_materials,
+            )
+            || self.custom_material_buffer_capacity < custom_capacity;
+        if custom_materials_changed {
+            let mut custom_vec =
+                vec![crate::scene::object::GpuCustomMaterial::default(); custom_capacity];
+            custom_vec[..custom_materials.len()].copy_from_slice(custom_materials);
+            if ensure_storage_buffer_capacity(
+                &self.device,
+                &self.queue,
+                &mut self.custom_material_buffer,
+                &mut self.custom_material_buffer_capacity,
+                "custom_materials",
+                custom_capacity,
+                &custom_vec,
+                BufferUsages::STORAGE,
+            ) {
+                bind_groups_dirty = true;
+            }
+            self.prev_custom_materials = custom_materials.to_vec();
+        }
+
+        const MAX_IMPORTANT_LIGHTS: usize = 256;
+        let camera_pos = Vec3::new(
+            self.prev_cam_pos[0],
+            self.prev_cam_pos[1],
+            self.prev_cam_pos[2],
+        );
+        let camera_front = Vec3::new(
+            self.prev_cam_front[0],
+            self.prev_cam_front[1],
+            self.prev_cam_front[2],
+        );
+        let mut lights: Vec<(u32, f32)> = Vec::new();
+        for (i, obj) in objects.iter().enumerate() {
+            let mi = obj.material_index as usize;
+            if mi < materials.len() && materials[mi].emissive_strength > 0.0 {
+                let mat = materials[mi];
+                let light_pos = Vec3::from_array(obj.position);
+                let to_light = light_pos - camera_pos;
+                let dist2 = to_light.length_squared().max(1.0);
+                let color_intensity = mat
+                    .base_color_factor
+                    .iter()
+                    .take(3)
+                    .copied()
+                    .fold(0.0_f32, f32::max)
+                    * mat.emissive_strength;
+                let radius =
+                    (obj.radius * obj.scale.iter().copied().fold(0.0_f32, f32::max)).max(0.25);
+                let distance_score = 1.0 / dist2;
+                let screen_influence = (radius / dist2.sqrt()).clamp(0.0, 1.0);
+                let view_relevance = if camera_front.length_squared() > 0.0 {
+                    let facing = camera_front.normalize().dot(to_light.normalize_or_zero());
+                    (facing * 0.5 + 0.5).clamp(0.1, 1.0)
+                } else {
+                    1.0
+                };
+                let visibility_relevance =
+                    obj.shadow_importance
+                        .max(if obj.casts_raytraced_shadow != 0 {
+                            1.0
+                        } else {
+                            0.35
+                        });
+                let score = color_intensity
+                    * (0.25 + distance_score * 64.0)
+                    * (0.25 + screen_influence)
+                    * view_relevance
+                    * visibility_relevance;
+                lights.push((i as u32, score));
+            }
+        }
+        lights.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        lights.truncate(MAX_IMPORTANT_LIGHTS);
+        let lights: Vec<u32> = lights.into_iter().map(|(idx, _)| idx).collect();
+        let light_header = LightListHeader {
+            count: lights.len() as u32,
+        };
+        self.queue.write_buffer(
+            &self.light_header_buffer,
+            0,
+            bytemuck::bytes_of(&light_header),
+        );
+        if self.prev_light_indices != lights {
+            let light_data: Vec<u32> = if lights.is_empty() {
+                vec![0]
+            } else {
+                lights.clone()
+            };
+            if ensure_storage_buffer_capacity(
+                &self.device,
+                &self.queue,
+                &mut self.light_index_buffer,
+                &mut self.light_index_buffer_capacity,
+                "light_indices",
+                1,
+                &light_data,
+                BufferUsages::STORAGE,
+            ) {
+                bind_groups_dirty = true;
+            }
+            self.prev_light_indices = lights;
+        }
+
+        self.triangle_count = triangles.len() as u32;
+        self.bvh_node_count = bvh.len() as u32;
+        self.tri_bvh_node_count = tri_bvh.len() as u32;
+        self.material_count = clamped_mats.len() as u32;
+        self.custom_material_count = custom_materials.len() as u32;
+
+        let texture_count = textures.len().min((tex_limit - 1) as usize) + 1;
+        if self.prev_texture_count != texture_count {
+            self.material_textures = Vec::with_capacity(tex_limit as usize);
+            self.material_textures.push(self.white_texture.clone());
+            self.material_textures
+                .extend(textures.iter().take((tex_limit - 1) as usize).cloned());
+            if self.material_textures.len() < tex_limit as usize {
+                self.material_textures
+                    .resize(tex_limit as usize, self.white_texture.clone());
+            }
+            self.prev_texture_count = texture_count;
+            bind_groups_dirty = true;
+        }
+
+        if bind_groups_dirty {
+            let tex_views: Vec<&TextureView> =
+                self.material_textures.iter().map(|t| &t.0.view).collect();
+            self.compute_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some("compute_bg"),
                 layout: &self.compute_bind_group_layout,
                 entries: &[
@@ -6790,7 +7800,9 @@ impl WgpuRenderer {
                     },
                     BindGroupEntry {
                         binding: 36,
-                        resource: BindingResource::TextureView(&self.cloud_transmittance_history_view),
+                        resource: BindingResource::TextureView(
+                            &self.cloud_transmittance_history_view,
+                        ),
                     },
                     BindGroupEntry {
                         binding: 37,
@@ -6838,7 +7850,8 @@ impl WgpuRenderer {
                     },
                 ],
             });
-            let hybrid_rt_tex_views: Vec<&TextureView> = self.material_textures.iter().map(|t| &t.0.view).collect();
+            let hybrid_rt_tex_views: Vec<&TextureView> =
+                self.material_textures.iter().map(|t| &t.0.view).collect();
             let make_hybrid_rt_bind_group = |label: &str, out_view: &TextureView| {
                 self.device.create_bind_group(&BindGroupDescriptor {
                     label: Some(label),
@@ -6900,28 +7913,63 @@ impl WgpuRenderer {
                             binding: 13,
                             resource: self.material_buffer.as_entire_binding(),
                         },
-                        BindGroupEntry { binding: 14, resource: BindingResource::TextureView(&self.ssr_color_view) },
-                        BindGroupEntry { binding: 21, resource: BindingResource::TextureViewArray(&hybrid_rt_tex_views) },
-                        BindGroupEntry { binding: 22, resource: BindingResource::Sampler(&self.linear_sampler) },
+                        BindGroupEntry {
+                            binding: 14,
+                            resource: BindingResource::TextureView(&self.ssr_color_view),
+                        },
+                        BindGroupEntry {
+                            binding: 21,
+                            resource: BindingResource::TextureViewArray(&hybrid_rt_tex_views),
+                        },
+                        BindGroupEntry {
+                            binding: 22,
+                            resource: BindingResource::Sampler(&self.linear_sampler),
+                        },
                     ],
                 })
             };
             self.hybrid_rt_shadow_bind_group =
                 make_hybrid_rt_bind_group("hybrid_rt_shadow_bg", &self.hybrid_rt_shadow_view);
-            self.hybrid_rt_reflection_bind_group =
-                make_hybrid_rt_bind_group("hybrid_rt_reflection_bg", &self.hybrid_rt_reflection_view);
+            self.hybrid_rt_reflection_bind_group = make_hybrid_rt_bind_group(
+                "hybrid_rt_reflection_bg",
+                &self.hybrid_rt_reflection_view,
+            );
             self.ssr_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
                 label: Some("ssr_bg"),
                 layout: &self.ssr_bind_group_layout,
                 entries: &[
-                    BindGroupEntry { binding: 0, resource: BindingResource::TextureView(&self.depth_view) },
-                    BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&self.gbuf_normal_view) },
-                    BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&self.gbuf_albedo_view) },
-                    BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&self.color_view) },
-                    BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.ssr_history_view) },
-                    BindGroupEntry { binding: 5, resource: BindingResource::TextureView(&self.gbuf_material_view) },
-                    BindGroupEntry { binding: 6, resource: BindingResource::TextureView(&self.ssr_color_view) },
-                    BindGroupEntry { binding: 7, resource: self.ssr_params_buffer.as_entire_binding() },
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&self.depth_view),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: BindingResource::TextureView(&self.gbuf_albedo_view),
+                    },
+                    BindGroupEntry {
+                        binding: 3,
+                        resource: BindingResource::TextureView(&self.color_view),
+                    },
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: BindingResource::TextureView(&self.ssr_history_view),
+                    },
+                    BindGroupEntry {
+                        binding: 5,
+                        resource: BindingResource::TextureView(&self.gbuf_material_view),
+                    },
+                    BindGroupEntry {
+                        binding: 6,
+                        resource: BindingResource::TextureView(&self.ssr_color_view),
+                    },
+                    BindGroupEntry {
+                        binding: 7,
+                        resource: self.ssr_params_buffer.as_entire_binding(),
+                    },
                 ],
             });
             self.hybrid_rt_gi_bind_group =
@@ -6992,113 +8040,114 @@ impl WgpuRenderer {
                     },
                 ],
             });
-    
-            self.primitive_gbuffer_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-                label: Some("primitive_gbuffer_bg"),
-                layout: &self.primitive_gbuffer_bind_group_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: self.object_buffer.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: self.sprite_view_proj_buffer.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: self.material_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-            self.primitive_shadow_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-                label: Some("primitive_shadow_bg"),
-                layout: &self.primitive_gbuffer_bind_group_layout,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: self.object_buffer.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
-                    },
-                    // Binding 2 is unused by raster_shadow.wgsl, but the shared layout requires it.
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: self.material_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-    
-            }
-    
-            let shader_changed =
-                self.prev_material_names != material_names || self.prev_shader_defs != shaders;
-            if shader_changed {
-                self.shader_compiler.material_registry.clear();
-                for (name, code) in shaders {
-                    self.shader_compiler
-                        .register_material(name.clone(), code.clone());
-                }
-                self.pending_material_names = material_names.to_vec();
-                self.pending_shader_defs = shaders.to_vec();
-                self.prev_material_names = material_names.to_vec();
-                self.prev_shader_defs = shaders.to_vec();
-                self.cinematic_compute_pipeline = None;
-                self.cinematic_cloud_shadow_pipeline = None;
-                self.cinematic_pipeline_error = None;
-                self.cinematic_pipeline_status = LazyPipelineStatus::NotCompiled;
-                render_log(
-                    "custom material set changed; cinematic pathtrace pipeline invalidated and will compile lazily",
-                );
-            }
-    
-            if bind_groups_dirty {
-                self.denoise_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-                    label: Some("denoise_bg"),
-                    layout: &self.denoise_bind_group_layout,
+
+            self.primitive_gbuffer_bind_group =
+                self.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("primitive_gbuffer_bg"),
+                    layout: &self.primitive_gbuffer_bind_group_layout,
                     entries: &[
                         BindGroupEntry {
-                            binding: 4,
-                            resource: self.params_buffer.as_entire_binding(),
+                            binding: 0,
+                            resource: self.object_buffer.as_entire_binding(),
                         },
                         BindGroupEntry {
-                            binding: 6,
-                            resource: BindingResource::TextureView(&self.depth_view),
+                            binding: 1,
+                            resource: self.sprite_view_proj_buffer.as_entire_binding(),
                         },
                         BindGroupEntry {
-                            binding: 10,
-                            resource: BindingResource::TextureView(&self.gbuf_normal_view),
-                        },
-                        BindGroupEntry {
-                            binding: 13,
-                            resource: BindingResource::TextureView(&self.gi_sdf_view),
-                        },
-                        BindGroupEntry {
-                            binding: 14,
-                            resource: BindingResource::Sampler(&self.sampler),
-                        },
-                        BindGroupEntry {
-                            binding: 15,
-                            resource: BindingResource::TextureView(&self.gi_history_view),
-                        },
-                        BindGroupEntry {
-                            binding: 16,
-                            resource: BindingResource::TextureView(&self.gi_noisy_view),
-                        },
-                        BindGroupEntry {
-                            binding: 17,
-                            resource: BindingResource::TextureView(&self.gi_buffer_view),
-                        },
-                        BindGroupEntry {
-                            binding: 18,
-                            resource: self.postfx_buffer.as_entire_binding(),
+                            binding: 2,
+                            resource: self.material_buffer.as_entire_binding(),
                         },
                     ],
                 });
-            }
+            self.primitive_shadow_bind_group =
+                self.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("primitive_shadow_bg"),
+                    layout: &self.primitive_gbuffer_bind_group_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: self.object_buffer.as_entire_binding(),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
+                        },
+                        // Binding 2 is unused by raster_shadow.wgsl, but the shared layout requires it.
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: self.material_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
         }
+
+        let shader_changed =
+            self.prev_material_names != material_names || self.prev_shader_defs != shaders;
+        if shader_changed {
+            self.shader_compiler.material_registry.clear();
+            for (name, code) in shaders {
+                self.shader_compiler
+                    .register_material(name.clone(), code.clone());
+            }
+            self.pending_material_names = material_names.to_vec();
+            self.pending_shader_defs = shaders.to_vec();
+            self.prev_material_names = material_names.to_vec();
+            self.prev_shader_defs = shaders.to_vec();
+            self.cinematic_compute_pipeline = None;
+            self.cinematic_cloud_shadow_pipeline = None;
+            self.cinematic_pipeline_error = None;
+            self.cinematic_pipeline_status = LazyPipelineStatus::NotCompiled;
+            render_log(
+                    "custom material set changed; cinematic pathtrace pipeline invalidated and will compile lazily",
+                );
+        }
+
+        if bind_groups_dirty {
+            self.denoise_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("denoise_bg"),
+                layout: &self.denoise_bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 4,
+                        resource: self.params_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 6,
+                        resource: BindingResource::TextureView(&self.depth_view),
+                    },
+                    BindGroupEntry {
+                        binding: 10,
+                        resource: BindingResource::TextureView(&self.gbuf_normal_view),
+                    },
+                    BindGroupEntry {
+                        binding: 13,
+                        resource: BindingResource::TextureView(&self.gi_sdf_view),
+                    },
+                    BindGroupEntry {
+                        binding: 14,
+                        resource: BindingResource::Sampler(&self.sampler),
+                    },
+                    BindGroupEntry {
+                        binding: 15,
+                        resource: BindingResource::TextureView(&self.gi_history_view),
+                    },
+                    BindGroupEntry {
+                        binding: 16,
+                        resource: BindingResource::TextureView(&self.gi_noisy_view),
+                    },
+                    BindGroupEntry {
+                        binding: 17,
+                        resource: BindingResource::TextureView(&self.gi_buffer_view),
+                    },
+                    BindGroupEntry {
+                        binding: 18,
+                        resource: self.postfx_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+        }
+    }
 
     fn ensure_cinematic_pipeline(&mut self) -> bool {
         if self.safe_shader_mode {
@@ -7190,10 +8239,13 @@ impl WgpuRenderer {
         const PROF_DENOISE_END: u32 = 9;
         const PROF_CLOUDS_BEGIN: u32 = 10;
         const PROF_CLOUDS_END: u32 = 11;
+        const PROF_DDGI_BEGIN: u32 = 12;
+        const PROF_DDGI_END: u32 = 13;
         let mut profiled_raster = false;
         let mut profiled_rt_shadow = false;
         let mut profiled_rt_reflection = false;
         let mut profiled_rt_gi = false;
+        let mut profiled_ddgi = false;
         let mut profiled_denoise = false;
         let mut profiled_clouds = false;
         let halton = |mut idx: i32, base: i32| -> f32 {
@@ -7305,8 +8357,10 @@ impl WgpuRenderer {
         let mut final_compositor_wrote_screen = false;
         let mut dispatch_sdfgi = false;
         let mut dispatch_hybrid_rtgi = false;
+        let mut dispatch_ddgi = false;
         effective_gi_mode = match policy.gi {
-            crate::rendering::renderer::GiMethod::Off | crate::rendering::renderer::GiMethod::SkyIrradianceFallback => GI_MODE_OFF,
+            crate::rendering::renderer::GiMethod::Off
+            | crate::rendering::renderer::GiMethod::SkyIrradianceFallback => GI_MODE_OFF,
             crate::rendering::renderer::GiMethod::BakedLightmap => GI_MODE_BAKED_LIGHTMAP,
             crate::rendering::renderer::GiMethod::LightProbes => GI_MODE_LIGHT_PROBES,
             crate::rendering::renderer::GiMethod::SDFGI => {
@@ -7317,16 +8371,24 @@ impl WgpuRenderer {
                 dispatch_hybrid_rtgi = true;
                 GI_MODE_RTGI_ONE_BOUNCE
             }
-            crate::rendering::renderer::GiMethod::DDGI => GI_MODE_DDGI,
+            crate::rendering::renderer::GiMethod::DDGI => {
+                dispatch_ddgi = true;
+                GI_MODE_DDGI
+            }
             crate::rendering::renderer::GiMethod::PathTraced => GI_MODE_PATH_TRACED_PREVIEW,
         };
         let mut gi_resolve_method = match policy.gi {
-            crate::rendering::renderer::GiMethod::Off | crate::rendering::renderer::GiMethod::PathTraced => GI_RESOLVE_METHOD_OFF,
-            crate::rendering::renderer::GiMethod::SkyIrradianceFallback => GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK,
+            crate::rendering::renderer::GiMethod::Off
+            | crate::rendering::renderer::GiMethod::PathTraced => GI_RESOLVE_METHOD_OFF,
+            crate::rendering::renderer::GiMethod::SkyIrradianceFallback => {
+                GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK
+            }
             crate::rendering::renderer::GiMethod::BakedLightmap => GI_RESOLVE_METHOD_BAKED_LIGHTMAP,
             crate::rendering::renderer::GiMethod::LightProbes => GI_RESOLVE_METHOD_LIGHT_PROBES,
             crate::rendering::renderer::GiMethod::SDFGI => GI_RESOLVE_METHOD_SDFGI,
-            crate::rendering::renderer::GiMethod::RTGIOneBounce => GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE,
+            crate::rendering::renderer::GiMethod::RTGIOneBounce => {
+                GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE
+            }
             crate::rendering::renderer::GiMethod::DDGI => GI_RESOLVE_METHOD_DDGI,
         };
         // If probe GI is requested, make it a real automatic engine feature instead of
@@ -7352,7 +8414,21 @@ impl WgpuRenderer {
         let sdfgi_ready = self.gi_cache.has_sdfgi_volume && !self.gi_cache.dirty;
         // These SDFGI pipelines are stored directly as `wgpu::ComputePipeline`, not `Option<_>`.
         // If the renderer exists, the pipelines exist; there is no `.is_some()` check to do here.
-        let sdfgi_available_this_frame = matches!(policy.gi, crate::rendering::renderer::GiMethod::SDFGI);
+        let sdfgi_available_this_frame =
+            matches!(policy.gi, crate::rendering::renderer::GiMethod::SDFGI);
+        let ddgi_resources_ready = self.ddgi_trace_update_bind_group.is_some()
+            && self.ddgi_irradiance_update_bind_group.is_some()
+            && self.ddgi_distance_update_bind_group.is_some()
+            && self.ddgi_border_fixup_bind_group.is_some()
+            && self.ddgi_relocate_bind_group.is_some()
+            && self.ddgi_classify_bind_group.is_some()
+            && self.ddgi_trace_pipeline.is_some()
+            && self.ddgi_irradiance_update_pipeline.is_some()
+            && self.ddgi_distance_update_pipeline.is_some()
+            && self.ddgi_border_fixup_pipeline.is_some()
+            && self.ddgi_relocate_pipeline.is_some()
+            && self.ddgi_classify_pipeline.is_some();
+        dispatch_ddgi &= !self.is_2d && !self.safe_shader_mode && ddgi_resources_ready;
         if sdfgi_available_this_frame && !sdfgi_ready {
             dispatch_sdfgi = true;
         }
@@ -7380,12 +8456,17 @@ impl WgpuRenderer {
             gi_uses_sky_irradiance_fallback = true;
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
         }
-        if gi_resolve_method == GI_RESOLVE_METHOD_SDFGI && !sdfgi_ready && !sdfgi_available_this_frame {
+        if gi_resolve_method == GI_RESOLVE_METHOD_SDFGI
+            && !sdfgi_ready
+            && !sdfgi_available_this_frame
+        {
             gi_uses_sky_irradiance_fallback = true;
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
             dispatch_sdfgi = false;
         }
-        if gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE && self.hybrid_rt_gi_pipeline.is_none() {
+        if gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE
+            && self.hybrid_rt_gi_pipeline.is_none()
+        {
             gi_uses_sky_irradiance_fallback = true;
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
             dispatch_hybrid_rtgi = false;
@@ -7393,6 +8474,7 @@ impl WgpuRenderer {
         if gi_resolve_method == GI_RESOLVE_METHOD_DDGI && self.gi_resolve_pipeline.is_none() {
             gi_uses_sky_irradiance_fallback = true;
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
+            dispatch_ddgi = false;
         }
         if gi_requested_cache_data
             && !baked_gi_ready
@@ -7472,7 +8554,9 @@ impl WgpuRenderer {
         let mut feature_status = crate::rendering::renderer::RendererHybridFeatureStatus {
             pathtrace_primary_active: cinematic_pipeline_ready && uses_path_traced_primary,
             requested_primary_visibility_method: policy.primary_visibility,
-            active_primary_visibility_method: if cinematic_pipeline_ready && uses_path_traced_primary {
+            active_primary_visibility_method: if cinematic_pipeline_ready
+                && uses_path_traced_primary
+            {
                 crate::rendering::renderer::PrimaryVisibilityMethod::PathTraced
             } else if cinematic_pipeline_ready && uses_raytraced_primary {
                 crate::rendering::renderer::PrimaryVisibilityMethod::Raytraced
@@ -7498,7 +8582,9 @@ impl WgpuRenderer {
                 crate::rendering::renderer::TransparencyMethod::Raytraced => {
                     crate::rendering::renderer::TransparencyMethod::ScreenSpaceRefraction
                 }
-                crate::rendering::renderer::TransparencyMethod::PathTraced => crate::rendering::renderer::TransparencyMethod::RasterAlpha,
+                crate::rendering::renderer::TransparencyMethod::PathTraced => {
+                    crate::rendering::renderer::TransparencyMethod::RasterAlpha
+                }
                 method => method,
             },
             ..Default::default()
@@ -7529,11 +8615,12 @@ impl WgpuRenderer {
                 crate::rendering::renderer::ReflectionMethod::SSR
                     | crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
             ) && self.ssr_pipeline.is_some();
-            feature_status.hybrid_rt_reflections_active = matches!(
-                policy.reflections,
-                crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
-                    | crate::rendering::renderer::ReflectionMethod::Raytraced
-            ) && self.hybrid_rt_reflection_pipeline.is_some();
+            feature_status.hybrid_rt_reflections_active =
+                matches!(
+                    policy.reflections,
+                    crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
+                        | crate::rendering::renderer::ReflectionMethod::Raytraced
+                ) && self.hybrid_rt_reflection_pipeline.is_some();
             feature_status.hybrid_rtgi_active =
                 dispatch_hybrid_rtgi && self.hybrid_rt_gi_pipeline.is_some();
             if matches!(
@@ -7542,10 +8629,14 @@ impl WgpuRenderer {
                     | crate::rendering::renderer::ReflectionMethod::SsrThenRtFallback
             ) && self.ssr_pipeline.is_none()
             {
-                render_log("SSR pipeline unavailable; compositor will sample transparent SSR fallback");
+                render_log(
+                    "SSR pipeline unavailable; compositor will sample transparent SSR fallback",
+                );
             }
             if dispatch_hybrid_rtgi && self.hybrid_rt_gi_pipeline.is_none() {
-                render_log("RTGI producer pipeline unavailable; GI resolve will use black RTGI fallback");
+                render_log(
+                    "RTGI producer pipeline unavailable; GI resolve will use black RTGI fallback",
+                );
             }
             feature_status.active_reflection_method = if feature_status.hybrid_rt_reflections_active
                 && feature_status.ssr_reflections_active
@@ -7609,28 +8700,41 @@ impl WgpuRenderer {
         } else {
             crate::rendering::renderer::ShadowMethod::Off
         };
-        if feature_status.requested_primary_visibility_method != feature_status.active_primary_visibility_method {
-            feature_status.primary_visibility_fallback_reason = pipeline_reason(cinematic_pipeline_ready);
+        if feature_status.requested_primary_visibility_method
+            != feature_status.active_primary_visibility_method
+        {
+            feature_status.primary_visibility_fallback_reason =
+                pipeline_reason(cinematic_pipeline_ready);
         }
         if feature_status.requested_shadow_method != feature_status.active_shadow_method {
-            feature_status.shadow_fallback_reason = pipeline_reason(self.hybrid_rt_shadow_pipeline.is_some());
+            feature_status.shadow_fallback_reason =
+                pipeline_reason(self.hybrid_rt_shadow_pipeline.is_some());
         }
         if feature_status.requested_reflection_method != feature_status.active_reflection_method {
             feature_status.reflection_fallback_reason = pipeline_reason(
                 self.ssr_pipeline.is_some() || self.hybrid_rt_reflection_pipeline.is_some(),
             );
         }
-        if feature_status.requested_transparency_method != feature_status.active_transparency_method {
-            feature_status.transparency_fallback_reason = pipeline_reason(self.hybrid_rt_transparency_pipeline.is_some());
+        if feature_status.requested_transparency_method != feature_status.active_transparency_method
+        {
+            feature_status.transparency_fallback_reason =
+                pipeline_reason(self.hybrid_rt_transparency_pipeline.is_some());
         }
         if gi_uses_sky_irradiance_fallback {
-            feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingAuthoredGiData;
-        } else if policy.gi == crate::rendering::renderer::GiMethod::BakedLightmap && !baked_gi_ready {
-            feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingLightmaps;
-        } else if policy.gi == crate::rendering::renderer::GiMethod::LightProbes && !probe_gi_ready {
-            feature_status.gi_fallback_reason = crate::rendering::renderer::RendererFallbackReason::MissingProbes;
+            feature_status.gi_fallback_reason =
+                crate::rendering::renderer::RendererFallbackReason::MissingAuthoredGiData;
+        } else if policy.gi == crate::rendering::renderer::GiMethod::BakedLightmap
+            && !baked_gi_ready
+        {
+            feature_status.gi_fallback_reason =
+                crate::rendering::renderer::RendererFallbackReason::MissingLightmaps;
+        } else if policy.gi == crate::rendering::renderer::GiMethod::LightProbes && !probe_gi_ready
+        {
+            feature_status.gi_fallback_reason =
+                crate::rendering::renderer::RendererFallbackReason::MissingProbes;
         } else if policy.gi != feature_status.active_gi_method {
-            feature_status.gi_fallback_reason = pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
+            feature_status.gi_fallback_reason =
+                pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
         }
 
         let effective_raytraced_shadows_param =
@@ -7793,7 +8897,9 @@ impl WgpuRenderer {
             // the current sample to avoid runaway ghosting.
             temporal_blend: if gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE {
                 self.post_fx_uniforms.gi_temporal_blend.max(0.72).min(0.90)
-            } else { 0.0 },
+            } else {
+                0.0
+            },
             baked_blend: 1.0,
             probe_blend: 1.0,
             sdfgi_blend: 1.0,
@@ -7803,7 +8909,10 @@ impl WgpuRenderer {
                 | ((self.gi_cache.has_lightmap_uvs as u32) << 1)
                 | ((self.gi_cache.has_probe_data as u32) << 2)
                 | (((sdfgi_ready || dispatch_sdfgi) as u32) << 3)
-                | (((self.ddgi_irradiance_atlas_view.is_some() && self.ddgi_distance_moments_atlas_view.is_some()) as u32) << 4),
+                | (((self.ddgi_irradiance_atlas_view.is_some()
+                    && self.ddgi_distance_moments_atlas_view.is_some())
+                    as u32)
+                    << 4),
             _pad1: [0; 5],
             fallback_irradiance: [
                 (params.skycolor[0] * 0.28).max(0.04),
@@ -7824,8 +8933,15 @@ impl WgpuRenderer {
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
         };
-        if self.prev_gi_resolve_params.map_or(true, |p| p != gi_resolve_params) {
-            self.queue.write_buffer(&self.gi_resolve_params_buffer, 0, bytemuck::bytes_of(&gi_resolve_params));
+        if self
+            .prev_gi_resolve_params
+            .map_or(true, |p| p != gi_resolve_params)
+        {
+            self.queue.write_buffer(
+                &self.gi_resolve_params_buffer,
+                0,
+                bytemuck::bytes_of(&gi_resolve_params),
+            );
             self.prev_gi_resolve_params = Some(gi_resolve_params);
         }
         if self
@@ -8000,22 +9116,34 @@ impl WgpuRenderer {
                     Some(RenderPassColorAttachment {
                         view: &self.ambient_occlusion_view,
                         resolve_target: None,
-                        ops: Operations { load: LoadOp::Clear(Color::WHITE), store: StoreOp::Store },
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::WHITE),
+                            store: StoreOp::Store,
+                        },
                     }),
                     Some(RenderPassColorAttachment {
                         view: &self.ssr_color_view,
                         resolve_target: None,
-                        ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
                     }),
                     Some(RenderPassColorAttachment {
                         view: &self.hybrid_rt_reflection_view,
                         resolve_target: None,
-                        ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
                     }),
                     Some(RenderPassColorAttachment {
                         view: &self.gi_buffer_view,
                         resolve_target: None,
-                        ops: Operations { load: LoadOp::Clear(Color::BLACK), store: StoreOp::Store },
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
                     }),
                 ],
                 depth_stencil_attachment: None,
@@ -8767,7 +9895,12 @@ impl WgpuRenderer {
                     inv_view_proj: params.inv_view_proj,
                     view_proj: current_vp.to_cols_array_2d(),
                     prev_view_proj: self.prev_view_proj,
-                    camera_pos: [params.camera_pos[0], params.camera_pos[1], params.camera_pos[2], 0.0],
+                    camera_pos: [
+                        params.camera_pos[0],
+                        params.camera_pos[1],
+                        params.camera_pos[2],
+                        0.0,
+                    ],
                     tex_size: [self.width as f32, self.height as f32],
                     max_distance: params.reflection_max_distance.max(0.01),
                     thickness: ssr_quality.thickness,
@@ -8780,7 +9913,11 @@ impl WgpuRenderer {
                     enabled: 1,
                     _pad: 0,
                 };
-                self.queue.write_buffer(&self.ssr_params_buffer, 0, bytemuck::bytes_of(&ssr_params));
+                self.queue.write_buffer(
+                    &self.ssr_params_buffer,
+                    0,
+                    bytemuck::bytes_of(&ssr_params),
+                );
                 if let Some(pipeline) = &self.ssr_pipeline {
                     let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                         label: Some("ssr_reflections"),
@@ -8827,26 +9964,119 @@ impl WgpuRenderer {
                     cpass.dispatch_workgroups(x, y, 1);
                 }
             }
+            if dispatch_ddgi {
+                if let (
+                    Some(trace_pipeline),
+                    Some(irradiance_pipeline),
+                    Some(distance_pipeline),
+                    Some(border_pipeline),
+                    Some(relocate_pipeline),
+                    Some(classify_pipeline),
+                    Some(trace_bg),
+                    Some(irradiance_bg),
+                    Some(distance_bg),
+                    Some(border_bg),
+                    Some(relocate_bg),
+                    Some(classify_bg),
+                ) = (
+                    self.ddgi_trace_pipeline.as_ref(),
+                    self.ddgi_irradiance_update_pipeline.as_ref(),
+                    self.ddgi_distance_update_pipeline.as_ref(),
+                    self.ddgi_border_fixup_pipeline.as_ref(),
+                    self.ddgi_relocate_pipeline.as_ref(),
+                    self.ddgi_classify_pipeline.as_ref(),
+                    self.ddgi_trace_update_bind_group.as_ref(),
+                    self.ddgi_irradiance_update_bind_group.as_ref(),
+                    self.ddgi_distance_update_bind_group.as_ref(),
+                    self.ddgi_border_fixup_bind_group.as_ref(),
+                    self.ddgi_relocate_bind_group.as_ref(),
+                    self.ddgi_classify_bind_group.as_ref(),
+                ) {
+                    let volume = self.prev_ddgi_volume_desc.unwrap_or_default();
+                    let total_probes = volume.probe_counts[0]
+                        .saturating_mul(volume.probe_counts[1])
+                        .saturating_mul(volume.probe_counts[2])
+                        .max(1);
+                    let update_budget = volume.update_budget.max(1).min(total_probes);
+                    let ray_workgroups = update_budget
+                        .saturating_mul(volume.rays_per_probe.max(1))
+                        .div_ceil(64)
+                        .max(1);
+                    let probe_workgroups = update_budget.div_ceil(64).max(1);
+                    let irr_x = volume.irradiance_texture_dimensions[0].div_ceil(8).max(1);
+                    let irr_y = volume.irradiance_texture_dimensions[1].div_ceil(8).max(1);
+                    let dist_x = volume.distance_texture_dimensions[0].div_ceil(8).max(1);
+                    let dist_y = volume.distance_texture_dimensions[1].div_ceil(8).max(1);
+                    let classify_relocate = self.ddgi_resources_dirty || self.gi_cache.dirty;
+                    let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("ddgi_update"),
+                        timestamp_writes: profiler_query_set.map(|query_set| {
+                            ComputePassTimestampWrites {
+                                query_set,
+                                beginning_of_pass_write_index: Some(PROF_DDGI_BEGIN),
+                                end_of_pass_write_index: Some(PROF_DDGI_END),
+                            }
+                        }),
+                    });
+                    profiled_ddgi = profiler_query_set.is_some();
+                    if classify_relocate {
+                        cpass.set_pipeline(classify_pipeline);
+                        cpass.set_bind_group(0, classify_bg, &[]);
+                        cpass.dispatch_workgroups(probe_workgroups, 1, 1);
+                        cpass.set_pipeline(relocate_pipeline);
+                        cpass.set_bind_group(0, relocate_bg, &[]);
+                        cpass.dispatch_workgroups(probe_workgroups, 1, 1);
+                    }
+                    cpass.set_pipeline(trace_pipeline);
+                    cpass.set_bind_group(0, &self.hybrid_rt_gi_bind_group, &[]);
+                    cpass.set_bind_group(1, trace_bg, &[]);
+                    cpass.dispatch_workgroups(ray_workgroups, 1, 1);
+                    cpass.set_pipeline(irradiance_pipeline);
+                    cpass.set_bind_group(0, irradiance_bg, &[]);
+                    cpass.dispatch_workgroups(irr_x, irr_y, 1);
+                    cpass.set_pipeline(distance_pipeline);
+                    cpass.set_bind_group(0, distance_bg, &[]);
+                    cpass.dispatch_workgroups(dist_x, dist_y, 1);
+                    cpass.set_pipeline(border_pipeline);
+                    cpass.set_bind_group(0, border_bg, &[]);
+                    cpass.dispatch_workgroups(irr_x.max(dist_x), irr_y.max(dist_y), 1);
+                }
+            }
             if let Some(pipeline) = &self.gi_resolve_pipeline {
-                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("gi_resolve"), timestamp_writes: None });
+                let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("gi_resolve"),
+                    timestamp_writes: None,
+                });
                 cpass.set_pipeline(pipeline);
                 cpass.set_bind_group(0, &self.gi_resolve_bind_group, &[]);
                 cpass.dispatch_workgroups(x, y, 1);
                 feature_status.active_gi_method = match gi_resolve_method {
-                    GI_RESOLVE_METHOD_BAKED_LIGHTMAP => crate::rendering::renderer::GiMethod::BakedLightmap,
-                    GI_RESOLVE_METHOD_LIGHT_PROBES => crate::rendering::renderer::GiMethod::LightProbes,
+                    GI_RESOLVE_METHOD_BAKED_LIGHTMAP => {
+                        crate::rendering::renderer::GiMethod::BakedLightmap
+                    }
+                    GI_RESOLVE_METHOD_LIGHT_PROBES => {
+                        crate::rendering::renderer::GiMethod::LightProbes
+                    }
                     GI_RESOLVE_METHOD_SDFGI => crate::rendering::renderer::GiMethod::SDFGI,
-                    GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE => crate::rendering::renderer::GiMethod::RTGIOneBounce,
+                    GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE => {
+                        crate::rendering::renderer::GiMethod::RTGIOneBounce
+                    }
                     GI_RESOLVE_METHOD_DDGI => crate::rendering::renderer::GiMethod::DDGI,
-                    GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK => crate::rendering::renderer::GiMethod::SkyIrradianceFallback,
+                    GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK => {
+                        crate::rendering::renderer::GiMethod::SkyIrradianceFallback
+                    }
                     _ => crate::rendering::renderer::GiMethod::Off,
                 };
-                feature_status.hybrid_rtgi_active = gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE;
+                feature_status.hybrid_rtgi_active =
+                    gi_resolve_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE;
             } else {
                 feature_status.active_gi_method = crate::rendering::renderer::GiMethod::Off;
                 feature_status.hybrid_rtgi_active = false;
-                if feature_status.gi_fallback_reason == crate::rendering::renderer::RendererFallbackReason::None {
-                    feature_status.gi_fallback_reason = pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
+                if feature_status.gi_fallback_reason
+                    == crate::rendering::renderer::RendererFallbackReason::None
+                {
+                    feature_status.gi_fallback_reason =
+                        pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
                 }
             }
             {
@@ -8880,9 +10110,23 @@ impl WgpuRenderer {
             // hybrid_rt_reflection_history. No pass copies into another reflection history.
             if feature_status.ssr_reflections_active {
                 encoder.copy_texture_to_texture(
-                    ImageCopyTexture { texture: &self.ssr_color_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-                    ImageCopyTexture { texture: &self.ssr_history_texture, mip_level: 0, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-                    Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+                    ImageCopyTexture {
+                        texture: &self.ssr_color_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    ImageCopyTexture {
+                        texture: &self.ssr_history_texture,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    Extent3d {
+                        width: self.width,
+                        height: self.height,
+                        depth_or_array_layers: 1,
+                    },
                 );
             }
             if feature_status.hybrid_rt_reflections_active {
@@ -9455,6 +10699,7 @@ impl WgpuRenderer {
                     profiled_rt_reflection,
                 ),
                 (PROF_RT_GI_BEGIN, PROF_RT_GI_END, profiled_rt_gi),
+                (PROF_DDGI_BEGIN, PROF_DDGI_END, profiled_ddgi),
                 (PROF_DENOISE_BEGIN, PROF_DENOISE_END, profiled_denoise),
                 (PROF_CLOUDS_BEGIN, PROF_CLOUDS_END, profiled_clouds),
             ] {
@@ -9469,38 +10714,46 @@ impl WgpuRenderer {
                     });
                 }
             }
-            encoder.resolve_query_set(query_set, 0..12, query_buffer, 0);
+            encoder.resolve_query_set(query_set, 0..14, query_buffer, 0);
             encoder.copy_buffer_to_buffer(
                 query_buffer,
                 0,
                 readback_buffer,
                 0,
-                12 * std::mem::size_of::<u64>() as u64,
+                14 * std::mem::size_of::<u64>() as u64,
             );
         }
 
         self.queue.submit(Some(encoder.finish()));
         self.device.poll(wgpu::Maintain::Poll);
         stats.total_frame_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
-        if feature_status.requested_ambient_occlusion_method != feature_status.active_ambient_occlusion_method
-            && feature_status.ambient_occlusion_fallback_reason == crate::rendering::renderer::RendererFallbackReason::None
+        if feature_status.requested_ambient_occlusion_method
+            != feature_status.active_ambient_occlusion_method
+            && feature_status.ambient_occlusion_fallback_reason
+                == crate::rendering::renderer::RendererFallbackReason::None
         {
-            feature_status.ambient_occlusion_fallback_reason =
-                pipeline_reason(self.ambient_occlusion_pipeline.is_some() || self.rtao_pipeline.is_some());
+            feature_status.ambient_occlusion_fallback_reason = pipeline_reason(
+                self.ambient_occlusion_pipeline.is_some() || self.rtao_pipeline.is_some(),
+            );
         }
         if feature_status.requested_gi_method != feature_status.active_gi_method
-            && feature_status.gi_fallback_reason == crate::rendering::renderer::RendererFallbackReason::None
+            && feature_status.gi_fallback_reason
+                == crate::rendering::renderer::RendererFallbackReason::None
         {
-            feature_status.gi_fallback_reason = pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
+            feature_status.gi_fallback_reason =
+                pipeline_reason(self.hybrid_rt_gi_pipeline.is_some());
         }
-        feature_status.color_texture_contributes = final_compositor_wrote_screen || !uses_rt_primary;
-        feature_status.ambient_occlusion_texture_contributes = feature_status.ambient_occlusion_active;
+        feature_status.color_texture_contributes =
+            final_compositor_wrote_screen || !uses_rt_primary;
+        feature_status.ambient_occlusion_texture_contributes =
+            feature_status.ambient_occlusion_active;
         feature_status.ssr_color_texture_contributes = feature_status.ssr_reflections_active;
         feature_status.gi_buffer_texture_contributes = !matches!(
             feature_status.active_gi_method,
             crate::rendering::renderer::GiMethod::Off
         );
-        feature_status.screen_texture_contributes = final_compositor_wrote_screen || uses_rt_primary;
+        feature_status.screen_texture_contributes =
+            final_compositor_wrote_screen || uses_rt_primary;
         feature_status.final_source_texture = if final_compositor_wrote_screen || uses_rt_primary {
             "screen_texture"
         } else {
@@ -9547,6 +10800,7 @@ impl WgpuRenderer {
                     profiled_rt_reflection,
                 );
                 stats.rt_gi_pass_ms = elapsed_ms(PROF_RT_GI_BEGIN, PROF_RT_GI_END, profiled_rt_gi);
+                stats.ddgi_pass_ms = elapsed_ms(PROF_DDGI_BEGIN, PROF_DDGI_END, profiled_ddgi);
                 stats.denoise_ms =
                     elapsed_ms(PROF_DENOISE_BEGIN, PROF_DENOISE_END, profiled_denoise);
                 stats.clouds_fog_atmosphere_ms =
@@ -9597,14 +10851,25 @@ impl WgpuRenderer {
     pub fn draw_profiler_hud(&self, ctx: &egui::Context) {
         fn fallback_suffix(reason: crate::rendering::renderer::RendererFallbackReason) -> String {
             let label = reason.hud_label();
-            if label.is_empty() { String::new() } else { format!(" [{label}]") }
+            if label.is_empty() {
+                String::new()
+            } else {
+                format!(" [{label}]")
+            }
         }
-        fn contribution_label(active: bool, reason: crate::rendering::renderer::RendererFallbackReason) -> String {
+        fn contribution_label(
+            active: bool,
+            reason: crate::rendering::renderer::RendererFallbackReason,
+        ) -> String {
             if active {
                 "active".to_string()
             } else {
                 let suffix = fallback_suffix(reason);
-                if suffix.is_empty() { "fallback".to_string() } else { format!("fallback{}", suffix) }
+                if suffix.is_empty() {
+                    "fallback".to_string()
+                } else {
+                    format!("fallback{}", suffix)
+                }
             }
         }
         let s = self.profiler_stats();
@@ -9644,11 +10909,12 @@ impl WgpuRenderer {
                     s.feature_status.ambient_occlusion_fallback
                 ));
                 ui.label(format!(
-                    "GI: requested {:?} / active {:?}{} ({:.2} ms)",
+                    "GI: requested {:?} / active {:?}{} (RTGI {:.2} ms, DDGI {:.2} ms)",
                     s.feature_status.requested_gi_method,
                     s.feature_status.active_gi_method,
                     fallback_suffix(s.feature_status.gi_fallback_reason),
-                    s.rt_gi_pass_ms
+                    s.rt_gi_pass_ms,
+                    s.ddgi_pass_ms
                 ));
                 ui.label(format!(
                     "Transparency: requested {:?} / active {:?}{}",
