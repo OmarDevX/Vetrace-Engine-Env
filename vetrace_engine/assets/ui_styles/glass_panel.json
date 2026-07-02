@@ -1,0 +1,99 @@
+{
+  "name": "Glass Panel",
+  "version": "1.0.0",
+  "description": "A modern glass panel with blur effects and transparency",
+  "style": {
+    "background": {
+      "color": [1.0, 1.0, 1.0, 0.1],
+      "image": null,
+      "image_mode": "Stretch",
+      "gradient": null,
+      "opacity": 0.8
+    },
+    "border": {
+      "width": 1.0,
+      "color": [1.0, 1.0, 1.0, 0.3],
+      "radius": {
+        "top_left": 12.0,
+        "top_right": 12.0,
+        "bottom_right": 12.0,
+        "bottom_left": 12.0
+      },
+      "style": "Solid",
+      "dash_pattern": [5.0, 5.0]
+    },
+    "shadow": {
+      "enabled": true,
+      "offset": [0.0, 4.0],
+      "blur_radius": 8.0,
+      "spread_radius": 0.0,
+      "color": [0.0, 0.0, 0.0, 0.2],
+      "inset": false
+    },
+    "glass": {
+      "enabled": true,
+      "blur_intensity": 15.0,
+      "tint": [1.0, 1.0, 1.0, 0.1],
+      "noise_texture": null,
+      "noise_intensity": 0.05,
+      "frost_intensity": 0.2
+    },
+    "animation": {
+      "transition_duration": 0.3,
+      "easing": "EaseInOut",
+      "animated_properties": [
+        "Opacity",
+        "GlassBlur",
+        "BorderColor"
+      ],
+      "hover_animation": null
+    },
+    "states": {
+      "hover": {
+        "glass": {
+          "blur_intensity": 20.0,
+          "tint": [1.0, 1.0, 1.0, 0.15]
+        },
+        "border": {
+          "color": [1.0, 1.0, 1.0, 0.5]
+        }
+      }
+    }
+  },
+  "variants": {
+    "dark": {
+      "background": {
+        "color": [0.0, 0.0, 0.0, 0.2]
+      },
+      "border": {
+        "color": [0.0, 0.0, 0.0, 0.4]
+      },
+      "glass": {
+        "tint": [0.0, 0.0, 0.0, 0.1]
+      }
+    },
+    "colored": {
+      "background": {
+        "color": [0.2, 0.4, 0.8, 0.15]
+      },
+      "border": {
+        "color": [0.4, 0.6, 1.0, 0.4]
+      },
+      "glass": {
+        "tint": [0.2, 0.4, 0.8, 0.1]
+      }
+    },
+    "minimal": {
+      "border": {
+        "width": 0.0
+      },
+      "shadow": {
+        "enabled": false
+      },
+      "glass": {
+        "blur_intensity": 10.0,
+        "frost_intensity": 0.0
+      }
+    }
+  }
+}
