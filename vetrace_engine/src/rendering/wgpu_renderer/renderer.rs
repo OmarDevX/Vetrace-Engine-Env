@@ -374,6 +374,24 @@ pub struct WgpuRenderer {
     profiler_timestamp_period: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DdgiRefreshMode {
+    Incremental,
+    PartialRefresh,
+    FullClear,
+}
+
+impl Default for DdgiRefreshMode {
+    fn default() -> Self {
+        Self::Incremental
+    }
+}
+
+struct DdgiEnsureResult {
+    ready: bool,
+    refresh: DdgiRefreshMode,
+}
+
 #[derive(Default)]
 struct GiCacheState {
     dirty: bool,
@@ -389,6 +407,11 @@ struct GiCacheState {
     has_lightmap_uvs: bool,
     has_probe_data: bool,
     has_sdfgi_volume: bool,
+    has_ddgi_volume: bool,
+    ddgi_dirty: bool,
+    ddgi_scene_hash: u64,
+    ddgi_settings_hash: u64,
+    ddgi_probe_update_cursor: u32,
     auto_probe_hash: u64,
     auto_probe_probe_count: u32,
 }
@@ -396,6 +419,14 @@ struct GiCacheState {
 impl GiCacheState {
     fn mark_dirty(&mut self) {
         self.dirty = true;
+        self.ddgi_dirty = true;
+    }
+
+    fn mark_ddgi_ready(&mut self, settings_hash: u64) {
+        self.has_ddgi_volume = true;
+        self.ddgi_dirty = false;
+        self.ddgi_scene_hash = self.static_scene_hash;
+        self.ddgi_settings_hash = settings_hash;
     }
 }
 

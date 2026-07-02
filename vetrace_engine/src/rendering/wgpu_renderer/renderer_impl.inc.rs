@@ -935,6 +935,388 @@ impl WgpuRenderer {
         Ok(())
     }
 
+    fn ddgi_volume_desc(params: &RenderParams) -> DdgiVolumeDesc {
+        let quality = params.gi_quality.max(1);
+        let probe_counts = match quality {
+            0 | 1 => [8, 4, 8],
+            2 => [10, 5, 10],
+            3 => [12, 6, 12],
+            _ => [16, 8, 16],
+        };
+        let spacing_value = match params.profile {
+            crate::rendering::renderer::RendererProfile::Low => 5.0,
+            crate::rendering::renderer::RendererProfile::Indoor60FPS => 4.0,
+            crate::rendering::renderer::RendererProfile::Ultra => 2.75,
+            crate::rendering::renderer::RendererProfile::Cinematic => 2.25,
+            _ => 3.25,
+        };
+        let spacing = [spacing_value; 3];
+        let camera = Vec3::from_array(params.camera_pos);
+        let half = Vec3::new(
+            (probe_counts[0] - 1) as f32 * spacing[0],
+            (probe_counts[1] - 1) as f32 * spacing[1],
+            (probe_counts[2] - 1) as f32 * spacing[2],
+        ) * 0.5;
+        let snapped = (camera / spacing_value).floor() * spacing_value;
+        let origin = (snapped - half).to_array();
+        let rays_per_probe = match quality {
+            0 | 1 => 64,
+            2 => 96,
+            3 => 144,
+            _ => 192,
+        };
+        DdgiVolumeDesc {
+            origin,
+            probe_counts,
+            spacing,
+            irradiance_texture_dimensions: [
+                probe_counts[0] * 8,
+                probe_counts[1] * probe_counts[2] * 8,
+            ],
+            distance_texture_dimensions: [
+                probe_counts[0] * 16,
+                probe_counts[1] * probe_counts[2] * 16,
+            ],
+            hysteresis: if quality >= 4 { 0.94 } else { 0.97 },
+            max_ray_distance: params.gi_max_distance.max(spacing_value),
+            rays_per_probe,
+            update_budget: (probe_counts[0] * probe_counts[1] * probe_counts[2] / 4).max(64),
+            flags: DDGI_VOLUME_FLAG_SCROLLING
+                | DDGI_VOLUME_FLAG_RELOCATION
+                | DDGI_VOLUME_FLAG_CLASSIFICATION
+                | DDGI_VOLUME_FLAG_DEPTH_MOMENTS,
+            ..Default::default()
+        }
+    }
+
+    fn ddgi_settings_hash(&self, params: &RenderParams, desc: &DdgiVolumeDesc) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.gi_cache.static_scene_hash.hash(&mut hasher);
+        for v in desc.origin {
+            v.to_bits().hash(&mut hasher);
+        }
+        for v in desc.probe_counts {
+            v.hash(&mut hasher);
+        }
+        for v in desc.spacing {
+            v.to_bits().hash(&mut hasher);
+        }
+        desc.rays_per_probe.hash(&mut hasher);
+        desc.max_ray_distance.to_bits().hash(&mut hasher);
+        desc.hysteresis.to_bits().hash(&mut hasher);
+        (params.profile as u32).hash(&mut hasher);
+        params.gi_quality.hash(&mut hasher);
+        for v in params.skycolor {
+            v.to_bits().hash(&mut hasher);
+        }
+        for v in params.dir_light_dir {
+            v.to_bits().hash(&mut hasher);
+        }
+        for v in params.dir_light_color {
+            v.to_bits().hash(&mut hasher);
+        }
+        params.dir_light_intensity.to_bits().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn ensure_ddgi_volume(&mut self, params: &RenderParams) -> DdgiEnsureResult {
+        let desc = Self::ddgi_volume_desc(params);
+        let settings_hash = self.ddgi_settings_hash(params, &desc);
+        let previous = self.prev_ddgi_volume_desc;
+        let resources_missing = self.ddgi_irradiance_atlas_view.is_none()
+            || self.ddgi_distance_moments_atlas_view.is_none()
+            || self.ddgi_probe_state_buffer.is_none()
+            || self.ddgi_probe_relocation_buffer.is_none()
+            || self.ddgi_ray_output_view.is_none()
+            || self.ddgi_ray_output_buffer.is_none()
+            || self.ddgi_trace_update_params_buffer.is_none()
+            || self.ddgi_resolve_params_buffer.is_none();
+        let dimensions_changed = previous.map_or(true, |p| {
+            p.probe_counts != desc.probe_counts
+                || p.spacing != desc.spacing
+                || p.irradiance_texture_dimensions != desc.irradiance_texture_dimensions
+                || p.distance_texture_dimensions != desc.distance_texture_dimensions
+                || p.rays_per_probe != desc.rays_per_probe
+        });
+        let origin_moved = previous.map_or(false, |p| p.origin != desc.origin);
+        let scene_or_settings_changed = self.gi_cache.ddgi_scene_hash
+            != self.gi_cache.static_scene_hash
+            || self.gi_cache.ddgi_settings_hash != settings_hash
+            || self.gi_cache.ddgi_dirty;
+        let mut refresh = if resources_missing || dimensions_changed || scene_or_settings_changed {
+            DdgiRefreshMode::FullClear
+        } else if origin_moved {
+            DdgiRefreshMode::PartialRefresh
+        } else {
+            DdgiRefreshMode::Incremental
+        };
+        if resources_missing || dimensions_changed {
+            let tex_usage = TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING
+                | TextureUsages::COPY_DST;
+            let make_tex = |label: &str, dims: [u32; 2], format: TextureFormat| {
+                self.device.create_texture(&TextureDescriptor {
+                    label: Some(label),
+                    size: Extent3d {
+                        width: dims[0].max(1),
+                        height: dims[1].max(1),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format,
+                    usage: tex_usage,
+                    view_formats: &[],
+                })
+            };
+            let irr = make_tex(
+                "ddgi_irradiance_atlas",
+                desc.irradiance_texture_dimensions,
+                TextureFormat::Rgba16Float,
+            );
+            self.ddgi_irradiance_atlas_view =
+                Some(irr.create_view(&TextureViewDescriptor::default()));
+            self.ddgi_irradiance_atlas_texture = Some(irr);
+            let dist = make_tex(
+                "ddgi_distance_moments_atlas",
+                desc.distance_texture_dimensions,
+                TextureFormat::Rg16Float,
+            );
+            self.ddgi_distance_moments_atlas_view =
+                Some(dist.create_view(&TextureViewDescriptor::default()));
+            self.ddgi_distance_moments_atlas_texture = Some(dist);
+            let ray = make_tex(
+                "ddgi_ray_output",
+                [desc.rays_per_probe.max(1), desc.update_budget.max(1)],
+                TextureFormat::Rgba16Float,
+            );
+            self.ddgi_ray_output_view = Some(ray.create_view(&TextureViewDescriptor::default()));
+            self.ddgi_ray_output_texture = Some(ray);
+            let total_probes = desc.probe_counts[0]
+                .saturating_mul(desc.probe_counts[1])
+                .saturating_mul(desc.probe_counts[2])
+                .max(1);
+            self.ddgi_probe_state_buffer = Some(self.device.create_buffer(&BufferDescriptor {
+                label: Some("ddgi_probe_state"),
+                size: total_probes as u64 * 16,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+            self.ddgi_probe_relocation_buffer =
+                Some(self.device.create_buffer(&BufferDescriptor {
+                    label: Some("ddgi_probe_relocation"),
+                    size: total_probes as u64 * 16,
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+            self.ddgi_ray_output_buffer = Some(self.device.create_buffer(&BufferDescriptor {
+                label: Some("ddgi_ray_output_buffer"),
+                size: desc.update_budget.max(1) as u64 * desc.rays_per_probe.max(1) as u64 * 16,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+            self.ddgi_trace_update_params_buffer =
+                Some(self.device.create_buffer(&BufferDescriptor {
+                    label: Some("ddgi_trace_update_params"),
+                    size: std::mem::size_of::<DdgiTraceUpdateUniforms>() as u64,
+                    usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+            self.ddgi_resolve_params_buffer = Some(self.device.create_buffer(&BufferDescriptor {
+                label: Some("ddgi_resolve_params"),
+                size: std::mem::size_of::<DdgiResolveUniforms>() as u64,
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+            self.ddgi_bind_groups_dirty = true;
+            refresh = DdgiRefreshMode::FullClear;
+        }
+        let total_probes = desc.probe_counts[0]
+            .saturating_mul(desc.probe_counts[1])
+            .saturating_mul(desc.probe_counts[2])
+            .max(1);
+        if matches!(refresh, DdgiRefreshMode::FullClear) {
+            self.gi_cache.ddgi_probe_update_cursor = 0;
+        } else if matches!(refresh, DdgiRefreshMode::PartialRefresh) {
+            self.gi_cache.ddgi_probe_update_cursor = self
+                .gi_cache
+                .ddgi_probe_update_cursor
+                .saturating_sub(desc.update_budget)
+                .min(total_probes - 1);
+            self.gi_cache.ddgi_dirty = true;
+        } else {
+            self.gi_cache.ddgi_probe_update_cursor =
+                (self.gi_cache.ddgi_probe_update_cursor + desc.update_budget.max(1)) % total_probes;
+        }
+        if self.ddgi_bind_groups_dirty {
+            if let (
+                Some(params_buf),
+                Some(ray_view),
+                Some(irr_view),
+                Some(dist_view),
+                Some(state_buf),
+                Some(reloc_buf),
+            ) = (
+                self.ddgi_trace_update_params_buffer.as_ref(),
+                self.ddgi_ray_output_view.as_ref(),
+                self.ddgi_irradiance_atlas_view.as_ref(),
+                self.ddgi_distance_moments_atlas_view.as_ref(),
+                self.ddgi_probe_state_buffer.as_ref(),
+                self.ddgi_probe_relocation_buffer.as_ref(),
+            ) {
+                if let Some(layout) = &self.ddgi_trace_update_bind_group_layout {
+                    self.ddgi_trace_update_bind_group =
+                        Some(self.device.create_bind_group(&BindGroupDescriptor {
+                            label: Some("ddgi_trace_update_bg"),
+                            layout,
+                            entries: &[
+                                BindGroupEntry {
+                                    binding: 0,
+                                    resource: params_buf.as_entire_binding(),
+                                },
+                                BindGroupEntry {
+                                    binding: 1,
+                                    resource: state_buf.as_entire_binding(),
+                                },
+                                BindGroupEntry {
+                                    binding: 2,
+                                    resource: reloc_buf.as_entire_binding(),
+                                },
+                                BindGroupEntry {
+                                    binding: 3,
+                                    resource: BindingResource::TextureView(ray_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 4,
+                                    resource: BindingResource::TextureView(dist_view),
+                                },
+                            ],
+                        }));
+                }
+                for (layout, out, label, target) in [
+                    (
+                        self.ddgi_irradiance_update_bind_group_layout.as_ref(),
+                        &mut self.ddgi_irradiance_update_bind_group,
+                        "ddgi_irradiance_update_bg",
+                        irr_view,
+                    ),
+                    (
+                        self.ddgi_distance_update_bind_group_layout.as_ref(),
+                        &mut self.ddgi_distance_update_bind_group,
+                        "ddgi_distance_update_bg",
+                        dist_view,
+                    ),
+                ] {
+                    if let Some(layout) = layout {
+                        *out = Some(self.device.create_bind_group(&BindGroupDescriptor {
+                            label: Some(label),
+                            layout,
+                            entries: &[
+                                BindGroupEntry {
+                                    binding: 0,
+                                    resource: params_buf.as_entire_binding(),
+                                },
+                                BindGroupEntry {
+                                    binding: 1,
+                                    resource: BindingResource::TextureView(ray_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 2,
+                                    resource: BindingResource::TextureView(dist_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 3,
+                                    resource: BindingResource::TextureView(target),
+                                },
+                            ],
+                        }));
+                    }
+                }
+                if let Some(layout) = &self.ddgi_border_fixup_bind_group_layout {
+                    self.ddgi_border_fixup_bind_group =
+                        Some(self.device.create_bind_group(&BindGroupDescriptor {
+                            label: Some("ddgi_border_fixup_bg"),
+                            layout,
+                            entries: &[
+                                BindGroupEntry {
+                                    binding: 0,
+                                    resource: params_buf.as_entire_binding(),
+                                },
+                                BindGroupEntry {
+                                    binding: 1,
+                                    resource: BindingResource::TextureView(irr_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 2,
+                                    resource: BindingResource::TextureView(dist_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 3,
+                                    resource: BindingResource::TextureView(irr_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 4,
+                                    resource: BindingResource::TextureView(dist_view),
+                                },
+                            ],
+                        }));
+                }
+                for (layout, out, label) in [
+                    (
+                        self.ddgi_relocate_bind_group_layout.as_ref(),
+                        &mut self.ddgi_relocate_bind_group,
+                        "ddgi_relocate_bg",
+                    ),
+                    (
+                        self.ddgi_classify_bind_group_layout.as_ref(),
+                        &mut self.ddgi_classify_bind_group,
+                        "ddgi_classify_bg",
+                    ),
+                ] {
+                    if let Some(layout) = layout {
+                        *out = Some(self.device.create_bind_group(&BindGroupDescriptor {
+                            label: Some(label),
+                            layout,
+                            entries: &[
+                                BindGroupEntry {
+                                    binding: 0,
+                                    resource: params_buf.as_entire_binding(),
+                                },
+                                BindGroupEntry {
+                                    binding: 1,
+                                    resource: BindingResource::TextureView(irr_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 2,
+                                    resource: state_buf.as_entire_binding(),
+                                },
+                            ],
+                        }));
+                    }
+                }
+                self.ddgi_bind_groups_dirty = false;
+                self.recreate_gi_resolve_bind_group();
+            }
+        }
+        self.prev_ddgi_volume_desc = Some(desc);
+        self.ddgi_resources_dirty = matches!(
+            refresh,
+            DdgiRefreshMode::FullClear | DdgiRefreshMode::PartialRefresh
+        );
+        self.gi_cache.has_ddgi_volume = !self.ddgi_bind_groups_dirty;
+        if !self.ddgi_resources_dirty {
+            self.gi_cache.mark_ddgi_ready(settings_hash);
+        } else {
+            self.gi_cache.ddgi_scene_hash = self.gi_cache.static_scene_hash;
+            self.gi_cache.ddgi_settings_hash = settings_hash;
+        }
+        DdgiEnsureResult {
+            ready: !self.ddgi_bind_groups_dirty,
+            refresh,
+        }
+    }
+
     fn recreate_gi_resolve_bind_group(&mut self) {
         self.gi_resolve_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("gi_resolve_bg"),
@@ -8416,7 +8798,14 @@ impl WgpuRenderer {
         // If the renderer exists, the pipelines exist; there is no `.is_some()` check to do here.
         let sdfgi_available_this_frame =
             matches!(policy.gi, crate::rendering::renderer::GiMethod::SDFGI);
-        let ddgi_resources_ready = self.ddgi_trace_update_bind_group.is_some()
+        let ddgi_ensure = if matches!(policy.gi, crate::rendering::renderer::GiMethod::DDGI) {
+            Some(self.ensure_ddgi_volume(params))
+        } else {
+            None
+        };
+        let ddgi_resources_ready = self.gi_cache.has_ddgi_volume
+            && ddgi_ensure.as_ref().map_or(true, |r| r.ready)
+            && self.ddgi_trace_update_bind_group.is_some()
             && self.ddgi_irradiance_update_bind_group.is_some()
             && self.ddgi_distance_update_bind_group.is_some()
             && self.ddgi_border_fixup_bind_group.is_some()
@@ -8471,10 +8860,17 @@ impl WgpuRenderer {
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
             dispatch_hybrid_rtgi = false;
         }
-        if gi_resolve_method == GI_RESOLVE_METHOD_DDGI && self.gi_resolve_pipeline.is_none() {
-            gi_uses_sky_irradiance_fallback = true;
-            gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
+        if gi_resolve_method == GI_RESOLVE_METHOD_DDGI
+            && (self.gi_resolve_pipeline.is_none() || !ddgi_resources_ready)
+        {
             dispatch_ddgi = false;
+            if probe_gi_ready {
+                effective_gi_mode = GI_MODE_LIGHT_PROBES;
+                gi_resolve_method = GI_RESOLVE_METHOD_LIGHT_PROBES;
+            } else {
+                gi_uses_sky_irradiance_fallback = true;
+                gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
+            }
         }
         if gi_requested_cache_data
             && !baked_gi_ready
@@ -10007,7 +10403,14 @@ impl WgpuRenderer {
                     let irr_y = volume.irradiance_texture_dimensions[1].div_ceil(8).max(1);
                     let dist_x = volume.distance_texture_dimensions[0].div_ceil(8).max(1);
                     let dist_y = volume.distance_texture_dimensions[1].div_ceil(8).max(1);
-                    let classify_relocate = self.ddgi_resources_dirty || self.gi_cache.dirty;
+                    let classify_relocate = self.ddgi_resources_dirty
+                        || self.gi_cache.ddgi_dirty
+                        || ddgi_ensure.as_ref().is_some_and(|r| {
+                            matches!(
+                                r.refresh,
+                                DdgiRefreshMode::FullClear | DdgiRefreshMode::PartialRefresh
+                            )
+                        });
                     let mut cpass = encoder.begin_compute_pass(&ComputePassDescriptor {
                         label: Some("ddgi_update"),
                         timestamp_writes: profiler_query_set.map(|query_set| {
@@ -10040,6 +10443,9 @@ impl WgpuRenderer {
                     cpass.set_pipeline(border_pipeline);
                     cpass.set_bind_group(0, border_bg, &[]);
                     cpass.dispatch_workgroups(irr_x.max(dist_x), irr_y.max(dist_y), 1);
+                    self.gi_cache.ddgi_dirty = false;
+                    self.gi_cache.has_ddgi_volume = true;
+                    self.ddgi_resources_dirty = false;
                 }
             }
             if let Some(pipeline) = &self.gi_resolve_pipeline {
