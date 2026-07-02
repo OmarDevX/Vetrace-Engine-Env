@@ -1118,6 +1118,7 @@ impl WgpuRenderer {
         params: &RenderParams,
         desc: &DdgiVolumeDesc,
         enabled: bool,
+        update_cursor: u32,
     ) -> DdgiTraceUpdateUniforms {
         let total_probes = desc.probe_counts[0]
             .saturating_mul(desc.probe_counts[1])
@@ -1150,7 +1151,7 @@ impl WgpuRenderer {
                 params.camera_pos[0],
                 params.camera_pos[1],
                 params.camera_pos[2],
-                0.0,
+                update_cursor.min(total_probes.saturating_sub(1)) as f32,
             ],
         }
     }
@@ -1323,7 +1324,12 @@ impl WgpuRenderer {
             self.gi_cache.ddgi_probe_update_cursor =
                 (self.gi_cache.ddgi_probe_update_cursor + desc.update_budget.max(1)) % total_probes;
         }
-        let mut ddgi_uniforms = Self::ddgi_trace_update_uniforms(params, &desc, true);
+        let mut ddgi_uniforms = Self::ddgi_trace_update_uniforms(
+            params,
+            &desc,
+            true,
+            self.gi_cache.ddgi_probe_update_cursor,
+        );
         if matches!(
             refresh,
             DdgiRefreshMode::FullClear | DdgiRefreshMode::PartialRefresh

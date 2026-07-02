@@ -55,6 +55,9 @@ fn probe_index_to_grid(index: u32) -> vec3<u32> {
     let ny = max(ddgi.probe_counts.y, 1u);
     return vec3<u32>(index % nx, (index / nx) % ny, index / max(nx * ny, 1u));
 }
+fn update_probe_index(local_index: u32) -> u32 {
+    return (u32(max(ddgi.camera_pos.w, 0.0)) + local_index) % max(ddgi.probe_counts.w, 1u);
+}
 fn probe_world_position(index: u32) -> vec3<f32> {
     let grid_pos = probe_index_to_grid(index);
     let g = vec3<f32>(f32(grid_pos.x), f32(grid_pos.y), f32(grid_pos.z));
@@ -111,13 +114,14 @@ fn surface_radiance(hit: Hit, view_dir: vec3<f32>) -> vec3<f32> {
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (ddgi.enabled == 0u || id.x >= ddgi.rays_per_probe || id.y >= ddgi.probe_counts.w) { return; }
-    if (probe_states[id.y] == 0u) {
+    let probe = update_probe_index(id.y);
+    if (probe_states[probe] == 0u) {
         textureStore(ray_radiance_out, vec2<i32>(i32(id.x), i32(id.y)), vec4<f32>(0.0));
         textureStore(ray_distance_out, vec2<i32>(i32(id.x), i32(id.y)), vec4<f32>(ddgi.max_ray_distance, ddgi.max_ray_distance * ddgi.max_ray_distance, 0.0, 0.0));
         return;
     }
     let rd = normalize(spherical_fibonacci(id.x + u32(max(params.frame_number, 0)) * 17u, ddgi.rays_per_probe));
-    let origin = probe_world_position(id.y);
+    let origin = probe_world_position(probe);
     // Probe tracing should not use the screen-space DDGI view bias. A large
     // origin shift here skips nearby blockers and stores moments measured from
     // the wrong point, which shows up as light leaks, black patches, and flicker
