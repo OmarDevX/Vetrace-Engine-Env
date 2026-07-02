@@ -808,6 +808,36 @@ mod layout_tests {
                 include_str!("../../../assets/shaders/wgpu/hybrid/hybrid_compose.comp.wgsl")
             ),
         ),
+        (
+            "ddgi_trace.comp.wgsl",
+            concat!(
+                include_str!("../../../assets/shaders/wgpu/hybrid/pbr_lighting.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/hybrid/bvh_traversal.wgsl"),
+                "\n",
+                include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_trace.comp.wgsl")
+            ),
+        ),
+        (
+            "ddgi_update_irradiance.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_update_irradiance.comp.wgsl"),
+        ),
+        (
+            "ddgi_update_distance.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_update_distance.comp.wgsl"),
+        ),
+        (
+            "ddgi_fixup_borders.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_fixup_borders.comp.wgsl"),
+        ),
+        (
+            "ddgi_relocate.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_relocate.comp.wgsl"),
+        ),
+        (
+            "ddgi_classify.comp.wgsl",
+            include_str!("../../../assets/shaders/wgpu/hybrid/ddgi_classify.comp.wgsl"),
+        ),
     ];
 
     const HYBRID_BINDING_LAYOUTS: &[(&str, &str, &[(u32, u32)])] = &[
@@ -891,6 +921,50 @@ mod layout_tests {
                 (0, 21),
                 (0, 22),
             ],
+        ),
+        (
+            "ddgi_trace",
+            STANDALONE_HYBRID_WGSL[7].1,
+            &[
+                (0, 8),
+                (0, 9),
+                (0, 10),
+                (0, 11),
+                (0, 12),
+                (0, 13),
+                (0, 21),
+                (0, 22),
+                (1, 0),
+                (1, 1),
+                (1, 2),
+                (1, 3),
+                (1, 4),
+            ],
+        ),
+        (
+            "ddgi_update_irradiance",
+            STANDALONE_HYBRID_WGSL[8].1,
+            &[(0, 0), (0, 1), (0, 2), (0, 3)],
+        ),
+        (
+            "ddgi_update_distance",
+            STANDALONE_HYBRID_WGSL[9].1,
+            &[(0, 0), (0, 1), (0, 2), (0, 3)],
+        ),
+        (
+            "ddgi_fixup_borders",
+            STANDALONE_HYBRID_WGSL[10].1,
+            &[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)],
+        ),
+        (
+            "ddgi_relocate",
+            STANDALONE_HYBRID_WGSL[11].1,
+            &[(0, 0), (0, 1), (0, 2)],
+        ),
+        (
+            "ddgi_classify",
+            STANDALONE_HYBRID_WGSL[12].1,
+            &[(0, 0), (0, 1), (0, 2)],
         ),
         (
             "gi_resolve",
