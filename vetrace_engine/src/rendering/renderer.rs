@@ -150,6 +150,7 @@ pub enum GiMethod {
     LightProbes,
     SDFGI,
     RTGIOneBounce,
+    DDGI,
     PathTraced,
     SkyIrradianceFallback,
 }
@@ -182,6 +183,7 @@ pub struct RendererHardwareCapabilities {
     pub rt_gi: bool,
     pub rt_transparency: bool,
     pub rt_ao: bool,
+    pub ddgi: bool,
     pub path_tracing: bool,
 }
 
@@ -341,6 +343,20 @@ impl RendererPolicy {
                     4 => GiMethod::LightProbes,
                     5 if hardware.rt_gi && !raster_only && !low_budget => GiMethod::RTGIOneBounce,
                     5 => GiMethod::SkyIrradianceFallback,
+                    6 if matches!(
+                        params.profile,
+                        RendererProfile::Low | RendererProfile::Indoor60FPS
+                    ) =>
+                    {
+                        GiMethod::LightProbes
+                    }
+                    6 if matches!(mode, RendererMode::RasterGame | RendererMode::HybridEffects)
+                        && hardware.ddgi
+                        && !low_budget =>
+                    {
+                        GiMethod::DDGI
+                    }
+                    6 => GiMethod::LightProbes,
                     _ => GiMethod::LightProbes,
                 },
             }

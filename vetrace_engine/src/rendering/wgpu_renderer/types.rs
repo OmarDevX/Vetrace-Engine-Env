@@ -23,17 +23,21 @@ pub const GI_MODE_RTGI_ONE_BOUNCE: u32 = 4;
 /// Use path-traced indirect lighting for path-traced primary visibility modes only.
 /// RasterGame/HybridEffects requests are clamped to cheaper baked/probe/SDFGI modes.
 pub const GI_MODE_PATH_TRACED_PREVIEW: u32 = 5;
+/// Use dynamic diffuse global illumination from a DDGI cache/probe volume.
+/// This is allowed in RasterGame and HybridEffects when DDGI resources are available.
+pub const GI_MODE_DDGI: u32 = 6;
 // Back-compat aliases for older call sites.
 pub const GI_MODE_SDF: u32 = GI_MODE_SDFGI;
 pub const GI_MODE_PATH: u32 = GI_MODE_PATH_TRACED_PREVIEW;
-// GI resolve shader ABI constants; these intentionally match GiMethod::{Off, BakedLightmap, LightProbes, SDFGI, RTGIOneBounce}.
+// GI resolve shader ABI constants; these intentionally match GiMethod::{Off, BakedLightmap, LightProbes, SDFGI, RTGIOneBounce, DDGI}.
 pub const GI_RESOLVE_METHOD_OFF: u32 = GI_MODE_OFF;
 pub const GI_RESOLVE_METHOD_BAKED_LIGHTMAP: u32 = GI_MODE_BAKED_LIGHTMAP;
 pub const GI_RESOLVE_METHOD_LIGHT_PROBES: u32 = GI_MODE_LIGHT_PROBES;
 pub const GI_RESOLVE_METHOD_SDFGI: u32 = GI_MODE_SDFGI;
 pub const GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE: u32 = GI_MODE_RTGI_ONE_BOUNCE;
+pub const GI_RESOLVE_METHOD_DDGI: u32 = GI_MODE_DDGI;
 /// Low-strength sky irradiance fallback used when GI is requested but authored cache data is absent.
-pub const GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK: u32 = 6;
+pub const GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK: u32 = 7;
 pub const AO_METHOD_OFF: u32 = 0;
 pub const AO_METHOD_SSAO: u32 = 1;
 pub const AO_METHOD_GTAO: u32 = 2;
