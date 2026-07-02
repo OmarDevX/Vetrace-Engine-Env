@@ -78,11 +78,21 @@ pub struct GiResolveParams {
     pub fallback_irradiance: [f32; 4],
     pub sdfgi_origin: [f32; 4],
     pub sdfgi_extent_voxel: [f32; 4],
+    /// xyz = DDGI volume origin, w = view bias.
+    pub ddgi_origin_blend: [f32; 4],
+    /// xyz = DDGI probe spacing, w = normal bias.
+    pub ddgi_spacing_bias: [f32; 4],
+    /// xyz = DDGI probe counts, w = DDGI volume flags.
+    pub ddgi_probe_counts_flags: [u32; 4],
+    /// xy = irradiance tile texels, zw = distance tile texels.
+    pub ddgi_atlas_layout: [u32; 4],
+    /// x = backface exponent, y = visibility strength, z = min variance, w = blend strength.
+    pub ddgi_visibility: [f32; 4],
     pub inv_view_proj: [[f32; 4]; 4],
     pub prev_view_proj: [[f32; 4]; 4],
 }
 
-const _: [(); 240] = [(); std::mem::size_of::<GiResolveParams>()];
+const _: [(); 320] = [(); std::mem::size_of::<GiResolveParams>()];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -982,6 +992,10 @@ mod layout_tests {
                 (0, 9),
                 (0, 10),
                 (0, 11),
+                (0, 12),
+                (0, 13),
+                (0, 14),
+                (0, 15),
             ],
         ),
     ];

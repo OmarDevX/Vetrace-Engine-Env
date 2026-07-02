@@ -22,6 +22,11 @@ struct GiResolveParams {
     fallback_irradiance: vec4<f32>,
     sdfgi_origin: vec4<f32>,
     sdfgi_extent_voxel: vec4<f32>,
+    ddgi_origin_blend: vec4<f32>,
+    ddgi_spacing_bias: vec4<f32>,
+    ddgi_probe_counts_flags: vec4<u32>,
+    ddgi_atlas_layout: vec4<u32>,
+    ddgi_visibility: vec4<f32>,
     inv_view_proj: mat4x4<f32>,
     prev_view_proj: mat4x4<f32>,
 };
@@ -44,11 +49,16 @@ struct LightProbe {
 @group(0) @binding(9) var<storage, read> light_probes: array<LightProbe>;
 @group(0) @binding(10) var<storage, read> light_probe_sh: array<vec4<f32>>;
 @group(0) @binding(11) var gbuf_lightmap_uv: texture_2d<f32>;
+@group(0) @binding(12) var ddgi_irradiance_atlas: texture_2d<f32>;
+@group(0) @binding(13) var ddgi_distance_atlas: texture_2d<f32>;
+@group(0) @binding(14) var<storage, read> ddgi_probe_state: array<vec4<f32>>;
+@group(0) @binding(15) var<storage, read> ddgi_relocation_offsets: array<vec4<f32>>;
 
 const GI_RESOURCE_LIGHTMAP_ATLAS: u32 = 1u;
 const GI_RESOURCE_LIGHTMAP_UVS: u32 = 2u;
 const GI_RESOURCE_PROBES: u32 = 4u;
 const GI_RESOURCE_SDFGI: u32 = 8u;
+const GI_RESOURCE_DDGI: u32 = 16u;
 
 fn resolved_surface(pixel: vec2<i32>) -> bool {
     return textureLoad(depth_tex, pixel, 0).r < 0.9999 && textureLoad(gbuf_albedo, pixel, 0).a > 0.0;
@@ -143,6 +153,86 @@ fn resolve_sdfgi(world_pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return mix(y0, y1, f.z);
 }
 
+
+fn oct_wrap(v: vec2<f32>) -> vec2<f32> {
+    return (vec2<f32>(1.0) - abs(v.yx)) * select(vec2<f32>(-1.0), vec2<f32>(1.0), v >= vec2<f32>(0.0));
+}
+
+fn oct_encode(n_in: vec3<f32>) -> vec2<f32> {
+    var n = n_in / max(abs(n_in.x) + abs(n_in.y) + abs(n_in.z), 1.0e-6);
+    if (n.z < 0.0) { n.xy = oct_wrap(n.xy); }
+    return n.xy * 0.5 + vec2<f32>(0.5);
+}
+
+fn ddgi_probe_index(c: vec3<u32>, counts: vec3<u32>) -> u32 {
+    return c.x + c.y * counts.x + c.z * counts.x * counts.y;
+}
+
+fn ddgi_atlas_coord(probe_index: u32, dir: vec3<f32>, probe_texels: vec2<u32>, atlas_dims: vec2<u32>) -> vec2<i32> {
+    let probes_per_row = max(atlas_dims.x / max(probe_texels.x, 1u), 1u);
+    let tile = vec2<u32>(probe_index % probes_per_row, probe_index / probes_per_row);
+    let oct = oct_encode(normalize(dir));
+    let texel = vec2<u32>(clamp(oct * vec2<f32>(probe_texels - vec2<u32>(1u)), vec2<f32>(0.0), vec2<f32>(probe_texels - vec2<u32>(1u))));
+    return vec2<i32>(min(tile * probe_texels + texel, atlas_dims - vec2<u32>(1u)));
+}
+
+fn ddgi_sample_probe(probe_index: u32, probe_pos: vec3<f32>, world_pos: vec3<f32>, n: vec3<f32>, cell_weight: f32) -> vec4<f32> {
+    let state = ddgi_probe_state[probe_index];
+    let active = select(0.0, 1.0, state.x >= 0.0);
+    if (active <= 0.0 || cell_weight <= 0.0) { return vec4<f32>(0.0); }
+    let to_surface = world_pos - probe_pos;
+    let dist = length(to_surface);
+    let dir = select(to_surface / max(dist, 1.0e-4), n, dist <= 1.0e-4);
+    let irr_dims = textureDimensions(ddgi_irradiance_atlas);
+    let dist_dims = textureDimensions(ddgi_distance_atlas);
+    let irr_texels = max(params.ddgi_atlas_layout.xy, vec2<u32>(1u));
+    let dist_texels = max(params.ddgi_atlas_layout.zw, vec2<u32>(1u));
+    let irradiance = textureLoad(ddgi_irradiance_atlas, ddgi_atlas_coord(probe_index, n, irr_texels, irr_dims), 0).rgb;
+    let moments = textureLoad(ddgi_distance_atlas, ddgi_atlas_coord(probe_index, -dir, dist_texels, dist_dims), 0).rg;
+    let mean_dist = max(moments.x, 1.0e-4);
+    let variance = max(moments.y - mean_dist * mean_dist, params.ddgi_visibility.z);
+    let cheby = variance / (variance + max(dist - mean_dist, 0.0) * max(dist - mean_dist, 0.0));
+    let visibility = mix(1.0, clamp(cheby, 0.0, 1.0), clamp(params.ddgi_visibility.y, 0.0, 1.0));
+    let facing = pow(max(dot(n, normalize(probe_pos - world_pos)), 0.0), max(params.ddgi_visibility.x, 0.0));
+    let weight = cell_weight * active * visibility * max(facing, 0.05) * max(state.y, 1.0e-3);
+    return vec4<f32>(max(irradiance, vec3<f32>(0.0)) * weight, weight);
+}
+
+fn resolve_ddgi(world_pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    if ((params.gi_resource_flags & GI_RESOURCE_DDGI) == 0u) {
+        return resolve_light_probe(world_pos, n);
+    }
+    let counts = max(params.ddgi_probe_counts_flags.xyz, vec3<u32>(1u));
+    let spacing = max(params.ddgi_spacing_bias.xyz, vec3<f32>(1.0e-4));
+    let view_dir = normalize(params.inv_view_proj[3].xyz - world_pos);
+    let biased_world = world_pos + n * max(params.ddgi_spacing_bias.w, 0.0) + view_dir * max(params.ddgi_origin_blend.w, 0.0);
+    let grid = (biased_world - params.ddgi_origin_blend.xyz) / spacing;
+    if (any(grid < vec3<f32>(0.0)) || any(grid > vec3<f32>(counts - vec3<u32>(1u)))) {
+        return resolve_light_probe(world_pos, n);
+    }
+    let basef = floor(grid);
+    let fracv = fract(grid);
+    let base = vec3<u32>(clamp(basef, vec3<f32>(0.0), vec3<f32>(counts - vec3<u32>(1u))));
+    var sum = vec3<f32>(0.0);
+    var wsum = 0.0;
+    for (var oz = 0u; oz <= 1u; oz = oz + 1u) {
+      for (var oy = 0u; oy <= 1u; oy = oy + 1u) {
+        for (var ox = 0u; ox <= 1u; ox = ox + 1u) {
+          let o = vec3<u32>(ox, oy, oz);
+          let c = min(base + o, counts - vec3<u32>(1u));
+          let cw = mix(1.0 - fracv.x, fracv.x, f32(ox)) * mix(1.0 - fracv.y, fracv.y, f32(oy)) * mix(1.0 - fracv.z, fracv.z, f32(oz));
+          let idx = ddgi_probe_index(c, counts);
+          let probe_pos = params.ddgi_origin_blend.xyz + vec3<f32>(c) * spacing + ddgi_relocation_offsets[idx].xyz;
+          let s = ddgi_sample_probe(idx, probe_pos, biased_world, n, cw);
+          sum = sum + s.rgb;
+          wsum = wsum + s.a;
+        }
+      }
+    }
+    if (wsum <= 1.0e-4) { return resolve_light_probe(world_pos, n); }
+    return mix(resolve_light_probe(world_pos, n), sum / wsum, clamp(params.ddgi_visibility.w, 0.0, 1.0));
+}
+
 fn reconstruct_world(pixel: vec2<i32>, dims: vec2<u32>, depth: f32) -> vec3<f32> {
     let uv = (vec2<f32>(pixel) + vec2<f32>(0.5)) / vec2<f32>(dims);
     let clip_xy = uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0);
@@ -212,7 +302,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     } else if (params.selected_method == GI_RESOLVE_METHOD_RTGI_ONE_BOUNCE) {
         gi = load_rtgi_denoised(pixel, dims) * params.rtgi_blend;
     } else if (params.selected_method == GI_RESOLVE_METHOD_DDGI) {
-        gi = resolve_light_probe(world, n) * params.probe_blend;
+        gi = resolve_ddgi(world, n);
     } else if (params.selected_method == GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK) {
         gi = resolve_sky_irradiance_fallback(n);
     }
