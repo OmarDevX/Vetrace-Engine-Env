@@ -1,7 +1,9 @@
+mod ray_query_as;
 mod renderer;
 mod setup;
 mod types;
 
+pub use ray_query_as::{RayQuerySupport, RayTraversalBackend};
 pub use renderer::WgpuRenderer;
 pub use types::{
     DDGI_VOLUME_FLAG_CLASSIFICATION, DDGI_VOLUME_FLAG_DEPTH_MOMENTS,

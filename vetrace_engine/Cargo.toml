@@ -15,7 +15,7 @@ ahash = "~0.8"
 gl = "~0.14"
 egui = "~0.28"
 sdl2 = { version = "0.38", features = ["raw-window-handle"] }
-wgpu = "0.20"
+wgpu = "30.0.0"
 shaderc = "0.8"
 egui-wgpu = { version = "0.28", optional = true }
 bytemuck = { version = "1.15", features = ["derive"] }
@@ -45,7 +45,7 @@ enumset = "1.1.7"
 
 [dev-dependencies]
 rand = "0.8"
-naga = { version = "0.20", features = ["wgsl-in"] }
+naga = { version = "30.0.0", features = ["wgsl-in"] }
 vetrace_editor = { path = "../vetrace_editor" }
 
 [dependencies.epi]

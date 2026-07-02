@@ -1,4 +1,5 @@
 use super::types::GI_SDF_RES;
+use super::{RayQuerySupport, RayTraversalBackend};
 use sdl2::video::Window;
 use wgpu::SurfaceTargetUnsafe;
 use wgpu::rwh::{HasDisplayHandle, HasWindowHandle};
@@ -48,17 +49,36 @@ pub async fn init_wgpu(
         .await
         .expect("Failed to find adapter");
     boot_log("init_wgpu: after request_adapter");
+    let adapter_features = adapter.features();
+    let adapter_info = adapter.get_info();
+    let hw_ray_query_requested = std::env::var("VETRACE_HW_RAY_QUERY")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    let ray_query_support = RayQuerySupport::resolve(
+        adapter_features,
+        hw_ray_query_requested,
+        adapter_info.backend,
+    );
+    if let Some(reason) = &ray_query_support.fallback_reason {
+        eprintln!("[VETRACE BOOT] hardware ray query fallback: {}", reason);
+    } else {
+        eprintln!(
+            "[VETRACE BOOT] hardware ray query backend active: {}",
+            RayTraversalBackend::HardwareRayQuery.as_str()
+        );
+    }
     let limits = adapter.limits();
     boot_log("init_wgpu: before request_device");
     let (device, queue) = adapter
         .request_device(
             &DeviceDescriptor {
                 required_features: {
-                    let optional_features = adapter.features() & Features::TIMESTAMP_QUERY;
+                    let optional_features = adapter_features & Features::TIMESTAMP_QUERY;
                     Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
                         | Features::TEXTURE_BINDING_ARRAY
                         | Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
                         | optional_features
+                        | ray_query_support.required_features()
                 },
                 // Request the adapter's reported limits so the renderer can
                 // bind large texture arrays for materials.
