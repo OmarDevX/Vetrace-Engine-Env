@@ -849,6 +849,10 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 9, resource: self.gi_probe_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 10, resource: self.gi_probe_sh_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
+                BindGroupEntry { binding: 12, resource: BindingResource::TextureView(self.ddgi_irradiance_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
+                BindGroupEntry { binding: 13, resource: BindingResource::TextureView(self.ddgi_distance_moments_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
+                BindGroupEntry { binding: 14, resource: self.ddgi_probe_state_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
+                BindGroupEntry { binding: 15, resource: self.ddgi_probe_relocation_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
             ],
         });
     }
@@ -2454,6 +2458,10 @@ impl WgpuRenderer {
                 BindGroupLayoutEntry { binding: 9, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
                 BindGroupLayoutEntry { binding: 10, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
                 BindGroupLayoutEntry { binding: 11, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 12, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 13, visibility: ShaderStages::COMPUTE, ty: BindingType::Texture { multisampled: false, view_dimension: TextureViewDimension::D2, sample_type: TextureSampleType::Float { filterable: false } }, count: None },
+                BindGroupLayoutEntry { binding: 14, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                BindGroupLayoutEntry { binding: 15, visibility: ShaderStages::COMPUTE, ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
             ],
         });
         let ambient_occlusion_bind_group_layout =
@@ -4769,6 +4777,10 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 9, resource: gi_probe_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 10, resource: gi_probe_sh_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&gbuf_lightmap_uv_view) },
+                BindGroupEntry { binding: 12, resource: BindingResource::TextureView(&gi_buffer_view) },
+                BindGroupEntry { binding: 13, resource: BindingResource::TextureView(&gi_buffer_view) },
+                BindGroupEntry { binding: 14, resource: gi_probe_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 15, resource: gi_probe_buffer.as_entire_binding() },
             ],
         });
         let hybrid_composite_bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -5996,6 +6008,10 @@ impl WgpuRenderer {
                 BindGroupEntry { binding: 9, resource: self.gi_probe_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 10, resource: self.gi_probe_sh_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 11, resource: BindingResource::TextureView(&self.gbuf_lightmap_uv_view) },
+                BindGroupEntry { binding: 12, resource: BindingResource::TextureView(self.ddgi_irradiance_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
+                BindGroupEntry { binding: 13, resource: BindingResource::TextureView(self.ddgi_distance_moments_atlas_view.as_ref().unwrap_or(&self.gi_buffer_view)) },
+                BindGroupEntry { binding: 14, resource: self.ddgi_probe_state_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
+                BindGroupEntry { binding: 15, resource: self.ddgi_probe_relocation_buffer.as_ref().unwrap_or(&self.gi_probe_buffer).as_entire_binding() },
             ],
         });
         self.hybrid_composite_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
@@ -7374,7 +7390,7 @@ impl WgpuRenderer {
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
             dispatch_hybrid_rtgi = false;
         }
-        if gi_resolve_method == GI_RESOLVE_METHOD_DDGI && (!probe_gi_ready || self.gi_resolve_pipeline.is_none()) {
+        if gi_resolve_method == GI_RESOLVE_METHOD_DDGI && self.gi_resolve_pipeline.is_none() {
             gi_uses_sky_irradiance_fallback = true;
             gi_resolve_method = GI_RESOLVE_METHOD_SKY_IRRADIANCE_FALLBACK;
         }
@@ -7786,7 +7802,8 @@ impl WgpuRenderer {
             gi_resource_flags: (self.gi_cache.has_lightmap_atlas as u32)
                 | ((self.gi_cache.has_lightmap_uvs as u32) << 1)
                 | ((self.gi_cache.has_probe_data as u32) << 2)
-                | (((sdfgi_ready || dispatch_sdfgi) as u32) << 3),
+                | (((sdfgi_ready || dispatch_sdfgi) as u32) << 3)
+                | (((self.ddgi_irradiance_atlas_view.is_some() && self.ddgi_distance_moments_atlas_view.is_some()) as u32) << 4),
             _pad1: [0; 5],
             fallback_irradiance: [
                 (params.skycolor[0] * 0.28).max(0.04),
@@ -7799,6 +7816,11 @@ impl WgpuRenderer {
             // position was outside the volume and SDFGI resolved to black.
             sdfgi_origin: [-10.0, -10.0, -10.0, 0.0],
             sdfgi_extent_voxel: [20.0, 20.0, 20.0, 20.0 / GI_SDF_RES as f32],
+            ddgi_origin_blend: [0.0, 0.0, 0.0, 0.8],
+            ddgi_spacing_bias: [1.0, 1.0, 1.0, 0.2],
+            ddgi_probe_counts_flags: [1, 1, 1, 0],
+            ddgi_atlas_layout: [8, 8, 16, 16],
+            ddgi_visibility: [2.0, 1.0, 0.01, 1.0],
             inv_view_proj: params.inv_view_proj,
             prev_view_proj: self.prev_view_proj,
         };
