@@ -1,0 +1,12 @@
+{
+  "name": "Car",
+  "tags": [],
+  "position": [0.0, 0.5, 0.0],
+  "color": [255.0, 0.0, 0.0],
+  "size": [1.5, 0.5, 3.0],
+  "is_cube": true,
+  "components": [
+    {"name": "RigidBody3D", "data": {"gravity_enabled": false, "linear_damping": 4.0, "angular_damping": 4.0}},
+    {"name": "Script", "data": {"script": "car"}}
+  ]
+}
