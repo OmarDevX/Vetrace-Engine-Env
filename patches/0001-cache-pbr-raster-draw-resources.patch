@@ -1,0 +1,364 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ChatGPT <chatgpt@openai.com>
+Date: Fri, 3 Jul 2026 12:00:00 +0300
+Subject: [PATCH] Cache PBR raster draw resources
+
+Stop creating PBR uniform buffers, joint buffers, material buffers and bind
+groups for every mesh on every frame.  Keep one cached resource packet per
+PBR draw slot, grow joint buffers only when needed, and update buffer contents
+with queue.write_buffer.
+
+This is an intermediate low-risk optimization.  It preserves the current
+shader ABI and draw order while removing the worst CPU/driver allocation churn
+from the raster path.  A later patch can move this to true instance-buffer
+batching.
+---
+ vetrace_engine/src/rendering/wgpu_renderer/renderer.rs          |   1 +
+ vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs | 228 +++++++++++++++-------
+ 2 files changed, 159 insertions(+), 70 deletions(-)
+
+diff --git a/vetrace_engine/src/rendering/wgpu_renderer/renderer.rs b/vetrace_engine/src/rendering/wgpu_renderer/renderer.rs
+index 5a322907..00000000 100644
+--- a/vetrace_engine/src/rendering/wgpu_renderer/renderer.rs
++++ b/vetrace_engine/src/rendering/wgpu_renderer/renderer.rs
+@@ -92,6 +92,7 @@ pub struct WgpuRenderer {
+     primitive_gbuffer_pipeline: RenderPipeline,
+     primitive_shadow_pipeline: RenderPipeline,
+     pbr_shadow_pipeline: RenderPipeline,
++    pbr_draw_cache: Vec<CachedPbrDraw>,
+     primitive_cube_vertex_buffer: Buffer,
+     primitive_cube_index_buffer: Buffer,
+     primitive_cube_index_count: u32,
+diff --git a/vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs b/vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs
+index adc66ab2..00000000 100644
+--- a/vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs
++++ b/vetrace_engine/src/rendering/wgpu_renderer/renderer_impl.inc.rs
+@@ -88,6 +88,74 @@ struct PrimitiveInstance {
+     _pad: [u32; 3],
+ }
+ 
++const MIN_PBR_JOINT_CAPACITY: usize = 64;
++
++struct CachedPbrDraw {
++    uniform_buffer: Buffer,
++    material_buffer: Buffer,
++    joint_buffer: Buffer,
++    joint_capacity: usize,
++    texture_key: usize,
++    bind_group: Option<BindGroup>,
++    shadow_bind_group: Option<BindGroup>,
++}
++
++impl CachedPbrDraw {
++    fn new(device: &Device, index: usize) -> Self {
++        let uniform_buffer = device.create_buffer(&BufferDescriptor {
++            label: Some("pbr_cached_mvp"),
++            size: std::mem::size_of::<Uniforms>() as u64,
++            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
++            mapped_at_creation: false,
++        });
++        let material_buffer = device.create_buffer(&BufferDescriptor {
++            label: Some("pbr_cached_mat"),
++            size: std::mem::size_of::<MaterialUniforms>() as u64,
++            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
++            mapped_at_creation: false,
++        });
++        let joint_buffer = device.create_buffer(&BufferDescriptor {
++            label: Some("pbr_cached_joints"),
++            size: (std::mem::size_of::<[[f32; 4]; 4]>() * MIN_PBR_JOINT_CAPACITY) as u64,
++            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
++            mapped_at_creation: false,
++        });
++        let _ = index;
++        Self {
++            uniform_buffer,
++            material_buffer,
++            joint_buffer,
++            joint_capacity: MIN_PBR_JOINT_CAPACITY,
++            texture_key: usize::MAX,
++            bind_group: None,
++            shadow_bind_group: None,
++        }
++    }
++
++    fn ensure_joint_capacity(&mut self, device: &Device, min_capacity: usize) {
++        let needed = min_capacity.max(MIN_PBR_JOINT_CAPACITY);
++        if self.joint_capacity >= needed {
++            return;
++        }
++        let new_capacity = needed.next_power_of_two();
++        self.joint_buffer = device.create_buffer(&BufferDescriptor {
++            label: Some("pbr_cached_joints"),
++            size: (std::mem::size_of::<[[f32; 4]; 4]>() * new_capacity) as u64,
++            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
++            mapped_at_creation: false,
++        });
++        self.joint_capacity = new_capacity;
++        // Any bind group that referenced the old joint buffer is now invalid.
++        self.bind_group = None;
++        self.shadow_bind_group = None;
++    }
++}
++
+ #[derive(Clone, Copy, Debug)]
+ struct SsrQuality {
+     max_steps: u32,
+@@ -6690,6 +6758,7 @@ impl WgpuRenderer {
+             primitive_gbuffer_pipeline,
+             primitive_shadow_pipeline,
+             pbr_shadow_pipeline,
++            pbr_draw_cache: Vec::new(),
+             primitive_cube_vertex_buffer,
+             primitive_cube_index_buffer,
+             primitive_cube_index_count: cube_indices.len() as u32,
+@@ -10175,119 +10244,140 @@ impl WgpuRenderer {
+         }
+         if !pbr_data.is_empty() {
+             feature_status.raster_shadow_maps_active = true;
+-            let mut bind_groups = Vec::new();
+-            let mut shadow_bind_groups = Vec::new();
+-            for inst in pbr_data {
++
++            while self.pbr_draw_cache.len() < pbr_data.len() {
++                let index = self.pbr_draw_cache.len();
++                self.pbr_draw_cache.push(CachedPbrDraw::new(&self.device, index));
++            }
++
++            let mut draw_indices = Vec::with_capacity(pbr_data.len());
++            let mut shadow_draw_indices = Vec::new();
++            for (draw_index, inst) in pbr_data.iter().enumerate() {
+                 let uni = Uniforms {
+                     mvp: inst.mvp,
+                     model: inst.model,
+                     object_index: inst.object_index,
+                     _pad0: [0; 3],
+                 };
+-                let uni_buf = self
+-                    .device
+-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+-                        label: Some("pbr_mvp"),
+-                        contents: bytemuck::bytes_of(&uni),
+-                        usage: BufferUsages::UNIFORM,
+-                    });
+                 let mat_uni = MaterialUniforms {
+                     base_color: inst.material.base_color,
+                     metallic: inst.material.metallic,
+                     roughness: inst.material.roughness,
+                     _pad: [0.0; 2],
+                 };
+-                let mat_buf = self
+-                    .device
+-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+-                        label: Some("pbr_mat"),
+-                        contents: bytemuck::bytes_of(&mat_uni),
+-                        usage: BufferUsages::UNIFORM,
+-                    });
+                 let tex = inst
+                     .material
+                     .base_color_tex
+                     .as_ref()
+                     .map(|t| &t.0)
+                     .unwrap_or(&self.white_texture.0);
++                let texture_key = tex.as_ref() as *const crate::gpu::GpuTexture as usize;
++
+                 // Ensure joint buffers meet the minimum size required by the shader
+                 // by allocating space for at least 64 matrices.
+-                const MIN_JOINT_CAPACITY: usize = 64;
+                 let mut joint_data: Vec<[[f32; 4]; 4]> =
+                     inst.joint_mats.clone().unwrap_or_else(|| {
+                         vec![[
+@@ -10302,42 +10392,75 @@ impl WgpuRenderer {
+                         ]]
+                     });
+-                if joint_data.len() < MIN_JOINT_CAPACITY {
+-                    joint_data.resize(
+-                        MIN_JOINT_CAPACITY,
+-                        [
+-                            [1.0, 0.0, 0.0, 0.0],
+-                            [0.0, 1.0, 0.0, 0.0],
+-                            [0.0, 0.0, 1.0, 0.0],
+-                            [0.0, 0.0, 0.0, 1.0],
+-                        ],
+-                    );
+-                }
+-                let joint_buf = self
+-                    .device
+-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+-                        label: Some("pbr_joints"),
+-                        contents: bytemuck::cast_slice(&joint_data),
+-                        usage: BufferUsages::UNIFORM,
+-                    });
+-                let bg = self.device.create_bind_group(&BindGroupDescriptor {
+-                    label: Some("pbr_bg"),
+-                    layout: &self.pbr_bind_group_layout,
+-                    entries: &[
+-                        BindGroupEntry {
+-                            binding: 0,
+-                            resource: uni_buf.as_entire_binding(),
+-                        },
+-                        BindGroupEntry {
+-                            binding: 1,
+-                            resource: BindingResource::TextureView(&tex.view),
+-                        },
+-                        BindGroupEntry {
+-                            binding: 2,
+-                            resource: BindingResource::Sampler(&tex.sampler),
+-                        },
+-                        BindGroupEntry {
+-                            binding: 3,
+-                            resource: mat_buf.as_entire_binding(),
+-                        },
+-                        BindGroupEntry {
+-                            binding: 4,
+-                            resource: joint_buf.as_entire_binding(),
+-                        },
+-                    ],
+-                });
++
++                let mut needs_pbr_bind_group = false;
++                let mut needs_shadow_bind_group = false;
++                {
++                    let cache = &mut self.pbr_draw_cache[draw_index];
++                    cache.ensure_joint_capacity(&self.device, joint_data.len());
++                    if joint_data.len() < cache.joint_capacity {
++                        joint_data.resize(
++                            cache.joint_capacity,
++                            [
++                                [1.0, 0.0, 0.0, 0.0],
++                                [0.0, 1.0, 0.0, 0.0],
++                                [0.0, 0.0, 1.0, 0.0],
++                                [0.0, 0.0, 0.0, 1.0],
++                            ],
++                        );
++                    }
++                    self.queue
++                        .write_buffer(&cache.uniform_buffer, 0, bytemuck::bytes_of(&uni));
++                    self.queue
++                        .write_buffer(&cache.material_buffer, 0, bytemuck::bytes_of(&mat_uni));
++                    self.queue.write_buffer(
++                        &cache.joint_buffer,
++                        0,
++                        bytemuck::cast_slice(&joint_data),
++                    );
++                    if cache.texture_key != texture_key {
++                        cache.texture_key = texture_key;
++                        cache.bind_group = None;
++                    }
++                    needs_pbr_bind_group = cache.bind_group.is_none();
++                    needs_shadow_bind_group = inst.casts_raster_shadow && cache.shadow_bind_group.is_none();
++                }
++
++                if needs_pbr_bind_group {
++                    let cache = &self.pbr_draw_cache[draw_index];
++                    let bg = self.device.create_bind_group(&BindGroupDescriptor {
++                        label: Some("pbr_bg"),
++                        layout: &self.pbr_bind_group_layout,
++                        entries: &[
++                            BindGroupEntry {
++                                binding: 0,
++                                resource: cache.uniform_buffer.as_entire_binding(),
++                            },
++                            BindGroupEntry {
++                                binding: 1,
++                                resource: BindingResource::TextureView(&tex.view),
++                            },
++                            BindGroupEntry {
++                                binding: 2,
++                                resource: BindingResource::Sampler(&tex.sampler),
++                            },
++                            BindGroupEntry {
++                                binding: 3,
++                                resource: cache.material_buffer.as_entire_binding(),
++                            },
++                            BindGroupEntry {
++                                binding: 4,
++                                resource: cache.joint_buffer.as_entire_binding(),
++                            },
++                        ],
++                    });
++                    self.pbr_draw_cache[draw_index].bind_group = Some(bg);
++                }
++
+                 if inst.casts_raster_shadow {
+-                    let shadow_bg = self.device.create_bind_group(&BindGroupDescriptor {
+-                        label: Some("pbr_shadow_bg"),
+-                        layout: &self.pbr_shadow_bind_group_layout,
+-                        entries: &[
+-                            BindGroupEntry {
+-                                binding: 0,
+-                                resource: uni_buf.as_entire_binding(),
+-                            },
+-                            BindGroupEntry {
+-                                binding: 1,
+-                                resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
+-                            },
+-                            BindGroupEntry {
+-                                binding: 4,
+-                                resource: joint_buf.as_entire_binding(),
+-                            },
+-                        ],
+-                    });
+-                    shadow_bind_groups.push((shadow_bg, inst.mesh.clone()));
++                    if needs_shadow_bind_group {
++                        let cache = &self.pbr_draw_cache[draw_index];
++                        let shadow_bg = self.device.create_bind_group(&BindGroupDescriptor {
++                            label: Some("pbr_shadow_bg"),
++                            layout: &self.pbr_shadow_bind_group_layout,
++                            entries: &[
++                                BindGroupEntry {
++                                    binding: 0,
++                                    resource: cache.uniform_buffer.as_entire_binding(),
++                                },
++                                BindGroupEntry {
++                                    binding: 1,
++                                    resource: self.raster_shadow_view_proj_buffer.as_entire_binding(),
++                                },
++                                BindGroupEntry {
++                                    binding: 4,
++                                    resource: cache.joint_buffer.as_entire_binding(),
++                                },
++                            ],
++                        });
++                        self.pbr_draw_cache[draw_index].shadow_bind_group = Some(shadow_bg);
++                    }
++                    shadow_draw_indices.push(draw_index);
+                 }
+-                bind_groups.push((bg, inst.mesh.clone()));
++                draw_indices.push(draw_index);
+             }
+-            if !shadow_bind_groups.is_empty() {
++
++            if !shadow_draw_indices.is_empty() {
+                 let mut rpass = encoder.begin_render_pass(&RenderPassDescriptor {
+                     label: Some("pbr_shadow"),
+                     color_attachments: &[],
+@@ -10363,11 +10486,15 @@ impl WgpuRenderer {
+                 });
+                 rpass.set_pipeline(&self.pbr_shadow_pipeline);
+-                for (bg, mesh) in shadow_bind_groups.iter() {
+-                    rpass.set_bind_group(0, bg, &[]);
++                for &draw_index in shadow_draw_indices.iter() {
++                    let inst = &pbr_data[draw_index];
++                    let cache = &self.pbr_draw_cache[draw_index];
++                    let Some(bg) = cache.shadow_bind_group.as_ref() else { continue; };
++                    rpass.set_bind_group(0, bg, &[]);
++                    let mesh = &inst.mesh;
+                     rpass.set_vertex_buffer(0, mesh.0.vbuf.slice(..));
+                     rpass.set_index_buffer(mesh.0.ibuf.slice(..), IndexFormat::Uint32);
+                     rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
+@@ -10433,11 +10560,15 @@ impl WgpuRenderer {
+             });
+             rpass.set_pipeline(&self.pbr_pipeline);
+-            for (bg, mesh) in bind_groups.iter() {
+-                rpass.set_bind_group(0, bg, &[]);
++            for &draw_index in draw_indices.iter() {
++                let inst = &pbr_data[draw_index];
++                let cache = &self.pbr_draw_cache[draw_index];
++                let Some(bg) = cache.bind_group.as_ref() else { continue; };
++                rpass.set_bind_group(0, bg, &[]);
++                let mesh = &inst.mesh;
+                 rpass.set_vertex_buffer(0, mesh.0.vbuf.slice(..));
+                 rpass.set_index_buffer(mesh.0.ibuf.slice(..), IndexFormat::Uint32);
+                 rpass.draw_indexed(0..mesh.0.index_count, 0, 0..1);
+-- 
+2.45.0
