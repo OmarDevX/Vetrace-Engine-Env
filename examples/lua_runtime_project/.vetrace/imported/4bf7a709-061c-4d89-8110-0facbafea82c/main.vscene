@@ -1,0 +1,314 @@
+{
+  "version": 1,
+  "name": "Lua Runtime Example",
+  "roots": [
+    {
+      "id": "21fa7534-f9bd-498c-8836-241bc302cafa",
+      "name": "Lua Player",
+      "transform": {
+        "translation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "cube",
+            "size": [
+              1.25,
+              1.25,
+              1.25
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "base_color": [
+              1.0,
+              0.32,
+              0.08
+            ],
+            "roughness": 0.45,
+            "metallic": 0.05,
+            "alpha": 1.0,
+            "base_color_texture_path": null,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.scripting.lua_script",
+          "data": {
+            "script": "assets/scripts/player.lua",
+            "enabled": true,
+            "properties": {
+              "speed": 4.0,
+              "controlled": true,
+              "direction": 1.0,
+              "min_x": -3.0,
+              "max_x": 3.0,
+              "label": "controlled orange cube"
+            }
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "7855aaf6-0f58-4a80-94c3-341decc74950",
+      "name": "Lua Auto Mover",
+      "transform": {
+        "translation": [
+          0.0,
+          1.8,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "cube",
+            "size": [
+              0.9,
+              0.9,
+              0.9
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "base_color": [
+              0.68,
+              0.2,
+              1.0
+            ],
+            "roughness": 0.38,
+            "metallic": 0.08,
+            "alpha": 1.0,
+            "base_color_texture_path": null,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.scripting.lua_script",
+          "data": {
+            "script": "assets/scripts/player.lua",
+            "enabled": true,
+            "properties": {
+              "speed": 2.1,
+              "controlled": false,
+              "direction": 1.0,
+              "min_x": -2.5,
+              "max_x": 2.5,
+              "label": "automatic purple cube"
+            }
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "544b9884-d564-46a6-b172-9466a55903f2",
+      "name": "Ground",
+      "transform": {
+        "translation": [
+          0.0,
+          -1.15,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "cube",
+            "size": [
+              10.0,
+              0.4,
+              5.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "base_color": [
+              0.16,
+              0.22,
+              0.3
+            ],
+            "roughness": 0.9,
+            "metallic": 0.0,
+            "alpha": 1.0,
+            "base_color_texture_path": null,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "fdbdb813-9016-4b8c-b317-f1b22d718c29",
+      "name": "Left Marker",
+      "transform": {
+        "translation": [
+          -3.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "sphere",
+            "size": [
+              0.75,
+              0.75,
+              0.75
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "base_color": [
+              0.15,
+              0.55,
+              1.0
+            ],
+            "roughness": 0.35,
+            "metallic": 0.1,
+            "alpha": 1.0,
+            "base_color_texture_path": null,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "6351330a-f54f-4da3-ae9d-e9a43a89bde9",
+      "name": "Right Marker",
+      "transform": {
+        "translation": [
+          3.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "sphere",
+            "size": [
+              0.75,
+              0.75,
+              0.75
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "base_color": [
+              0.25,
+              1.0,
+              0.38
+            ],
+            "roughness": 0.35,
+            "metallic": 0.1,
+            "alpha": 1.0,
+            "base_color_texture_path": null,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        }
+      ],
+      "children": []
+    }
+  ],
+  "resources": {
+    "source_files": []
+  }
+}

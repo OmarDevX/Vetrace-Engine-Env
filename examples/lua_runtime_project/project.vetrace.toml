@@ -1,0 +1,57 @@
+format_version = 1
+
+[project]
+id = "b6af14d1-8458-42f2-b967-d08cc023ea97"
+name = "Lua Runtime Example"
+version = "0.1.0"
+engine_version = "0.1.0"
+
+[application]
+title = "Lua Runtime Example"
+width = 1280
+height = 720
+resizable = true
+fullscreen = false
+cursor_grab = false
+cursor_visible = true
+
+[runtime]
+main_scene = "assets/scenes/main.vscene"
+autoload_scripts = ["assets/scripts/game.lua"]
+
+[features]
+rendering = true
+physics = true
+audio = false
+animation = false
+networking = false
+ui = true
+scripting = true
+
+[scripting]
+language = "lua"
+hot_reload = true
+fail_fast = false
+max_errors_per_frame = 16
+
+[rendering]
+backend = "auto"
+vsync = true
+hdr = false
+msaa_samples = 1
+render_scale = 1.0
+shadow_quality = "medium"
+gi_mode = "none"
+
+[physics]
+gravity = [0.0, -9.81, 0.0]
+fixed_timestep = 0.016666668
+max_substeps = 8
+
+[input.actions.move_left]
+keys = ["A", "ArrowLeft"]
+dead_zone = 0.15
+
+[input.actions.move_right]
+keys = ["D", "ArrowRight"]
+dead_zone = 0.15

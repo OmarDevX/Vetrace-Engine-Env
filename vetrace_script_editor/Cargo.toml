@@ -1,0 +1,8 @@
+[package]
+name = "vetrace_script_editor"
+version = "0.1.0"
+edition = "2024"
+description = "Reusable language-service and document model for Vetrace script editors"
+
+[dependencies]
+serde = { workspace = true }

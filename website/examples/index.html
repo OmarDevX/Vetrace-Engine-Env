@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Live Vetrace game engine examples compiled to WebAssembly.">
+  <title>Examples · Vetrace Engine</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+  <script type="module" src="../assets/site.js"></script>
+  <script type="module" src="../assets/examples.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="../index.html"><span class="brand-mark">V</span><span>Vetrace <small>Engine</small></span></a>
+      <button class="nav-toggle" data-nav-toggle aria-expanded="false" aria-label="Toggle navigation"><span></span><span></span><span></span></button>
+      <nav class="site-nav" data-nav><a href="../index.html">Home</a><a aria-current="page" href="./index.html">Examples</a><a href="../../docs/GETTING_STARTED.md">Learn</a><a href="../../README.md">Repository</a></nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container"><span class="eyebrow">Live WebAssembly examples</span><h1>Examples</h1><p>Focused, runnable demonstrations of Vetrace features. Open an example to run the same Vetrace WGPU renderer used by desktop builds directly in a WebGPU-capable browser.</p></div>
+    </section>
+    <div class="container browser-layout">
+      <aside class="category-panel"><h2>Categories</h2><div data-category-list></div></aside>
+      <section>
+        <div class="examples-toolbar">
+          <label class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input data-example-search type="search" placeholder="Search examples, features, or components…" aria-label="Search examples"></label>
+          <span class="example-count" data-example-count></span>
+        </div>
+        <div class="example-grid" data-example-grid></div>
+        <div class="empty-state" data-empty-state hidden><h2>No examples found</h2><p>Try a different category or search term.</p></div>
+      </section>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="container footer-inner"><span>Vetrace browser examples</span><div class="footer-links"><a href="../index.html">Home</a><a href="../../docs/WEB.md">Web guide</a></div></div></footer>
+</body>
+</html>

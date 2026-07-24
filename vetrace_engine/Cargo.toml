@@ -1,0 +1,61 @@
+[package]
+name = "vetrace_engine"
+version = "0.28.0"
+edition = "2024"
+readme = "README.md"
+categories = ["game-development"]
+keywords = ["gamedev", "ecs", "plugins", "framework"]
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }
+vetrace_asset = { path = "../vetrace_asset", optional = true }
+vetrace_build = { path = "../vetrace_build", optional = true }
+vetrace_render = { path = "../vetrace_render", optional = true }
+vetrace_physics = { path = "../vetrace_physics", optional = true }
+vetrace_scripting_lua = { path = "../vetrace_scripting_lua", optional = true }
+vetrace_script_editor = { path = "../vetrace_script_editor", optional = true }
+vetrace_lua_tools = { path = "../vetrace_lua_tools", optional = true }
+vetrace_net = { path = "../vetrace_net", optional = true }
+vetrace_ui = { path = "../vetrace_ui", optional = true }
+vetrace_animation = { path = "../vetrace_animation", optional = true }
+vetrace_audio = { path = "../vetrace_audio", optional = true }
+vetrace_editor = { path = "../vetrace_editor", optional = true }
+vetrace_profiler = { path = "../vetrace_profiler", optional = true }
+vetrace_primitives = { path = "../vetrace_primitives", optional = true }
+vetrace_scene = { path = "../vetrace_scene", optional = true }
+
+[features]
+default = []
+asset = ["dep:vetrace_asset"]
+build = ["asset", "dep:vetrace_build"]
+profiler = ["dep:vetrace_profiler", "vetrace_render?/profiler"]
+render = ["dep:vetrace_render"]
+render_2d = ["render", "vetrace_render/render_2d", "vetrace_primitives?/render_2d", "vetrace_scene?/render_2d", "vetrace_editor?/render_2d"]
+render_window = ["render", "vetrace_render/wgpu_window"]
+render_egui = ["render_window", "vetrace_render/egui_render"]
+render_software_sdl = ["render", "vetrace_render/sdl_window"]
+render_wgpu = ["render", "vetrace_render/wgpu_window"]
+render_gltf = ["render", "vetrace_render/gltf_loader"]
+physics = ["dep:vetrace_physics", "vetrace_primitives?/physics", "vetrace_scene?/physics"]
+physics_2d = ["physics", "vetrace_physics/physics_2d", "vetrace_primitives?/physics_2d", "vetrace_scene?/physics_2d", "vetrace_editor?/physics_2d"]
+physics_gltf_collisions = ["physics", "vetrace_physics/gltf_collisions", "render_gltf"]
+primitives = ["render", "dep:vetrace_primitives"]
+scene = ["render", "primitives", "dep:vetrace_scene"]
+prefab = ["scene"]
+lua = ["dep:vetrace_scripting_lua"]
+script_tools = ["dep:vetrace_script_editor", "dep:vetrace_lua_tools"]
+net = ["dep:vetrace_net"]
+ui = ["dep:vetrace_ui"]
+animation = ["dep:vetrace_animation"]
+audio = ["dep:vetrace_audio"]
+editor = ["render", "dep:vetrace_editor"]
+full = ["asset", "build", "render", "render_2d", "physics", "physics_2d", "lua", "script_tools", "net", "ui", "animation", "audio", "editor", "primitives", "scene", "prefab"]
+full_window = ["full", "render_window"]
+
+[dev-dependencies]
+glam = { workspace = true }
+
+[[example]]
+name = "top_down_2d"
+path = "examples/top_down_2d.rs"
+required-features = ["render_egui", "render_2d", "physics_2d"]

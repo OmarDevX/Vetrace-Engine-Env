@@ -1,0 +1,34 @@
+[package]
+name = "vetrace_runtime"
+version = "0.1.0"
+edition = "2024"
+description = "Project-driven runtime assembly and lifecycle for Vetrace games"
+
+[dependencies]
+vetrace_animation = { path = "../vetrace_animation" }
+vetrace_audio = { path = "../vetrace_audio" }
+vetrace_core = { path = "../vetrace_core" }
+vetrace_net = { path = "../vetrace_net" }
+vetrace_physics = { path = "../vetrace_physics" }
+vetrace_project = { path = "../vetrace_project" }
+vetrace_render = { path = "../vetrace_render" }
+vetrace_scene = { path = "../vetrace_scene", features = ["physics"] }
+vetrace_scripting_lua = { path = "../vetrace_scripting_lua" }
+vetrace_ui = { path = "../vetrace_ui" }
+
+[dev-dependencies]
+uuid = { workspace = true }
+
+[features]
+default = []
+render_2d = ["vetrace_render/render_2d", "vetrace_scene/render_2d"]
+physics_2d = ["vetrace_physics/physics_2d", "vetrace_scene/physics_2d"]
+window = ["vetrace_render/wgpu_window", "vetrace_render/egui_overlay"]
+software_window = ["vetrace_render/sdl_window"]
+audio_backend = ["vetrace_audio/kira_backend"]
+gltf = ["vetrace_render/gltf_animation", "vetrace_physics/gltf_collisions"]
+
+[[example]]
+name = "run_project"
+path = "examples/run_project.rs"
+required-features = ["window"]

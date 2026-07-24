@@ -1,0 +1,25 @@
+[package]
+name = "vetrace_scene"
+version = "0.1.0"
+edition = "2024"
+description = "Scene graph, prefab fragment, and JSON import/export helpers for Vetrace"
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }
+vetrace_render = { path = "../vetrace_render" }
+vetrace_physics = { path = "../vetrace_physics" }
+vetrace_primitives = { path = "../vetrace_primitives" }
+glam = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+image = "0.25.6"
+
+[features]
+default = []
+render_2d = ["vetrace_render/render_2d"]
+# Compatibility feature: scene now always uses vetrace_physics-owned serializable defs.
+# Keeping this feature avoids breaking existing dependent Cargo.toml files.
+physics = ["vetrace_primitives/physics"]
+physics_2d = ["physics", "vetrace_physics/physics_2d", "vetrace_primitives/physics_2d"]

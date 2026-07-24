@@ -1,0 +1,9 @@
+[package]
+name = "vetrace_lua_tools"
+version = "0.1.0"
+edition = "2024"
+description = "Lua highlighting, diagnostics, formatting, and completion for Vetrace"
+
+[dependencies]
+mlua = { version = "0.11.0-beta.3", features = ["lua54", "vendored"] }
+vetrace_script_editor = { path = "../vetrace_script_editor" }

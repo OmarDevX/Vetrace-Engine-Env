@@ -1,0 +1,13 @@
+{
+  "id": "low_gravity",
+  "name": "Low Gravity Arena",
+  "version": "1.0.0",
+  "author": "Vetrace Example",
+  "description": "Faster movement, higher jumps, and lighter arena gravity.",
+  "entry": "main.lua",
+  "enabled_by_default": false,
+  "capabilities": ["gameplay.rules", "ui.status"],
+  "dependencies": [],
+  "conflicts": [],
+  "priority": 100
+}

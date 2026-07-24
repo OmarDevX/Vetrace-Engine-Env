@@ -1,0 +1,26 @@
+[package]
+name = "vetrace_player"
+version = "0.1.0"
+edition = "2024"
+description = "Generic executable for running Vetrace projects without game-specific Rust code"
+
+[dependencies]
+vetrace_build = { path = "../vetrace_build", default-features = false }
+vetrace_project = { path = "../vetrace_project" }
+vetrace_runtime = { path = "../vetrace_runtime", default-features = false }
+vetrace_scripting_lua = { path = "../vetrace_scripting_lua" }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
+[features]
+default = ["window", "audio_backend", "gltf", "render_2d", "physics_2d"]
+window = ["vetrace_runtime/window"]
+render_2d = ["vetrace_runtime/render_2d"]
+physics_2d = ["vetrace_runtime/physics_2d"]
+software_window = ["vetrace_runtime/software_window"]
+audio_backend = ["vetrace_runtime/audio_backend"]
+gltf = ["vetrace_runtime/gltf"]
+
+[[bin]]
+name = "vetrace-player"
+path = "src/main.rs"

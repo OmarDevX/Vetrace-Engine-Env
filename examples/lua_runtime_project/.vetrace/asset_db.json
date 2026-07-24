@@ -1,0 +1,72 @@
+{
+  "format_version": 1,
+  "records": {
+    "4bf7a709-061c-4d89-8110-0facbafea82c": {
+      "id": "4bf7a709-061c-4d89-8110-0facbafea82c",
+      "source": "assets/scenes/main.vscene",
+      "kind": {
+        "kind": "scene"
+      },
+      "status": "ready",
+      "source_hash": "b7f4331835cb6f5a38416690e001d84dcd2d041527d614604e6b127e4573e88a",
+      "source_size": 6352,
+      "modified_unix_ms": 1784361912000,
+      "importer": {
+        "id": "vetrace.scene",
+        "version": 1
+      },
+      "outputs": [
+        ".vetrace/imported/4bf7a709-061c-4d89-8110-0facbafea82c/main.vscene"
+      ],
+      "dependencies": [
+        {
+          "path": "assets/scripts/player.lua",
+          "asset_id": "ea4d802e-280a-4189-8c3d-5ff33a116a07",
+          "missing": false
+        }
+      ],
+      "imported_unix_ms": 1784915147223
+    },
+    "ea4d802e-280a-4189-8c3d-5ff33a116a07": {
+      "id": "ea4d802e-280a-4189-8c3d-5ff33a116a07",
+      "source": "assets/scripts/player.lua",
+      "kind": {
+        "kind": "script"
+      },
+      "status": "ready",
+      "source_hash": "b61c9712435f3a594d77a08a50b52d7508cd0d8f474495fbac657307e4becc2b",
+      "source_size": 1715,
+      "modified_unix_ms": 1784361912000,
+      "importer": {
+        "id": "vetrace.lua",
+        "version": 1
+      },
+      "outputs": [
+        ".vetrace/imported/ea4d802e-280a-4189-8c3d-5ff33a116a07/player.lua"
+      ],
+      "dependencies": [],
+      "imported_unix_ms": 1784915147229
+    },
+    "fb32e6d2-1811-40e6-b9dd-c74c283e3735": {
+      "id": "fb32e6d2-1811-40e6-b9dd-c74c283e3735",
+      "source": "assets/scripts/game.lua",
+      "kind": {
+        "kind": "script"
+      },
+      "status": "ready",
+      "source_hash": "ddf9ce3f21daf79e96966aab6f82179c2db8e66f9002e358cead984b4c90deca",
+      "source_size": 672,
+      "modified_unix_ms": 1784361912000,
+      "importer": {
+        "id": "vetrace.lua",
+        "version": 1
+      },
+      "outputs": [
+        ".vetrace/imported/fb32e6d2-1811-40e6-b9dd-c74c283e3735/game.lua"
+      ],
+      "dependencies": [],
+      "imported_unix_ms": 1784915147237
+    }
+  },
+  "diagnostics": []
+}

@@ -1,0 +1,20 @@
+{
+  "asset_id": "4bf7a709-061c-4d89-8110-0facbafea82c",
+  "source": "assets/scenes/main.vscene",
+  "importer": {
+    "id": "vetrace.scene",
+    "version": 1
+  },
+  "source_hash": "b7f4331835cb6f5a38416690e001d84dcd2d041527d614604e6b127e4573e88a",
+  "outputs": [
+    ".vetrace/imported/4bf7a709-061c-4d89-8110-0facbafea82c/main.vscene"
+  ],
+  "dependencies": [
+    "assets/scripts/player.lua"
+  ],
+  "metadata": {
+    "copy_mode": "source_preserving",
+    "source_file": "assets/scenes/main.vscene"
+  },
+  "imported_unix_ms": 1784915147223
+}

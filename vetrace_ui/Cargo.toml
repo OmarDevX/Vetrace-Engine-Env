@@ -1,0 +1,13 @@
+[package]
+name = "vetrace_ui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+egui = { version = "0.28", optional = true }
+vetrace_core = { path = "../vetrace_core" }
+glam = { workspace = true }
+serde = { workspace = true }
+
+[features]
+default = []

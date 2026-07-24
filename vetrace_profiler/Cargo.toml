@@ -1,0 +1,8 @@
+[package]
+name = "vetrace_profiler"
+version = "0.1.0"
+edition = "2024"
+description = "Runtime profiling plugin for Vetrace: frame timings, CPU/RAM samples, WGPU counters, and scoped code timings"
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }

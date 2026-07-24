@@ -1,0 +1,54 @@
+{
+  "id": "vetrace_rifle",
+  "name": "Vetrace Rifle",
+  "gameplay": {
+    "damage": 25,
+    "cooldown_seconds": 0.32,
+    "range": 60.0,
+    "aim_mode": "crosshair_converge"
+  },
+  "attachment": {
+    "position": [0.36, -0.24, -0.38],
+    "first_person_position": [0.38, -0.29, -0.50],
+    "muzzle": [0.0, 0.015, -0.78],
+    "rotation_degrees": [0.0, 0.0, 0.0]
+  },
+  "model": {
+    "path": null,
+    "position": [0.0, 0.0, 0.0],
+    "rotation_degrees": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0],
+    "body_size": [0.18, 0.18, 0.52],
+    "barrel_size": [0.065, 0.065, 0.42],
+    "stock_size": [0.16, 0.14, 0.26],
+    "grip_size": [0.10, 0.25, 0.12],
+    "body_color": [0.075, 0.085, 0.10],
+    "accent_color": [0.24, 0.27, 0.31],
+    "roughness": 0.32,
+    "metallic": 0.75
+  },
+  "tracer": {
+    "enabled": true,
+    "width": 0.045,
+    "lifetime_seconds": 0.12,
+    "color": [1.0, 0.90, 0.25],
+    "emissive": [1.0, 0.55, 0.05],
+    "light_intensity": 1.6,
+    "light_range": 4.5,
+    "light_samples": 2
+  },
+  "muzzle_flash": {
+    "enabled": true,
+    "lifetime_seconds": 0.055,
+    "size": 0.18,
+    "color": [1.0, 0.48, 0.06],
+    "emissive_intensity": 5.0,
+    "light_intensity": 1.6,
+    "light_range": 5.5
+  },
+  "sound": {
+    "path": "shoot.mp3",
+    "volume": 0.95,
+    "max_distance": 70.0
+  }
+}

@@ -1,0 +1,11 @@
+format_version = 1
+default_preset = "Desktop"
+
+[[presets]]
+name = "Desktop"
+target = "host"
+output_directory = "builds/desktop"
+executable_name = ""
+package_name = "game.vpak"
+compression = "deflate"
+include_asset_database = true

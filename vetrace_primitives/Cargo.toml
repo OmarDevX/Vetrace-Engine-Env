@@ -1,0 +1,18 @@
+[package]
+name = "vetrace_primitives"
+version = "0.1.0"
+edition = "2024"
+description = "Reusable primitive spawning helpers for the modular Vetrace engine"
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }
+vetrace_render = { path = "../vetrace_render" }
+vetrace_physics = { path = "../vetrace_physics", optional = true }
+glam = { workspace = true }
+serde = { workspace = true }
+
+[features]
+default = []
+render_2d = ["vetrace_render/render_2d"]
+physics = ["dep:vetrace_physics"]
+physics_2d = ["physics", "vetrace_physics/physics_2d"]

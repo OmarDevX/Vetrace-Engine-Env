@@ -1,0 +1,34 @@
+[package]
+name = "simple_shooter"
+version = "0.1.0"
+edition = "2024"
+description = "Multiplayer example game for the Vetrace engine"
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }
+vetrace_render = { path = "../vetrace_render" }
+vetrace_physics = { path = "../vetrace_physics" }
+vetrace_pathfinding = { path = "../vetrace_pathfinding" }
+vetrace_net = { path = "../vetrace_net" }
+vetrace_ui = { path = "../vetrace_ui" }
+vetrace_scripting_lua = { path = "../vetrace_scripting_lua" }
+vetrace_animation = { path = "../vetrace_animation", optional = true }
+vetrace_scene = { path = "../vetrace_scene", features = ["physics"] }
+vetrace_audio = { path = "../vetrace_audio", optional = true, features = ["kira_backend"] }
+vetrace_editor = { path = "../vetrace_editor", optional = true }
+vetrace_profiler = { path = "../vetrace_profiler", optional = true }
+glam = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+bincode = "1.3"
+
+[features]
+default = ["window"]
+audio = ["dep:vetrace_audio"]
+window = ["vetrace_render/egui_overlay", "audio"]
+gpu_render = ["vetrace_render/egui_overlay", "audio"]
+gltf = ["vetrace_render/gltf_animation", "vetrace_physics/gltf_collisions", "dep:vetrace_animation"]
+software_window = ["vetrace_render/sdl_window"]
+editor = ["dep:vetrace_editor", "vetrace_editor/window", "vetrace_render/egui_overlay"]
+profiler = ["dep:vetrace_profiler", "vetrace_render/profiler", "vetrace_render/egui_overlay"]

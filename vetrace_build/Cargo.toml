@@ -1,0 +1,25 @@
+[package]
+name = "vetrace_build"
+version = "0.1.0"
+edition = "2024"
+description = "Toolchain-free packaging and export for Vetrace projects"
+
+[dependencies]
+vetrace_asset = { path = "../vetrace_asset", optional = true }
+vetrace_project = { path = "../vetrace_project" }
+blake3 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.8.23"
+uuid = { workspace = true }
+zip = { workspace = true }
+
+[features]
+default = ["export"]
+export = ["dep:vetrace_asset"]
+template_download = []
+
+[[bin]]
+name = "vetrace-build"
+path = "src/bin/vetrace-build.rs"
+required-features = ["export"]

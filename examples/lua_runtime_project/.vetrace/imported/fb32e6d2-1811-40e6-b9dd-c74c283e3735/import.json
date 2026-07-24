@@ -1,0 +1,18 @@
+{
+  "asset_id": "fb32e6d2-1811-40e6-b9dd-c74c283e3735",
+  "source": "assets/scripts/game.lua",
+  "importer": {
+    "id": "vetrace.lua",
+    "version": 1
+  },
+  "source_hash": "ddf9ce3f21daf79e96966aab6f82179c2db8e66f9002e358cead984b4c90deca",
+  "outputs": [
+    ".vetrace/imported/fb32e6d2-1811-40e6-b9dd-c74c283e3735/game.lua"
+  ],
+  "dependencies": [],
+  "metadata": {
+    "copy_mode": "source_preserving",
+    "source_file": "assets/scripts/game.lua"
+  },
+  "imported_unix_ms": 1784915147237
+}

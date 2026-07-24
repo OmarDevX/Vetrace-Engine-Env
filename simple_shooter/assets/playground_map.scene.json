@@ -1,0 +1,454 @@
+{
+  "version": 1,
+  "name": "Vetrace Scene",
+  "roots": [
+    {
+      "id": "bf2e4263-cc20-475c-aeb2-8292be510b88",
+      "name": "Cube 10",
+      "transform": {
+        "translation": [
+          8.345224,
+          0.5,
+          13.0
+        ],
+        "rotation": [
+          -0.0006472434,
+          -0.00024987696,
+          -0.30170083,
+          0.95340246
+        ],
+        "scale": [
+          0.9931016,
+          2.1779342,
+          3.4613767
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "cube",
+            "size": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "kenney_prototype-textures/PNG/Orange/texture_10.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "cube"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "9d23c174-d052-4e20-949e-8e33a9112c52",
+      "name": "Cube 6",
+      "transform": {
+        "translation": [
+          12.007243,
+          0.5,
+          6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          3.9903865
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "cube",
+            "size": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "kenney_prototype-textures/PNG/Green/texture_10.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "cube"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "90c826e4-7648-4f10-94d9-ddc77a328689",
+      "name": "Cube 9",
+      "transform": {
+        "translation": [
+          12.895987,
+          1.4509078,
+          5.978524
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          3.9426813
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "cube",
+            "size": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "kenney_prototype-textures/PNG/Green/texture_10.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "cube"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "85649228-5f8a-49e7-93d6-e13d38b51115",
+      "name": "Plane 4",
+      "transform": {
+        "translation": [
+          5.0,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          7.1535096,
+          1.0,
+          7.731215
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "plane",
+            "size": [
+              4.0,
+              0.019999999552965164,
+              4.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "kenney_prototype-textures/PNG/Dark/texture_09.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              2.0,
+              0.009999999776482582,
+              2.0
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "cube"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "c9b26a16-f4d8-47ab-bfeb-88c440b36fb7",
+      "name": "Sphere 5",
+      "transform": {
+        "translation": [
+          5.0,
+          0.5,
+          6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "sphere",
+            "size": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "kenney_prototype-textures/PNG/Light/texture_08.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "sphere"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    }
+  ],
+  "resources": {
+    "source_files": []
+  }
+}

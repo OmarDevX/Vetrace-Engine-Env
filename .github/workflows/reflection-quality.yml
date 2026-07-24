@@ -1,0 +1,31 @@
+name: Reflection and shader quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libx11-dev libxkbcommon-dev libwayland-dev
+      - name: Workspace check
+        run: cargo check --locked --workspace --all-targets --all-features
+      - name: Workspace tests
+        run: cargo test --locked --workspace --all-features
+      - name: Reflection example compile
+        run: cargo check --locked -p vetrace_render --example cubemap_environment --features wgpu_window
+      - name: Static ABI and routing checks
+        run: |
+          python3 scripts/validate_environment_cubemap.py
+          python3 scripts/validate_custom_post_process_abi.py
+          python3 scripts/validate_render_texture_abi.py
+          python3 scripts/validate_wgsl_layouts.py
+          python3 scripts/validate_reflection_lab.py
+          python3 scripts/validate_reflection_runtime_quality.py

@@ -1,0 +1,18 @@
+{
+  "asset_id": "ea4d802e-280a-4189-8c3d-5ff33a116a07",
+  "source": "assets/scripts/player.lua",
+  "importer": {
+    "id": "vetrace.lua",
+    "version": 1
+  },
+  "source_hash": "b61c9712435f3a594d77a08a50b52d7508cd0d8f474495fbac657307e4becc2b",
+  "outputs": [
+    ".vetrace/imported/ea4d802e-280a-4189-8c3d-5ff33a116a07/player.lua"
+  ],
+  "dependencies": [],
+  "metadata": {
+    "copy_mode": "source_preserving",
+    "source_file": "assets/scripts/player.lua"
+  },
+  "imported_unix_ms": 1784915147229
+}

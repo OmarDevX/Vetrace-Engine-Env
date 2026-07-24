@@ -1,0 +1,17 @@
+[package]
+name = "vetrace_asset"
+version = "0.1.0"
+edition = "2024"
+description = "Generic asset discovery, import, cache, and diagnostics for Vetrace projects"
+
+[dependencies]
+vetrace_project = { path = "../vetrace_project" }
+blake3 = { workspace = true }
+notify = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
+image = "0.25.6"
+gltf = { version = "1.4", features = ["import"] }
+naga = { version = "0.20", features = ["wgsl-in"] }

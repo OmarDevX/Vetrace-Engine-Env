@@ -1,0 +1,16 @@
+[package]
+name = "vetrace_physics"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }
+vetrace_render = { path = "../vetrace_render", optional = true }
+glam = { workspace = true }
+rapier3d = "0.26.1"
+serde = { workspace = true }
+
+[features]
+default = []
+physics_2d = []
+gltf_collisions = ["dep:vetrace_render"]

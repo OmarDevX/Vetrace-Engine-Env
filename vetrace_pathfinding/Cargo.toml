@@ -1,0 +1,9 @@
+[package]
+name = "vetrace_pathfinding"
+version = "0.1.0"
+edition = "2024"
+description = "Reusable grid navigation and A* pathfinding plugin for Vetrace"
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }
+glam = { workspace = true }

@@ -1,0 +1,54 @@
+{
+  "id": "compact_pistol",
+  "name": "Compact Pistol",
+  "gameplay": {
+    "damage": 34,
+    "cooldown_seconds": 0.46,
+    "range": 48.0,
+    "aim_mode": "crosshair_converge"
+  },
+  "attachment": {
+    "position": [0.32, -0.22, -0.34],
+    "first_person_position": [0.35, -0.28, -0.45],
+    "muzzle": [0.0, 0.025, -0.47],
+    "rotation_degrees": [0.0, 0.0, 0.0]
+  },
+  "model": {
+    "path": null,
+    "position": [0.0, 0.0, 0.0],
+    "rotation_degrees": [0.0, 0.0, 0.0],
+    "scale": [0.78, 0.84, 0.64],
+    "body_size": [0.17, 0.17, 0.44],
+    "barrel_size": [0.055, 0.055, 0.24],
+    "stock_size": [0.13, 0.13, 0.12],
+    "grip_size": [0.10, 0.25, 0.12],
+    "body_color": [0.055, 0.06, 0.07],
+    "accent_color": [0.36, 0.38, 0.42],
+    "roughness": 0.28,
+    "metallic": 0.82
+  },
+  "tracer": {
+    "enabled": true,
+    "width": 0.032,
+    "lifetime_seconds": 0.10,
+    "color": [1.0, 0.78, 0.18],
+    "emissive": [1.0, 0.32, 0.03],
+    "light_intensity": 1.35,
+    "light_range": 3.8,
+    "light_samples": 2
+  },
+  "muzzle_flash": {
+    "enabled": true,
+    "lifetime_seconds": 0.045,
+    "size": 0.14,
+    "color": [1.0, 0.40, 0.04],
+    "emissive_intensity": 4.5,
+    "light_intensity": 1.5,
+    "light_range": 4.8
+  },
+  "sound": {
+    "path": "shoot.mp3",
+    "volume": 0.82,
+    "max_distance": 58.0
+  }
+}

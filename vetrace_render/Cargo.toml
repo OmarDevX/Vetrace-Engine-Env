@@ -1,0 +1,66 @@
+[package]
+name = "vetrace_render"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.14", features = ["derive"], optional = true }
+egui = { version = "0.28", optional = true }
+egui-wgpu = { version = "0.28", optional = true }
+gltf = { version = "1.4", optional = true, features = ["import", "KHR_lights_punctual"] }
+anyhow = { workspace = true, optional = true }
+pollster = { version = "0.3", optional = true }
+sdl2 = { version = "0.36", optional = true }
+winit = { version = "0.29", optional = true }
+wgpu = { version = "0.20.1", optional = true }
+vetrace_core = { path = "../vetrace_core" }
+vetrace_profiler = { path = "../vetrace_profiler", optional = true }
+vetrace_ui = { path = "../vetrace_ui", optional = true }
+vetrace_animation = { path = "../vetrace_animation", optional = true }
+glam = { workspace = true }
+serde = { workspace = true }
+bincode = "1.3"
+half = { version = "2", optional = true }
+image = { version = "0.25.6", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "0.2.4"
+
+[features]
+default = []
+profiler = ["dep:vetrace_profiler"]
+gltf_loader = ["dep:gltf", "dep:anyhow"]
+gltf_animation = ["gltf_loader", "dep:vetrace_animation"]
+sdl_window = ["dep:sdl2"]
+wgpu_render = ["dep:wgpu", "dep:bytemuck", "dep:half"]
+render_2d = []
+environment_import = ["dep:image", "dep:half"]
+wgpu_window = ["wgpu_render", "dep:winit", "dep:pollster"]
+egui_render = ["wgpu_render", "dep:egui", "dep:egui-wgpu", "dep:vetrace_ui"]
+# Backward-compatible desktop convenience feature. Existing games that enabled
+# `egui_overlay` still receive the native WGPU window as before.
+egui_overlay = ["wgpu_window", "egui_render"]
+
+[[example]]
+name = "raymarched_cloud"
+path = "examples/raymarched_cloud.rs"
+required-features = ["wgpu_window"]
+
+[[example]]
+name = "cornell_box_baked_gi"
+path = "examples/cornell_box_baked_gi.rs"
+required-features = ["wgpu_window"]
+
+[[example]]
+name = "cubemap_environment"
+path = "examples/cubemap_environment.rs"
+required-features = ["wgpu_window"]
+
+[[example]]
+name = "sprite_2d"
+path = "examples/sprite_2d.rs"
+required-features = ["wgpu_window", "render_2d"]
+
+[dev-dependencies]
+naga = { version = "0.20", features = ["wgsl-in"] }
+

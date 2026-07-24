@@ -1,0 +1,15 @@
+[package]
+name = "vetrace_map_builder"
+version = "0.1.0"
+edition = "2024"
+description = "Deprecated compatibility launcher for the Vetrace Studio scene editor"
+
+[dependencies]
+vetrace_studio = { path = "../vetrace_studio", default-features = false }
+
+[features]
+default = ["window", "render_2d", "physics_2d"]
+window = []
+render_2d = ["vetrace_studio/render_2d"]
+physics_2d = ["render_2d", "vetrace_studio/physics_2d"]
+gpu_render = ["window"]

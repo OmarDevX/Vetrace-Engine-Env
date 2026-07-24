@@ -1,0 +1,46 @@
+[package]
+name = "vetrace_studio"
+version = "0.1.0"
+edition = "2024"
+description = "Project editor application for Vetrace Engine"
+
+[dependencies]
+vetrace_asset = { path = "../vetrace_asset" }
+vetrace_build = { path = "../vetrace_build", features = ["template_download"] }
+vetrace_core = { path = "../vetrace_core" }
+vetrace_editor = { path = "../vetrace_editor", features = ["window"] }
+vetrace_primitives = { path = "../vetrace_primitives", features = ["physics"] }
+vetrace_project = { path = "../vetrace_project" }
+vetrace_render = { path = "../vetrace_render", features = ["egui_overlay"] }
+vetrace_runtime = { path = "../vetrace_runtime", features = ["window", "audio_backend", "gltf"] }
+vetrace_scene = { path = "../vetrace_scene", features = ["physics"] }
+vetrace_script_editor = { path = "../vetrace_script_editor" }
+vetrace_scripting_lua = { path = "../vetrace_scripting_lua" }
+vetrace_lua_tools = { path = "../vetrace_lua_tools" }
+glam = { workspace = true }
+rfd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+image = "0.25.6"
+
+[[bin]]
+name = "vetrace-studio"
+path = "src/main.rs"
+
+[features]
+default = ["render_2d", "physics_2d"]
+physics_2d = [
+    "render_2d",
+    "vetrace_runtime/physics_2d",
+    "vetrace_scene/physics_2d",
+    "vetrace_primitives/physics_2d",
+    "vetrace_editor/physics_2d",
+]
+render_2d = [
+    "vetrace_render/render_2d",
+    "vetrace_scene/render_2d",
+    "vetrace_primitives/render_2d",
+    "vetrace_editor/render_2d",
+    "vetrace_runtime/render_2d",
+]

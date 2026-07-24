@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Run a live Vetrace WebAssembly example and inspect its source.">
+  <title>Live Example · Vetrace</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body class="runner-page">
+  <header class="runner-header">
+    <div class="runner-header-left">
+      <a class="back-link" href="./index.html" aria-label="Back to examples">←</a>
+      <a class="brand" href="../index.html"><span class="brand-mark">V</span></a>
+      <div class="runner-title"><small data-example-category>Example</small><strong data-example-title>Loading…</strong></div>
+    </div>
+    <div class="runner-header-right"><span class="backend-badge" data-backend>Detecting GPU…</span><a class="button ghost" href="../../docs/WEB.md">Web guide</a></div>
+  </header>
+  <main class="runner-shell">
+    <section class="canvas-panel">
+      <canvas id="vetrace-canvas" data-example="rotating-cube" tabindex="0" aria-label="Live Vetrace example canvas"></canvas>
+      <div class="runtime-toolbar"><div id="runtime-status" class="runtime-status">Loading Vetrace WebAssembly…</div><div class="control-hint">Drag: orbit · Wheel: zoom · WASD / arrows: rotate</div></div>
+      <div class="runtime-overlay" data-runtime-overlay>
+        <div class="runtime-overlay-card">
+          <h2 data-runtime-overlay-title>Browser runtime unavailable</h2>
+          <p data-runtime-overlay-message>The browser runtime could not start.</p>
+          <pre data-runtime-overlay-details hidden></pre>
+          <code>./scripts/build_web.sh<br>./scripts/serve_web.sh</code>
+        </div>
+      </div>
+    </section>
+    <aside class="source-panel">
+      <div class="source-intro"><span data-example-category>Example</span><h1 data-example-title>Loading…</h1><p data-example-description></p></div>
+      <div class="source-toolbar"><span>Relevant Rust source</span><button class="copy-button" data-copy-source>Copy source</button></div>
+      <div class="source-code"><pre><code data-example-source></code></pre></div>
+    </aside>
+  </main>
+  <script>
+    window.vetraceBootFailure = function (message) {
+      const status = document.getElementById("runtime-status");
+      const overlay = document.querySelector("[data-runtime-overlay]");
+      const title = document.querySelector("[data-runtime-overlay-title]");
+      const body = document.querySelector("[data-runtime-overlay-message]");
+      if (status) { status.textContent = message; status.className = "runtime-status error"; }
+      if (title) title.textContent = "Website loader failed";
+      if (body) body.textContent = message;
+      overlay?.classList.add("visible");
+    };
+    window.addEventListener("unhandledrejection", function (event) {
+      if (!window.__vetraceModuleStarted) {
+        window.vetraceBootFailure("The examples JavaScript loader failed: " + String(event.reason));
+      }
+    });
+  </script>
+  <script type="module" src="../assets/play.js?v=11" onerror="window.vetraceBootFailure('Failed to load website/assets/play.js. Clear the browser cache and restart ./scripts/serve_web.sh.')"></script>
+</body>
+</html>

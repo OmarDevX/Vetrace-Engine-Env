@@ -1,0 +1,21 @@
+[package]
+name = "vetrace_scripting_lua"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde_json = { workspace = true }
+vetrace_core = { path = "../vetrace_core" }
+vetrace_audio = { path = "../vetrace_audio" }
+vetrace_physics = { path = "../vetrace_physics" }
+vetrace_net = { path = "../vetrace_net" }
+vetrace_render = { path = "../vetrace_render" }
+vetrace_ui = { path = "../vetrace_ui" }
+vetrace_scene = { path = "../vetrace_scene", features = ["physics"] }
+vetrace_project = { path = "../vetrace_project" }
+mlua = { version = "0.11.0-beta.3", features = ["lua54", "vendored"] }
+serde = { workspace = true }
+glam = { workspace = true }
+
+[features]
+default = []

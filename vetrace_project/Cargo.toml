@@ -1,0 +1,10 @@
+[package]
+name = "vetrace_project"
+version = "0.1.0"
+edition = "2024"
+description = "Versioned Vetrace project manifests, safe project paths, discovery, and validation"
+
+[dependencies]
+serde = { workspace = true }
+toml = "0.8.23"
+uuid = { workspace = true }

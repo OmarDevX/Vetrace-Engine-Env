@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Vetrace is a modular Rust game engine with ECS, WGPU rendering, Rapier physics, Lua scripting, editor tooling, and a browser runtime.">
+  <title>Vetrace Engine · Build worlds in Rust</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+  <script type="module" src="./assets/site.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="./index.html" aria-label="Vetrace home">
+        <span class="brand-mark">V</span>
+        <span>Vetrace <small>Engine</small></span>
+      </a>
+      <button class="nav-toggle" data-nav-toggle aria-expanded="false" aria-label="Toggle navigation"><span></span><span></span><span></span></button>
+      <nav class="site-nav" data-nav>
+        <a href="#features">Features</a>
+        <a href="./examples/index.html">Examples</a>
+        <a href="../docs/GETTING_STARTED.md">Learn</a>
+        <a href="../README.md">Repository</a>
+        <a class="nav-cta" href="./examples/index.html">Run in browser <span>↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">Modular Rust game engine</span>
+          <h1>Build worlds.<br><span>Trace everything.</span></h1>
+          <p>Vetrace combines an actor-first ECS, WGPU rendering, Rapier physics, Lua scripting, multiplayer tools, and a full editor—now with live WebAssembly examples.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="./examples/index.html">Explore live examples <span>→</span></a>
+            <a class="button ghost" href="../docs/GETTING_STARTED.md">Read the guide</a>
+          </div>
+          <div class="hero-note"><span>Open source Rust</span><span>Native + browser</span><span>Data-oriented core</span></div>
+        </div>
+        <div class="engine-window" aria-label="Vetrace renderer illustration">
+          <div class="window-bar"><i></i><i></i><i></i><span class="window-title">Vetrace Studio · Scene</span></div>
+          <div class="viewport-mock">
+            <div class="hero-cube"></div>
+            <div class="hud-card stats"><b>144 FPS</b>2.6 ms GPU · 1.1 ms CPU</div>
+            <div class="hud-card entity"><strong>Actor · Rotating Cube</strong>Transform · Shape · Material</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="logo-strip" aria-label="Engine systems">
+      <div class="container logo-strip-inner"><span>WGPU</span><span>Rapier</span><span>Lua</span><span>WebAssembly</span><span>ECS</span><span>Rust</span></div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-heading">
+          <span class="eyebrow">One engine, clear boundaries</span>
+          <h2>Everything needed to move from idea to playable build.</h2>
+          <p>Subsystems stay modular while sharing a safe Actor API, stable persistent identities, typed events, deferred commands, and a predictable schedule.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card"><div class="feature-icon">01</div><h3>Actor-first ECS</h3><p>Generational runtime handles, UUID-backed persistence, typed queries, bundles, events, and structural commands without exposing raw storage to gameplay.</p></article>
+          <article class="feature-card"><div class="feature-icon">02</div><h3>Modern rendering</h3><p>WGPU pipelines, PBR-style materials, shadows, GI paths, reflections, post-processing, custom shaders, profiling, and the same full renderer on desktop and browser WebGPU.</p></article>
+          <article class="feature-card"><div class="feature-icon">03</div><h3>Editor workflow</h3><p>Scene authoring, hierarchy, inspector, gizmos, undo/redo, project management, build tools, Lua editing, hot reload, and debugging.</p></article>
+          <article class="feature-card"><div class="feature-icon">04</div><h3>Physics and movement</h3><p>Rapier-backed rigid bodies and colliders, synchronized transforms, character behavior, queries, and clean game-side extension traits.</p></article>
+          <article class="feature-card"><div class="feature-icon">05</div><h3>Scripting and mods</h3><p>Sandboxed Lua environments, reflected components, events, deferred gameplay commands, per-entity state, autoloads, hot reload, and mod manifests.</p></article>
+          <article class="feature-card"><div class="feature-icon">06</div><h3>Runtime and export</h3><p>Versioned projects, portable paths, asset import, scenes, packaged builds, generic players, multiplayer helpers, and browser examples from the same core.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section code-section">
+      <div class="container code-grid">
+        <div>
+          <span class="eyebrow">Readable game code</span>
+          <h2>Spawn an actor. Add behavior. Keep moving.</h2>
+          <p>Vetrace keeps common gameplay operations direct while preserving strict engine boundaries underneath.</p>
+          <a class="button ghost" href="../docs/ACTOR.md">Learn the Actor API <span>→</span></a>
+        </div>
+        <div class="code-window">
+          <div class="code-toolbar"><span>src/main.rs</span><button class="copy-button" data-copy="#hero-code">Copy</button></div>
+          <pre id="hero-code"><code><span class="kw">use</span> glam::{Quat, Vec3};
+<span class="kw">use</span> vetrace_core::{Engine, Transform};
+<span class="kw">use</span> vetrace_render::{
+    Material, PrimitiveShape, Renderable, Shape,
+};
+
+<span class="kw">let mut</span> engine = Engine::<span class="fn">new</span>();
+
+<span class="kw">let</span> player = engine
+    .<span class="fn">spawn_actor</span>(<span class="str">"Player"</span>)
+    .<span class="fn">with</span>(Transform {
+        translation: Vec3::Y,
+        rotation: Quat::IDENTITY,
+        scale: Vec3::ONE,
+    })
+    .<span class="fn">with</span>(Shape {
+        primitive: PrimitiveShape::Cube,
+        size: Vec3::ONE,
+    })
+    .<span class="fn">with</span>(Material::<span class="fn">default</span>())
+    .<span class="fn">with</span>(Renderable {
+        mesh: None,
+        material: None,
+        visible: true,
+    })
+    .<span class="fn">tag</span>(<span class="str">"player"</span>)
+    .<span class="fn">build</span>();</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <span class="eyebrow">Runs in your browser</span>
+          <h2>Learn by opening real, live examples.</h2>
+          <p>Each example launches a Vetrace ECS world compiled to WebAssembly, renders to a canvas, and displays the relevant Rust source beside it.</p>
+        </div>
+        <div class="examples-teaser">
+          <a class="teaser-card" href="./examples/play.html?example=rotating-cube"><div class="teaser-visual"><div class="teaser-shape"></div></div><div class="teaser-body"><h3>Rotating Cube</h3><p>The smallest complete 3D Vetrace scene.</p></div></a>
+          <a class="teaser-card" href="./examples/play.html?example=materials"><div class="teaser-visual"><div class="teaser-shape sphere"></div></div><div class="teaser-body"><h3>Material Grid</h3><p>Compare roughness and metallic response live.</p></div></a>
+          <a class="teaser-card" href="./examples/play.html?example=many-cubes"><div class="teaser-visual"><div class="teaser-shape grid"></div></div><div class="teaser-body"><h3>Many Cubes</h3><p>Exercise extraction and browser rendering at scale.</p></div></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="container cta-panel">
+      <div><h2>See what Vetrace can do.</h2><p>Browse focused examples by rendering, ECS, transforms, input, and stress testing.</p></div>
+      <a class="button primary" href="./examples/index.html">Open examples gallery <span>→</span></a>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="container footer-inner"><span>© <span data-year></span> Vetrace Engine</span><div class="footer-links"><a href="../README.md">Repository</a><a href="../docs/GETTING_STARTED.md">Docs</a><a href="./examples/index.html">Examples</a></div></div></footer>
+</body>
+</html>

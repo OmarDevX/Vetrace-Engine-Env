@@ -1,0 +1,783 @@
+{
+  "version": 1,
+  "name": "Vetrace Scene",
+  "roots": [
+    {
+      "id": "b3e8676b-558d-4ffc-81cd-79fa32ed8976",
+      "name": "Capsule 3",
+      "transform": {
+        "translation": [
+          13.0,
+          1.0,
+          2.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "capsule",
+            "size": [
+              1.0,
+              2.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06_5.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              1.0,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "capsule"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "8dd4f4c7-2776-4edf-b135-a419b9050b10",
+      "name": "Capsule 4",
+      "transform": {
+        "translation": [
+          15.0,
+          1.0,
+          6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "capsule",
+            "size": [
+              1.0,
+              2.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06_2.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              1.0,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "capsule"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "48159019-084c-405b-b06c-25c242b00c4b",
+      "name": "Capsule 5",
+      "transform": {
+        "translation": [
+          -1.0,
+          1.0,
+          11.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "capsule",
+            "size": [
+              1.0,
+              2.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06_4.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              1.0,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "capsule"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "65c1f179-7121-4409-b3d5-c90d53e4d836",
+      "name": "Capsule 6",
+      "transform": {
+        "translation": [
+          -9.0,
+          1.0,
+          1.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "capsule",
+            "size": [
+              1.0,
+              2.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06_6.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              1.0,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "capsule"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "ce4d4632-12bb-4c37-9b87-620e39b47fbf",
+      "name": "Capsule 7",
+      "transform": {
+        "translation": [
+          -14.0,
+          1.0,
+          5.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "capsule",
+            "size": [
+              1.0,
+              2.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06_3.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              1.0,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "capsule"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "a69b6ea0-398e-41c8-88ea-3aed27336aa3",
+      "name": "Capsule 8",
+      "transform": {
+        "translation": [
+          -5.0,
+          1.0,
+          8.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "capsule",
+            "size": [
+              1.0,
+              2.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              1.0,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "capsule"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "bb575a56-51a5-4a3c-8b2f-dc23da7d41c4",
+      "name": "Cube 2",
+      "transform": {
+        "translation": [
+          2.0,
+          0.99985933,
+          4.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          11.916096,
+          2.1203618,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "cube",
+            "size": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06_7.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              0.5,
+              0.5,
+              0.5
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "cube"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "fb5336b4-858f-44d7-bc09-e6b5cfaf0bce",
+      "name": "Plane 1",
+      "transform": {
+        "translation": [
+          2.0,
+          0.0,
+          4.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          10.234228,
+          1.0,
+          10.675202
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.render.primitive",
+          "data": {
+            "kind": "plane",
+            "size": [
+              4.0,
+              0.019999999552965164,
+              4.0
+            ],
+            "visible": true
+          }
+        },
+        {
+          "type": "vetrace.render.material",
+          "data": {
+            "alpha": 1.0,
+            "base_color": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "base_color_texture_path": "assets/textures/texture_06_1.png",
+            "metallic": 0.0,
+            "roughness": 0.75,
+            "uv_scale": [
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "type": "vetrace.physics.body",
+          "data": {
+            "enabled": true,
+            "kind": "static"
+          }
+        },
+        {
+          "type": "vetrace.physics.collider",
+          "data": {
+            "enabled": true,
+            "friction": 0.699999988079071,
+            "half_extents": [
+              2.0,
+              0.009999999776482582,
+              2.0
+            ],
+            "offset": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "restitution": 0.0,
+            "sensor": false,
+            "shape": "cube"
+          }
+        },
+        {
+          "type": "vetrace.scene.tags",
+          "data": [
+            "map_builder_authored",
+            "prefab_object"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "b64036d9-76bd-440b-afd5-5e9d41b10387",
+      "name": "Spawn Point 1",
+      "transform": {
+        "translation": [
+          -7.207987,
+          0.7655573,
+          18.035192
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.scene.spawn_point",
+          "data": {
+            "team": null
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "8627bfa3-53dd-4bb9-8907-6484e3b986df",
+      "name": "Spawn Point 2",
+      "transform": {
+        "translation": [
+          7.0,
+          0.5958167,
+          12.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "vetrace.scene.spawn_point",
+          "data": {
+            "team": null
+          }
+        }
+      ],
+      "children": []
+    }
+  ],
+  "resources": {
+    "source_files": []
+  }
+}

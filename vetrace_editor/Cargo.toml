@@ -1,0 +1,21 @@
+[package]
+name = "vetrace_editor"
+version = "0.1.0"
+edition = "2024"
+description = "Modern editor plugin for the modular Vetrace engine stack"
+
+[dependencies]
+vetrace_core = { path = "../vetrace_core" }
+vetrace_render = { path = "../vetrace_render" }
+vetrace_physics = { path = "../vetrace_physics" }
+glam = { workspace = true }
+serde = { workspace = true }
+egui-gizmo = { path = "../third_party/egui-gizmo" }
+mint = "0.5"
+
+[features]
+default = []
+render_2d = ["vetrace_render/render_2d"]
+physics_2d = ["render_2d", "vetrace_physics/physics_2d"]
+window = ["vetrace_render/egui_overlay"]
+gpu_render = ["vetrace_render/egui_overlay"]

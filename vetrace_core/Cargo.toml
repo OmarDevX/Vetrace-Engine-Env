@@ -1,0 +1,18 @@
+[package]
+name = "vetrace_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+glam = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+vetrace_engine_macros = { path = "../vetrace_engine_macros" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "0.2.4"
+
+[features]
+default = []
